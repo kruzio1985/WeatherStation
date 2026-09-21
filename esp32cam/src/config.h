@@ -1,7 +1,7 @@
 /* =============================================================================
  * Stacja Pogody - zewnętrzna kamera ESP32-CAM (AI-Thinker)
  * Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
- * Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+ * Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
  * Użytek niekomercyjny. Kontakt: kruzio1985@users.noreply.github.com
  * =============================================================================
  *

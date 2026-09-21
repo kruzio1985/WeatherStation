@@ -2,7 +2,7 @@
 # =============================================================================
 #  Stacja Pogody - synchronizacja statusow w katalogu czujnikow
 #  Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
-#  Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+#  Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
 # =============================================================================
 #  Ustawia ✅ w docs/CZUJNIKI.md dla wierszy, ktore sa juz naprawde obslugiwane
 #  przez firmware.  Wiersz dostaje ✅ tylko wtedy, gdy spelnione sa OBA warunki:

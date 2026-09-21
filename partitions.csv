@@ -1,6 +1,6 @@
 # Stacja Pogody - stacja meteorologiczna na ESP32-S3 WROOM-1 (N16R8)
 # Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
-# Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+# Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
 # Name,   Type, SubType, Offset,   Size,    Flags
 # ESP32-S3 WROOM-1 N16R8 -> 16 MB (0x1000000) flashu.
 # Dwa sloty OTA po 3 MB + reszta na system plików LittleFS (www) ~9.94 MB.

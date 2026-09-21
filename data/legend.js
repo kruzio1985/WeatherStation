@@ -1,7 +1,7 @@
 /* =============================================================================
  * Stacja Pogody - legenda czujnikow dla strony www
  * Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
- * Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+ * Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
  * -----------------------------------------------------------------------------
  * PLIK GENEROWANY AUTOMATYCZNIE - nie edytuj recznie.
  * Zrodlo: docs/CZUJNIKI.md   Generator: tools/gen_legend.py

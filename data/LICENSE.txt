@@ -1,138 +1,93 @@
-                     LICENCJA STACJI POGODY 1.0
-              (Stacja Pogody Non-Commercial License 1.0)
+# PolyForm Noncommercial License 1.0.0
 
-Copyright (c) 2026 kruzio1985
-Autor / Author: https://github.com/kruzio1985
-Kontakt / Contact: kruzio1985@users.noreply.github.com
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
 
-Licencja obejmuje kod źródłowy, pliki strony www, dokumentację i skrypty
-projektu "Stacja Pogody" (dalej: "Program").
+Copyright (c) 2026 Kruzio
 
-License applies to the source code, web files, documentation and scripts of
-the "Stacja Pogody" (Weather Station) project (the "Program").
+Required Notice: Copyright Kruzio — original repository: https://github.com/kruzio1985/WeatherStation
 
-------------------------------------------------------------------------------
-1. DEFINICJE / DEFINITIONS
-------------------------------------------------------------------------------
-"Program"  - firmware stacji pogodowej na płytce ESP32-S3 wraz z plikami
-             strony www (index.html, public.html, i18n.js i inne), dokumentacją
-             oraz skryptami narzędziowymi.
-"Autor"    - kruzio1985, posiadacz praw autorskich do Programu.
-"Użytek niekomercyjny" - użytek, który nie służy bezpośrednio ani pośrednio
-             osiąganiu przychodu ani działalności gospodarczej, w tym
-             wykorzystanie w firmie do celów jej działalności zarobkowej.
+## Acceptance
 
-"Program"  - the ESP32-S3 weather station firmware together with the web files
-             (index.html, public.html, i18n.js and others), documentation and
-             tooling scripts.
-"Author"   - kruzio1985, the copyright holder.
-"Non-commercial use" - any use which does not directly or indirectly generate
-             revenue or support a commercial activity.
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-------------------------------------------------------------------------------
-2. DOZWOLONY UŻYTEK NIEKOMERCYJNY / GRANT (NON-COMMERCIAL)
-------------------------------------------------------------------------------
-Autor udziela każdej osobie bezpłatnej, niewyłącznej licencji na:
-  a) używanie Programu do celów prywatnych, hobbystycznych, edukacyjnych
-     i badawczych,
-  b) kopiowanie, modyfikowanie i rozszerzanie Programu,
-  c) udostępnianie Programu i jego zmodyfikowanych wersji osobom trzecim,
-     pod warunkiem że udostępnianie odbywa się nieodpłatnie.
+## Copyright License
 
-The Author grants everyone a free, non-exclusive licence to:
-  a) use the Program for private, hobby, educational and research purposes,
-  b) copy, modify and extend the Program,
-  c) share the Program and modified versions with third parties, provided
-     that such sharing is free of charge.
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
 
-------------------------------------------------------------------------------
-3. WARUNKI / CONDITIONS
-------------------------------------------------------------------------------
-Dozwolony użytek jest ważny tylko wtedy, gdy spełnione są łącznie warunki:
-  a) informacja o autorze (nazwa "kruzio1985", adres
-     https://github.com/kruzio1985 oraz niniejsza licencja) pozostaje
-     niezmieniona w kodzie źródłowym, nagłówkach plików i dokumentacji,
-  b) zmodyfikowane wersje Programu są udostępniane na warunkach tej samej
-     licencji, z wyraźnym zaznaczeniem wprowadzonych zmian,
-  c) żaden plik Programu ani jego pochodna nie jest sprzedawana, wynajmowana,
-     udostępniana w modelu subskrypcyjnym ani oferowana jako część
-     komercyjnego produktu lub usługi.
+## Distribution License
 
-The permitted use is valid only if all of the following conditions are met:
-  a) the attribution (the name "kruzio1985", https://github.com/kruzio1985 and
-     this licence) stays unchanged in the source code, file headers and
-     documentation,
-  b) modified versions are distributed under this same licence, with a clear
-     note describing the changes,
-  c) no file of the Program or any derivative is sold, rented, offered in a
-     subscription model or included in a commercial product or service.
+The licensor grants you an additional copyright license to distribute copies of the software.  Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
 
-------------------------------------------------------------------------------
-4. UŻYTEK KOMERCYJNY / COMMERCIAL USE
-------------------------------------------------------------------------------
-Użytek komercyjny (w szczególności sprzedaż urządzeń z Programem, usługi
-instalacyjne i serwisowe, model SaaS, szkolenia za opłatą, wykorzystanie
-w reklamie zarobkowej) wymaga wcześniejszej pisemnej zgody Autora.
-Warunki licencji komercyjnej ustala się indywidualnie - napisz na adres
-podany w nagłówku tego pliku lub przez GitHub.
+## Notices
 
-Any commercial use (in particular selling devices running the Program,
-paid installation and service work, SaaS, paid training, commercial
-advertising) requires the prior written consent of the Author. Commercial
-terms are agreed individually - contact the Author using the address in the
-header of this file or via GitHub.
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
 
-------------------------------------------------------------------------------
-5. KOMPONENTY ZEWNĘTRZNE / THIRD-PARTY COMPONENTS
-------------------------------------------------------------------------------
-Program korzysta z bibliotek i komponentów zewnętrznych (m.in. ArduinoJson,
-ESPAsyncWebServer, AsyncTCP, PubSubClient, Adafruit BME280 Library, Adafruit
-Unified Sensor, Adafruit BusIO, Adafruit NeoPixel, OneWire, DallasTemperature,
-rdzeń Arduino-ESP32, ESP-IDF). Każdy z nich objęty jest własną licencją i jej
-warunki mają pierwszeństwo dla tych plików. Lista wersji i licencji znajduje
-się na stronie stacji w zakładce "Informacje" oraz w pliku README.md.
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
-The Program uses third-party libraries and components. Each of them is
-covered by its own licence and those terms take precedence for those files.
-The list of versions and licences is available in the station's web interface
-in the "Information" tab and in README.md.
+## Changes and New Works License
 
-------------------------------------------------------------------------------
-6. BRAK GWARANCJI / NO WARRANTY
-------------------------------------------------------------------------------
-PROGRAM JEST UDOSTĘPNIANY "TAK JAK JEST" (AS IS), BEZ JAKIEJKOLWIEK
-GWARANCJI - WYRAŹNEJ ANI DOROZUMIANEJ, W TYM BEZ GWARANCJI PRZYDATNOŚCI DO
-OKREŚLONEGO CELU, POPRAWNOŚCI POMIARÓW I NIENARUSZANIA PRAW OSÓB TRZECICH.
-Ryzyko korzystania z Programu ponosi wyłącznie użytkownik.
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
 
-THE PROGRAM IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO FITNESS FOR A PARTICULAR PURPOSE,
-ACCURACY OF MEASUREMENTS AND NON-INFRINGEMENT. THE ENTIRE RISK ARISING OUT OF
-THE USE OF THE PROGRAM REMAINS WITH THE USER.
+## Patent License
 
-------------------------------------------------------------------------------
-7. ODPOWIEDZIALNOŚĆ I BEZPIECZEŃSTWO / LIABILITY AND SAFETY
-------------------------------------------------------------------------------
-Autor nie odpowiada za jakiekolwiek szkody wynikające z używania Programu,
-w tym za utratę danych, uszkodzenie sprzętu ani skutki decyzji podjętych na
-podstawie wskazań stacji. Pomiary stacji mają charakter amatorski i NIE
-ZASTĘPUJĄ oficjalnych ostrzeżeń i prognoz meteorologicznych.
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
-The Author shall not be liable for any damages arising from the use of the
-Program, including data loss, hardware damage or consequences of decisions
-taken on the basis of the station's readings. The readings are amateur
-measurements and DO NOT REPLACE official weather warnings and forecasts.
+## Noncommercial Purposes
 
-------------------------------------------------------------------------------
-8. PRAWO WŁAŚCIWE / GOVERNING LAW
-------------------------------------------------------------------------------
-Do niniejszej licencji stosuje się prawo polskie. Jeżeli którekolwiek
-postanowienie okaże się nieważne, pozostałe postanowienia pozostają w mocy.
+Any noncommercial purpose is a permitted purpose.
 
-This licence is governed by Polish law. If any provision is found invalid, the
-remaining provisions stay in force.
+## Personal Uses
 
-------------------------------------------------------------------------------
-Pełny tekst w języku angielskim znajduje się powyżej, w tej samej sekcji
-każdego punktu. W razie wątpliwości rozstrzygające jest brzmienie oryginału
-polskiego. / In case of doubt, the Polish wording prevails.
+Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the law. These terms do not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+**You** refers to the individual or entity agreeing to these terms.
+
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the software under these terms.
+
+**Use** means anything you do with the software requiring one of your licenses.
+
+## Additional Terms (Addendum)
+
+The following additional terms apply to this license and take precedence where they are more restrictive.
+
+### Derivative Works and Attribution
+
+If You create changes, new works, or derivative works based on the software, and You distribute, share, publish, or otherwise make them available to any third party, You must:
+
+- retain this License (including this Addendum) and the copyright notice, unmodified, in all copies and derivative works;
+- clearly state that You changed the software and include a brief description of the changes; and
+- include a visible link to the original project repository: https://github.com/kruzio1985/WeatherStation
+
+### No Removal of Attribution
+
+You may not remove or alter any copyright notice, license text, or attribution included with the software or with any derivative work based on it.
