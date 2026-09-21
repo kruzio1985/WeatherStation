@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+     StacjaPogody weather station on ESP32-S3 (N16R8) - web interface.
+     Author: kruzio1985 - https://github.com/kruzio1985
+     Licence: StacjaPogody non-commercial licence 1.0 - see the LICENSE file.
+     ========================================================================== -->
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pogoda na żywo</title>
+<style>
+  :root { --bg:#0b1220; --panel:#1e293b; --accent:#38bdf8; --text:#e2e8f0; --muted:#94a3b8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; flex-direction:column; }
+  header { text-align:center; padding:22px 16px 10px; position:relative; }
+  select.lang { position:absolute; top:14px; right:14px; font-size:.8rem; padding:5px 9px; border-radius:8px; background:#273449; color:var(--text); border:1px solid #334155; cursor:pointer; }
+  header h1 { margin:0; font-size:1.6rem; }
+  header .loc { color:var(--muted); margin-top:4px; }
+  main { flex:1; display:flex; flex-wrap:wrap; gap:14px; justify-content:center; padding:22px; }
+  .card { background:var(--panel); border-radius:14px; padding:20px 28px; text-align:center; min-width:150px; }
+  .card .v { font-size:2.3rem; font-weight:800; }
+  .card .u { color:var(--muted); }
+  .card .l { color:var(--muted); font-size:.85rem; margin-bottom:6px; }
+  footer { text-align:center; padding:18px; background:var(--panel); }
+  footer a { color:var(--accent); text-decoration:none; font-weight:600; }
+  footer .cred { color:var(--muted); font-size:.8rem; margin-top:10px; }
+  footer .cred a { font-weight:500; }
+  .off { opacity:.4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌤️ Pogoda na żywo</h1>
+  <div class="loc" id="loc">—</div>
+  <select class="lang" id="langSel" aria-label="Język / Language / Sprache"></select>
+</header>
+<main id="main"></main>
+<footer>
+  <a id="companyLink" href="#" target="_blank" rel="noopener"></a>
+  <div class="cred">
+    Stacja Pogody - projekt i wykonanie: kruzio1985
+    <a href="https://github.com/kruzio1985" target="_blank" rel="noopener">github.com/kruzio1985</a>
+  </div>
+</footer>
+<script src="/i18n.js?v=1.0.1" charset="UTF-8"></script>
+<script>
+const CARDS = [
+  ['temp','Temperatura','°C',1],
+  ['hum','Wilgotność','%',1],
+  ['press','Ciśnienie','hPa',1],
+  ['wind','Wiatr','km/h',1],
+  ['pm25','PM 2.5','µg/m³',0]
+];
+async function refresh() {
+  try {
+    const r = await fetch('/api/public');
+    const d = await r.json();
+    document.getElementById('loc').textContent = d.location || '';
+    const company = d.company || '';
+    const url = d.url || '';
+    const link = document.getElementById('companyLink');
+    link.textContent = company || 'Nasza firma';
+    link.href = url || '#';
+
+    const main = document.getElementById('main');
+    main.innerHTML = '';
+    for (const [id,label,unit,dec] of CARDS) {
+      const v = d[id];
+      const card = document.createElement('div');
+      card.className = 'card';
+      const txt = (v === null || v === undefined) ? '—' : Number(v).toFixed(dec);
+      card.innerHTML = `<div class="l">${label}</div><div class="v">${txt}</div><div class="u">${unit}</div>`;
+      main.appendChild(card);
+    }
+  } catch (e) {}
+}
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>

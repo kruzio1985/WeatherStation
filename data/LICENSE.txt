@@ -1,0 +1,138 @@
+                     LICENCJA STACJI POGODY 1.0
+              (Stacja Pogody Non-Commercial License 1.0)
+
+Copyright (c) 2026 kruzio1985
+Autor / Author: https://github.com/kruzio1985
+Kontakt / Contact: kruzio1985@users.noreply.github.com
+
+Licencja obejmuje kod źródłowy, pliki strony www, dokumentację i skrypty
+projektu "Stacja Pogody" (dalej: "Program").
+
+License applies to the source code, web files, documentation and scripts of
+the "Stacja Pogody" (Weather Station) project (the "Program").
+
+------------------------------------------------------------------------------
+1. DEFINICJE / DEFINITIONS
+------------------------------------------------------------------------------
+"Program"  - firmware stacji pogodowej na płytce ESP32-S3 wraz z plikami
+             strony www (index.html, public.html, i18n.js i inne), dokumentacją
+             oraz skryptami narzędziowymi.
+"Autor"    - kruzio1985, posiadacz praw autorskich do Programu.
+"Użytek niekomercyjny" - użytek, który nie służy bezpośrednio ani pośrednio
+             osiąganiu przychodu ani działalności gospodarczej, w tym
+             wykorzystanie w firmie do celów jej działalności zarobkowej.
+
+"Program"  - the ESP32-S3 weather station firmware together with the web files
+             (index.html, public.html, i18n.js and others), documentation and
+             tooling scripts.
+"Author"   - kruzio1985, the copyright holder.
+"Non-commercial use" - any use which does not directly or indirectly generate
+             revenue or support a commercial activity.
+
+------------------------------------------------------------------------------
+2. DOZWOLONY UŻYTEK NIEKOMERCYJNY / GRANT (NON-COMMERCIAL)
+------------------------------------------------------------------------------
+Autor udziela każdej osobie bezpłatnej, niewyłącznej licencji na:
+  a) używanie Programu do celów prywatnych, hobbystycznych, edukacyjnych
+     i badawczych,
+  b) kopiowanie, modyfikowanie i rozszerzanie Programu,
+  c) udostępnianie Programu i jego zmodyfikowanych wersji osobom trzecim,
+     pod warunkiem że udostępnianie odbywa się nieodpłatnie.
+
+The Author grants everyone a free, non-exclusive licence to:
+  a) use the Program for private, hobby, educational and research purposes,
+  b) copy, modify and extend the Program,
+  c) share the Program and modified versions with third parties, provided
+     that such sharing is free of charge.
+
+------------------------------------------------------------------------------
+3. WARUNKI / CONDITIONS
+------------------------------------------------------------------------------
+Dozwolony użytek jest ważny tylko wtedy, gdy spełnione są łącznie warunki:
+  a) informacja o autorze (nazwa "kruzio1985", adres
+     https://github.com/kruzio1985 oraz niniejsza licencja) pozostaje
+     niezmieniona w kodzie źródłowym, nagłówkach plików i dokumentacji,
+  b) zmodyfikowane wersje Programu są udostępniane na warunkach tej samej
+     licencji, z wyraźnym zaznaczeniem wprowadzonych zmian,
+  c) żaden plik Programu ani jego pochodna nie jest sprzedawana, wynajmowana,
+     udostępniana w modelu subskrypcyjnym ani oferowana jako część
+     komercyjnego produktu lub usługi.
+
+The permitted use is valid only if all of the following conditions are met:
+  a) the attribution (the name "kruzio1985", https://github.com/kruzio1985 and
+     this licence) stays unchanged in the source code, file headers and
+     documentation,
+  b) modified versions are distributed under this same licence, with a clear
+     note describing the changes,
+  c) no file of the Program or any derivative is sold, rented, offered in a
+     subscription model or included in a commercial product or service.
+
+------------------------------------------------------------------------------
+4. UŻYTEK KOMERCYJNY / COMMERCIAL USE
+------------------------------------------------------------------------------
+Użytek komercyjny (w szczególności sprzedaż urządzeń z Programem, usługi
+instalacyjne i serwisowe, model SaaS, szkolenia za opłatą, wykorzystanie
+w reklamie zarobkowej) wymaga wcześniejszej pisemnej zgody Autora.
+Warunki licencji komercyjnej ustala się indywidualnie - napisz na adres
+podany w nagłówku tego pliku lub przez GitHub.
+
+Any commercial use (in particular selling devices running the Program,
+paid installation and service work, SaaS, paid training, commercial
+advertising) requires the prior written consent of the Author. Commercial
+terms are agreed individually - contact the Author using the address in the
+header of this file or via GitHub.
+
+------------------------------------------------------------------------------
+5. KOMPONENTY ZEWNĘTRZNE / THIRD-PARTY COMPONENTS
+------------------------------------------------------------------------------
+Program korzysta z bibliotek i komponentów zewnętrznych (m.in. ArduinoJson,
+ESPAsyncWebServer, AsyncTCP, PubSubClient, Adafruit BME280 Library, Adafruit
+Unified Sensor, Adafruit BusIO, Adafruit NeoPixel, OneWire, DallasTemperature,
+rdzeń Arduino-ESP32, ESP-IDF). Każdy z nich objęty jest własną licencją i jej
+warunki mają pierwszeństwo dla tych plików. Lista wersji i licencji znajduje
+się na stronie stacji w zakładce "Informacje" oraz w pliku README.md.
+
+The Program uses third-party libraries and components. Each of them is
+covered by its own licence and those terms take precedence for those files.
+The list of versions and licences is available in the station's web interface
+in the "Information" tab and in README.md.
+
+------------------------------------------------------------------------------
+6. BRAK GWARANCJI / NO WARRANTY
+------------------------------------------------------------------------------
+PROGRAM JEST UDOSTĘPNIANY "TAK JAK JEST" (AS IS), BEZ JAKIEJKOLWIEK
+GWARANCJI - WYRAŹNEJ ANI DOROZUMIANEJ, W TYM BEZ GWARANCJI PRZYDATNOŚCI DO
+OKREŚLONEGO CELU, POPRAWNOŚCI POMIARÓW I NIENARUSZANIA PRAW OSÓB TRZECICH.
+Ryzyko korzystania z Programu ponosi wyłącznie użytkownik.
+
+THE PROGRAM IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO FITNESS FOR A PARTICULAR PURPOSE,
+ACCURACY OF MEASUREMENTS AND NON-INFRINGEMENT. THE ENTIRE RISK ARISING OUT OF
+THE USE OF THE PROGRAM REMAINS WITH THE USER.
+
+------------------------------------------------------------------------------
+7. ODPOWIEDZIALNOŚĆ I BEZPIECZEŃSTWO / LIABILITY AND SAFETY
+------------------------------------------------------------------------------
+Autor nie odpowiada za jakiekolwiek szkody wynikające z używania Programu,
+w tym za utratę danych, uszkodzenie sprzętu ani skutki decyzji podjętych na
+podstawie wskazań stacji. Pomiary stacji mają charakter amatorski i NIE
+ZASTĘPUJĄ oficjalnych ostrzeżeń i prognoz meteorologicznych.
+
+The Author shall not be liable for any damages arising from the use of the
+Program, including data loss, hardware damage or consequences of decisions
+taken on the basis of the station's readings. The readings are amateur
+measurements and DO NOT REPLACE official weather warnings and forecasts.
+
+------------------------------------------------------------------------------
+8. PRAWO WŁAŚCIWE / GOVERNING LAW
+------------------------------------------------------------------------------
+Do niniejszej licencji stosuje się prawo polskie. Jeżeli którekolwiek
+postanowienie okaże się nieważne, pozostałe postanowienia pozostają w mocy.
+
+This licence is governed by Polish law. If any provision is found invalid, the
+remaining provisions stay in force.
+
+------------------------------------------------------------------------------
+Pełny tekst w języku angielskim znajduje się powyżej, w tej samej sekcji
+każdego punktu. W razie wątpliwości rozstrzygające jest brzmienie oryginału
+polskiego. / In case of doubt, the Polish wording prevails.

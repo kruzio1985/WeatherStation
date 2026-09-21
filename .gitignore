@@ -1,0 +1,16 @@
+# PlatformIO - pliki budowania
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Gotowe pliki do wgrania (buduje tools/build_release.ps1)
+dist/
+
+# Pamięć podręczna Pythona (tools/*.py)
+__pycache__/
+*.pyc
+
+# Systemy operacyjne
+.DS_Store
+Thumbs.db
+desktop.ini
