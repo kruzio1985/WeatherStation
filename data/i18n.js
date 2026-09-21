@@ -1,7 +1,7 @@
 /* =============================================================================
  * Stacja Pogody - stacja meteorologiczna na ESP32-S3 WROOM-1 (N16R8)
  * Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
- * Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+ * Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
  * Użytek niekomercyjny. Kontakt: kruzio1985@users.noreply.github.com
  * =============================================================================
  */
@@ -1466,7 +1466,7 @@
     'Projekt: Stacja Pogody - stacja meteo z własną stroną www, logowaniem danych i integracją z Home Assistant': ['Project: Stacja Pogody - a weather station with its own web interface, data logging and Home Assistant integration', 'Projekt: Stacja Pogody - eine Wetterstation mit eigener Weboberfläche, Datenprotokollierung und Home-Assistant-Integration'],
     'Projekt powstał jako prywatne hobby i rozwijam go we własnym czasie.': ['The project started as a private hobby and I develop it in my own time.', 'Das Projekt entstand als privates Hobby und ich entwickle es in meiner Freizeit.'],
     'Licencja': ['Licence', 'Lizenz'],
-    'Projekt udostępniam na własnej licencji Stacja Pogody Non-Commercial License 1.0.': ['I release the project under my own licence, the Stacja Pogody Non-Commercial License 1.0.', 'Ich veröffentliche das Projekt unter meiner eigenen Lizenz, der Stacja Pogody Non-Commercial License 1.0.'],
+    'Projekt udostępniam na licencji PolyForm Noncommercial License 1.0.0.': ['I release the project under the PolyForm Noncommercial License 1.0.0.', 'Ich veröffentliche das Projekt unter der PolyForm Noncommercial License 1.0.0.'],
     'Kod, stronę www i dokumentację możesz używać, kopiować i zmieniać do celów niekomercyjnych, zachowując informację o autorze.': ['You may use, copy and modify the code, the web interface and the documentation for non-commercial purposes, as long as you keep the author information.', 'Du darfst den Code, die Weboberfläche und die Dokumentation für nicht kommerzielle Zwecke nutzen, kopieren und ändern, solange die Angaben zum Autor erhalten bleiben.'],
     'Użytek komercyjny wymaga pisemnej zgody autora.': ['Commercial use requires the written consent of the author.', 'Die kommerzielle Nutzung erfordert die schriftliche Zustimmung des Autors.'],
     'Informacja o autorze i licencji jest też w nagłówku każdego pliku źródłowego projektu.': ['The author and licence notice is also present in the header of every source file of the project.', 'Der Autor- und Lizenzhinweis steht auch im Kopf jeder Quelldatei des Projekts.'],

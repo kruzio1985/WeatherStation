@@ -1,6 +1,6 @@
 # Stacja Pogody - węzeł na płytce z 8 MB flash (ESP32-S3-WROOM-1 N8Rx)
 # Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
-# Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+# Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
 # Name,   Type, SubType, Offset,   Size,    Flags
 # 8 MB (0x800000) flashu: dwa sloty OTA po 3 MiB + 1.88 MiB na LittleFS.
 # Pliki www zajmują ~0.47 MB, więc na system plików zostaje zapas, ale katalog

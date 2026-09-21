@@ -1,11 +1,9 @@
-/* =============================================================================
- * Stacja Pogody - stacja meteorologiczna na ESP32-S3 WROOM-1 (N16R8)
- * Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
- * Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
- * Użytek niekomercyjny. Kontakt: kruzio1985@users.noreply.github.com
- * =============================================================================
- */
-# 🌤️ Stacja Pogody — ESP32-S3 WROOM-1 N16R8
+# 🌤️ Weather Station — ESP32-S3 WROOM-1 N16R8
+
+> 🇵🇱 [Polska wersja](#polski) &nbsp;·&nbsp; 🇬🇧 [English version](#english)
+>
+> *Autor / Author: **kruzio1985** — [github.com/kruzio1985](https://github.com/kruzio1985)*
+> *Licencja / Licence: [PolyForm Noncommercial License 1.0.0](LICENSE)*
 
 Kompletna stacja pogodowa z interfejsem WWW, wysyłką do Home Assistant przez MQTT
 (auto-discovery), logowaniem na karcie microSD i wykresami (dni/tygodnie/miesiące/lata).
@@ -13,6 +11,321 @@ Kompletna stacja pogodowa z interfejsem WWW, wysyłką do Home Assistant przez M
 > **Stan projektu:** czujniki nie są jeszcze zlutowane. Kod jest gotowy do wgrania —
 > każdy czujnik jest **opcjonalny** i wykrywany przy starcie. Brak czujnika nie powoduje
 > błędu, po prostu nie pojawia się na stronie ani w MQTT.
+
+<a id="english"></a>
+
+## 🇬🇧 English — full description
+
+A complete weather station with a web interface, MQTT publishing to Home Assistant
+(auto-discovery), logging to a microSD card and charts (day/week/month/year).
+
+> **Project status:** the sensors are not soldered yet. The code is ready to flash — every sensor
+> is **optional** and detected at boot. A missing sensor does not cause an error; it simply does
+> not appear on the page or in MQTT.
+
+### Features
+
+- **Side menu with submenus** — navigation is scrollable on the left and grouped:
+  **Forecast** (local forecast, sun & moon, charts), **Sensors** (sensors, GPS),
+  **Settings** (configuration, calibration, pins, RTC clock, services, network, SD card, update,
+  public page) and **System** (logs, diagnostics, information); groups expand/collapse and on
+  narrow screens the menu hides behind the **☰** button.
+- **Dashboard** — live overview of all sensors, split into **zones: indoor / outdoor**
+  (+ a wind-direction card as a N/NE/E… compass).
+- **Calibration** — offset, custom name and zone for every channel.
+- **External sensors** — OneWire bus scan, up to 8× DS18B20.
+- **Configuration** — station, time/timezone (zone list + custom POSIX TZ string), NTP server
+  and the Home Assistant / MQTT configurator (broker address, account, token) with a connection test.
+- **Weather services** — simultaneous upload to **Weather Underground, PWSWeather, Windy,
+  OpenWeather, ThingSpeak and a custom URL** (keys and interval set on the web page, a
+  *Send now* button, an **outdoor-sensors-only** option and a main temperature channel selector).
+- **Air quality** — indoor CO₂ / eCO₂ / TVOC (SCD4x + SGP30, auto-detection).
+- **Pins** — GPIO assignment editor in the web UI: a single pin list laid out like the PCB
+  (left column J1, right column J3), a function picker with a description per pin,
+  conflict/reserved-pin checking and *Save & restart / Refresh / Restore defaults* buttons
+  (stored in NVS).
+- **Sensor legend** — below the pin list: the sensors whose drivers are currently compiled into
+  the firmware, with bus, wiring hint, parameters and calibration method. Catalog entries without
+  a driver are hidden by default (revealed by the *Show sensors without a driver* toggle).
+  Bus tiles filter the list and **highlight the pins** used by a given bus; clicking a pin shows
+  which sensors can be attached to it. Legend source: [docs/CZUJNIKI.md](docs/CZUJNIKI.md) →
+  generator [tools/gen_legend.py](tools/gen_legend.py) → `data/legend.js`.
+- **SD card** — file preview, download, delete and format from the web UI, plus a
+  *Re-detect card* button (`POST /api/sd/remount` — remounts SPI/SDMMC without a reboot;
+  interface and pin numbers are visible in the tab and in `/api/status`).
+- **CSV logs** — `timestamp,datetime,temp,hum,press,light,ds0..ds7,rain,wind,vane,pm1,pm25,pm10,co2,eco2,tvoc`
+  plus mirrored `xN_*` columns from RS485 nodes (full legend: [docs/CZUJNIKI.md](docs/CZUJNIKI.md)).
+  Files live in `/logs/YYYY-MM.csv`; the `/logs` directory is created automatically (even on a
+  fresh card). Sensors from the new modular drivers (those without their own column in the wide
+  file) are stored in parallel in the **long journal** `/logs/extra-YYYY-MM.csv` as
+  `timestamp,datetime,id,value` — so every new sensor works on charts and in logs without
+  changing the CSV header.
+- **Charts** — daily / weekly / monthly / yearly (mean, min, max).
+- **RGB LED ring (RGBIC)** — 36 WS2812B LEDs show the weather condition by colour (colours are
+  editable on the page); brightness is set manually and remembered (**LED RGB** tab).
+- **PL / EN / DE languages** — a language switch in the header; the choice is remembered in the
+  browser and the whole page (tabs, messages, charts) translates live.
+- **Settings in NVS** — Wi-Fi, pins, calibration, MQTT and ring settings live in the NVS
+  partition, so they **survive firmware updates and `uploadfs`**.
+- **Public page** — `http://<ip>/public.html` with company advertising (temperature, humidity,
+  PM2.5, etc.).
+- **Network** — Wi-Fi settings (client + access point), static IP, network scan.
+- **Update (OTA)** — firmware and filesystem upload from the browser (with a progress bar) or via
+  `espota` from a computer.
+- **Logs** — live view of the station work log (start, Wi-Fi, MQTT, SD, errors), download and clear.
+- **Diagnostics** — cards with memory, network, MQTT, OTA and sensors (chip temperature, reset reason).
+- **Backup** — export/import of the whole configuration to/from a JSON file.
+- **Home Assistant** — automatic sensor discovery via MQTT discovery.
+- **RS485 nodes** — the **ESP & RS485 bus** tab: the bus (master/node role, addresses, speed),
+  a node list and each node with its external sensors (pins, channel calibration, configuration,
+  log, diagnostics, actions such as reboot or time sync). Node data reaches the dashboard, charts,
+  SD-card CSV files and Home Assistant.
+- **PSRAM** — large JSON documents, file lists and the log buffer go to the 8 MB PSRAM (smooth UI).
+
+### Supported sensors and drivers
+
+| Group | Models (✅ = driver already in code, 🟡 = ready to add) |
+|---|---|
+| Temperature | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ thermocouples K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614/90615 (via `drv_motion`) · 🟡 BME680/688, SHT3x/85, AHT1x/2x, HDC1080/2010, TMP117, MCP9808, NTC, MLX90632/90640/90641, Si7051 |
+| Humidity | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · 🟡 SHT3x/85, AHT2x, HDC2xxx |
+| Pressure | ✅ BME280 · ✅ BMP581 · 🟡 BMP180/280/380/388/390, DPS310/368, LPS22/28, MPL3115A2, MS5611 |
+| Rain | ✅ tipping-bucket (reed switch) + Hall/reed · 🟡 FC-37/YL-83, optical, weighing (HX711) |
+| Wind (speed) | ✅ pulse/reed anemometer · 🟡 ultrasonic, differential pressure (Pitot) |
+| Wind (direction) | ✅ ADC wind vane (16 directions, compass) · ✅ AS5600 (12-bit I²C encoder) · 🟡 AS5048A/B, AS5047P, MT6701, MA730/732, TLE5012B |
+| Magnetometers | ✅ MMC5983MA (azimuth) · ✅ QMC5883L · ✅ HMC5883L · 🟡 HMC5983, LIS3MDL, LIS2MDL, MMC5603, BMM150/350, AK09918 |
+| Hall sensors | ✅ reed switches · 🟡 A3144, AH3144, SS49E, A132x, DRV5032/5033/5055/5056, TMAG3001/5170 |
+| Light (lux) | ✅ BH1750 · ✅ VEML7700 · 🟡 OPT3001/3002, LTR-329/303, TSL2591/2561, ISL29125, TCS34725 |
+| UV | ✅ LTR-390UV (UVS channel) · 🟡 VEML6070, VEML6075, SI1145, GUVA-S12SD, GY-ML8511 |
+| Pyranometer | ✅ calibrated cell via ADC or ADS1115 (W/m²) · 🟡 cell + shunt, MLX90614 pointed at the sky |
+| Soil | ✅ DS18B20 · ✅ analogue YL-69 / capacitive probe (dry/wet calibration) · 🟡 SHT in soil, tensiometers, **SDI-12**, Modbus/RS485 (NPK, pH, EC) |
+| Analog inputs | ✅ ADS1115 ×4 (16-bit, I²C 0x48–0x4B; channels `ads_0…ads_3` off by default) · ✅ MCP3008 (10-bit) / MCP3208 (12-bit) ×8 on bit-bang SPI (own `adc_cs` line, shared `tc_sck/tc_mosi/tc_miso` with thermocouples) |
+| Particulate matter | ✅ PMS5003/7003/6003 · ✅ SPS30 · ✅ SEN50/54/55 (SEN5x) · 🟡 PMSA003I, SDS011/018, HPMA115, OPC-N3 |
+| VOC / IAQ | ✅ SGP30 (eCO₂ + TVOC) · 🟡 BME680/688, SGP40/41, ENS160/161, CCS811 |
+| CO₂ | ✅ **SCD30/40/41** (NDIR) · 🟡 SenseAir S8, Sunrise, MH-Z19B/C/D |
+| Gases | ✅ MQ-2/3/4/5/6/7/8/9/131/135/136/137 (R0, RL, ppm chart) · ✅ MiCS-4514 (CO) / MiCS-6814 (NO₂) · ✅ TGS2600 · 🟡 TGS2602/2611, electrochemical cells |
+| IR temperature | ✅ MLX90614/90615 · 🟡 MLX90632/90640/90641, AMG8833 |
+| Water / snow level | ✅ VL53L0X / VL53L1X · 🟡 **L4CD**/**L5CX**/L7CX, HC-SR04, JSN-SR04T, A02YYUW, 4–20 mA hydrostatic probes |
+| IMU | ✅ MPU6050/6500/9250/9255, LIS3DH, ADXL345 · 🟡 MPU6886, LIS2DW12, ADXL355, ICM-42688, BMI270, BNO055/085/086 |
+| GPS | ✅ NEO-6M/7M/8M/M8N/M8Q/M9N/M9V, ATGM336H, L76K, L86, GT-U7 (NMEA 0183 over UART, time source) · 🟡 ZED-F9P (RTK/UBX), modules without NMEA |
+| Sun | 🟡 Sun position (altitude, azimuth), sunrise/sunset, clear-sky factor |
+| Power | ✅ ACS712 / ACS758 (current and power) · ✅ battery voltage measurement · 🟡 INA219/226/228/238/3221, MAX17048/49/55, LC709203F |
+| Garden | ✅ leaf wetness **or** icing (one input, two channels) · 🟡 PAR (S2-131), daily rain counter |
+| Radar / presence | 🟡 HLK-LD2410, **LD2450**, LD2461 |
+| Sound / audio | ✅ I²S microphone INMP441 / ICS-43434 / SPH0645 (`snd_level`, `snd_peak`, `snd_leq`) · ✅ MAX98357A (TX installation) · 🟡 PDM/analogue |
+| Station modules | ✅ WS2812B 36 px, microSD 8 GB · 🟡 OLED SSD1306/SH1106, LCD1602/2004, TFT/e-ink, buzzer/relay |
+
+> Extra drivers (I²C/analog): **SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600,
+> ADS1115** (`src/drv_i2c.*`) and **SEN5x / SPS30** (`src/drv_pm.*`); the layer that connects
+> them to channels, calibration and CSV is [src/sensors_extra.cpp](src/sensors_extra.cpp).
+> Each one auto-detects at boot — no hardware = no channel, no error.
+
+### Pin map (defaults)
+
+| Module | Pins |
+|---|---|
+| I²C (BME280/BME680, SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600, ADS1115, SCD4x, SGP30, SEN5x/SPS30, BH1750, AS3935) | SDA=8, SCL=9 |
+| DS18B20 (OneWire) | 4 |
+| Rain gauge | 5 (interrupt) |
+| Anemometer | 6 (interrupt) |
+| Wind vane (ADC) — disable for AS5600 | 1 |
+| Soil moisture probe (ADC1) | 2 |
+| Thermocouples / RTD / MCP3008-3208 (bit-bang SPI) | `tc_sck`, `tc_mosi`, `tc_miso` shared + separate CS lines: `tc_cs` (MAX6675/MAX31855), `rtd_cs` (MAX31865), `adc_cs` (MCP3008/MCP3208) — default −1, set in the pin editor |
+| Gases (MQ / MiCS / TGS), leaf wetness, ACS712/758 | `gas_adc`, `gas_adc2`, `leaf_adc`, `acs_adc` — default −1; each can also read from ADS1115 (`*_ads_ch`) |
+| I²S microphone / MAX98357A amplifier | `i2s_bclk`, `i2s_ws`, `i2s_din` / `i2s_dout` — default −1 |
+| Pyranometer (ADC1) | −1 = disabled |
+| PMS5003 (UART2) | RX=18, TX=17 |
+| GPS (UART1, NMEA) | RX=15, TX=16 |
+| AS3935 lightning detector | 14 (interrupt) |
+| DHT11 / DHT22 / AM2302 (1-Wire) | 42 (+ 4.7 kΩ pull-up to 3V3) |
+| SD (SPI, default) | CS=10, SCK=12, MOSI=11, MISO=13 |
+| SDMMC 1-bit (option, off by default) | CLK=40, CMD=41, D0=42 — conflicts with DHT22 |
+| LED / button | 21 / 0 (BOOT) |
+| RGB LED ring | 7 (WS2812B data; 5 V and GND from the board) |
+
+All of these can be changed **without recompiling** — the **Pins** tab on the web page (stored in
+NVS + a `config.json` copy, applied after restart). [include/pins.h](include/pins.h) holds only
+the default values.
+
+> ⚠️ **N16R8 (QIO flash + octal PSRAM):** GPIO 26–37 are occupied by flash/PSRAM. Do not use
+> them for sensors. The SD card runs over SPI (CS=10, SCK=12, MOSI=11, MISO=13); the optional
+> SDMMC 1-bit mode uses GPIO 40–42 — if you enable it, move DHT22 away from GPIO 42.
+
+### Build & flash
+
+1. Install [PlatformIO](https://platformio.org/) (VS Code + PlatformIO IDE extension).
+2. Open the project folder in VS Code.
+3. Build and upload (board over USB):
+   ```
+   pio run -t upload
+   ```
+4. Upload the web filesystem:
+   ```
+   pio run -t uploadfs
+   ```
+5. Serial monitor:
+   ```
+   pio device monitor
+   ```
+
+#### Over-the-air update (no USB cable)
+
+Two ways:
+
+1. **From the browser** — **Update** tab: pick `firmware.bin` from `.pio/build/esp32s3/`
+   (type: *Program*) or `littlefs.bin` (type: *Web page*), enter the OTA password and press *Upload*.
+2. **From a computer (espota)** — first set the OTA password in the *Update* tab:
+   ```
+   pio run -e esp32s3-ota -t upload
+   ```
+   The default password in [platformio.ini](platformio.ini) is `stacja-ota` (`upload_flags = --auth`).
+
+> Warning: with an empty OTA password anyone on the same network can flash the firmware.
+
+- The image size is taken from the browser request, so only the needed range is erased — a firmware
+  update takes several seconds, the 9.94 MB web filesystem about a minute.
+- The filesystem image is automatically trimmed to the partition size.
+- The upload is guarded: if the browser tab is closed or Wi-Fi drops, the station aborts the upload
+  after 20 s of silence and keeps working (progress: `GET /api/ota/info`, diagnostics:
+  `GET /api/ota/diag`).
+- An update **does not erase NVS** — settings, pins and calibration remain.
+- `espota` works by IP address (`pio run -e esp32s3-ota -t upload`); do not keep a serial monitor
+  open on COM9 at the same time, because opening the port reboots the board and aborts the upload.
+
+#### Board variants (master and node)
+
+The main station (master) is built only for **N16R8** — it needs PSRAM for the log buffer and
+9.94 MB LittleFS for the web page. **A node can be a different, cheaper board** — just pick a
+ready PlatformIO environment and flash a file from `dist\`. The release contains **three
+binaries**: master, S3 8 MB node (N8R4/N8R2) and C3 SuperMini node — that covers a whole install.
+
+| Environment | Board | Flash / PSRAM | Partitions | Notes |
+|---|---|---|---|---|
+| `esp32s3-master` | ESP32-S3 WROOM-1 **N16R8** | 16 MB / 8 MB octal | `partitions.csv` | main station: www, MQTT, OTA, SD card |
+| `esp32s3-node-8mb-quad` | ESP32-S3 **N8R4 / N8R2** | 8 MB / 4 or 2 MB quad | `partitions-8mb.csv` | **recommended node** — quad PSRAM (`qio_qspi`), full pin list |
+| `esp32c3-node` | **ESP32-C3 SuperMini** | 4 MB / no PSRAM | `partitions-4mb.csv` | node only: no SD card and no PMS5003 (options hidden/disabled); factory address 2 |
+| `esp32c3-node-addr3` … `-addr8` | as above | | | same binary with `-DSTACJA_NODE_ADDR=N` — factory address 3…8 for extra modules |
+| `esp32s3-node` | ESP32-S3 **N16R8** | 16 MB / 8 MB octal | `partitions.csv` | node on a second identical board — **no ready binary**, build manually |
+| `esp32s3-node-8mb` | ESP32-S3 **N8R8** | 8 MB / 8 MB octal | `partitions-8mb.csv` | 8 MB module with octal PSRAM — **no ready binary**, build manually |
+
+**Does the node have to match the master?** No. The `n8r4` version is enough because a node does
+not serve the web page or MQTT — firmware is the biggest memory consumer there. Pins and drivers
+are **the same** (identical function table), so you can attach all sensors to a node. Limitations
+of the smaller boards: the C3 has fewer GPIOs (max 21), only one ADC free of Wi-Fi and **does not
+support microSD** or the PMS5003 particle sensor (needs a third UART).
+
+Ready-made files (firmware + web) are assembled by:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
+powershell -ExecutionPolicy Bypass -File tools\build_release.ps1 -PublishNode
+```
+
+Output goes to `dist\` (`…-master-16mb.bin`, `…-node-8mb-quad.bin`, `…-node-c3-4mb.bin`,
+**`…-node-c3-4mb-addr3.bin` … `-addr8.bin`** (C3 nodes with a factory address), `-ota.bin`
+variants and two LittleFS images: `…-www-16mb.bin` (page + node binaries) and `…-www-8mb.bin`
+(page only). Files without `-ota` are flashed **from address 0x0** and **erase NVS** (a new
+board); use `-ota.bin` to update a running station.
+
+### First run
+
+After flashing, the station starts an access point **StacjaPogody** — connect to it and open
+`http://192.168.4.1` to configure Wi-Fi. The **Network** tab sets the router SSID/password, the
+mDNS name (`<hostname>.local`) and, optionally, a **static IP** (IP, gateway, mask, DNS).
+After saving, the station reboots; if the new address is unreachable, go back to
+`http://192.168.4.1`. The station (ESP32-S3) sees **2.4 GHz networks only**.
+
+### Sensor zones (indoor / outdoor)
+
+Every measurement channel has a **zone**: `indoor` or `outdoor`. You change it in the
+**Calibration** tab (the **Zone** column) and the change applies **immediately, without a reboot**.
+The dashboard groups cards under *Indoor* and *Outdoor* headings, and weather services can upload
+**outdoor sensors only**.
+
+### Home Assistant
+
+In `configuration.yaml` only the MQTT broker is required:
+
+```yaml
+mqtt:
+  broker: <broker IP>
+```
+
+The station publishes discovery to `homeassistant/sensor/<prefix>_<id>/config`, so sensors appear
+automatically. State on `<prefix>/sensor/<id>/state`, availability on `<prefix>/status`.
+
+- In Home Assistant use the **Mosquitto broker** add-on; as the user, create a dedicated account for
+  the station and paste a **long-lived access token** as the password (Profile → Long-lived tokens).
+- The **Configuration** tab has a connection test with the result, e.g.
+  `Connected to 192.168.1.10:1883 (41 ms)`.
+
+**Weather services** (**Services** tab): Weather Underground, PWSWeather, Windy, OpenWeather,
+ThingSpeak and a custom GET URL — interval (min 30 s, default 300 s), *Transfer active* switch,
+*Send now* button, `all sensors` or `outdoor sensors only`, and a main temperature channel selector.
+
+### Logs and diagnostics
+
+- `GET /api/syslog` — full text log (PSRAM buffer, ~48 kB, oldest lines dropped).
+- `DELETE /api/syslog` — clears the buffer.
+- `GET /api/diagnostics` — JSON cards: System, Memory, Storage, Network, MQTT/HA, OTA, Sensors.
+- The **Logs** tab refreshes every 2 s, shows up to 600 lines and colour-codes them.
+
+### Backup and NVS settings
+
+- `GET /api/backup` — downloads the whole configuration as `stacja-pogody-ustawienia.json`.
+- `POST /api/backup/restore` — restores the configuration from JSON (Configuration tab).
+- Settings (Wi-Fi/AP, static IP, pins, channel calibration, MQTT/HA, timezone, LED ring) are stored
+  in the **NVS partition** by [src/nvs_store.cpp](src/nvs_store.cpp), so firmware updates and
+  `uploadfs` **do not erase them**; a factory reset (Configuration tab) clears NVS together with
+  the files.
+
+### Calibration (after soldering)
+
+Offsets and constants: BME280 temperature offset, `RAIN_MM_PER_TIP`, `ANEM_KMH_PER_HZ`, wind-vane
+ADC thresholds, soil dry/wet voltages (`soil_dry_v`, `soil_wet_v`), `solar_mv_wm2`, magnetic
+declination `mag_decl` — set in the **Calibration** tab / [src/sensors.cpp](src/sensors.cpp).
+Full per-sensor details (I²C addresses, parameters, calibration, CSV columns):
+[docs/CZUJNIKI.md](docs/CZUJNIKI.md).
+
+### Languages (PL / EN / DE)
+
+The whole web page works in three languages — the **Language / Sprache** switch in the header; the
+choice is stored in `localStorage`. Mechanism: [data/i18n.js](data/i18n.js) with `SLOWNIK`
+(dictionary), `FRAZY` (longest phrases) and `REGEX` (dynamically built strings). Coverage check:
+`node tools/analyze_i18n.js`.
+
+### RS485 nodes (external sensors)
+
+The station can poll **one or several modules** (e.g. an ESP32-C3 SuperMini) over the data line —
+currently a direct 3-wire TTL line (TX↔RX + common GND, no MAX485 converter). A node is built from
+**the same code** as the master (role selected in configuration) and is **headless**
+(`-DSTACJA_HEADLESS=1`): it reads sensors, serves the RS485 bus and logs to SD without Wi-Fi, AP,
+MQTT, weather services, web or OTA. All node channels are mirrored on the master as `xN_<id>`
+(N = node address), so they reach the dashboard, LED ring, Home Assistant, charts and CSV.
+
+Master wiring (defaults): TX GPIO 38 → node RX 20, RX GPIO 39 → node TX 21, common GND (the full
+table and troubleshooting are in the Polish section below).
+
+### Screenshots
+
+Full-page screenshots of the **English** interface are in the **Zrzuty ekranu / Screenshots**
+section below (all 24 tabs: dashboard, forecast, sun & moon, charts, records, reports, sensors,
+GPS, camera, configuration, calibration, alerts, pins, RTC, services, network, SD card, OTA,
+public page, LED ring, RS485 bus, logs, diagnostics, information).
+
+### License
+
+© 2026 Kruzio. Published under the **PolyForm Noncommercial License 1.0.0** — non-commercial use,
+copying and modification are allowed; you must keep the copyright notice and, for derivative works,
+state your changes and link to this repository. Commercial use requires the author's written
+consent. Full text: [LICENSE](LICENSE) (identical to [data/LICENSE.txt](data/LICENSE.txt), served
+by the station as `/LICENSE.txt`). Third-party libraries keep their own licences (table in the
+Polish section below).
+
+---
+
+<a id="polski"></a>
+
+## 🇵🇱 Polski — pełny opis
 
 ## Funkcje
 
@@ -469,53 +782,101 @@ Poniżej pełny podgląd strony www w wersji **angielskiej** (przełącznik
 oraz wszystkie zakładki konfiguracji, kalibracji, czujników, GPS, kamery,
 wykresów, logów i karty SD.
 
-| Pulpit | Prognoza lokalna |
-|---|---|
-| ![Dashboard](docs/images/dashboard.png) | ![Forecast](docs/images/forecast.png) |
+### Dashboard / Pulpit
 
-| Słońce i Księżyc | Wykresy |
-|---|---|
-| ![Sun and Moon](docs/images/astro.png) | ![Charts](docs/images/charts.png) |
+![Dashboard](docs/images/dashboard.png)
 
-| Rekordy i statystyki | Raporty min/śr./maks. |
-|---|---|
-| ![Records](docs/images/records.png) | ![Reports](docs/images/reports.png) |
+### Forecast / Prognoza lokalna
 
-| Czujniki | GPS |
-|---|---|
-| ![Sensors](docs/images/sensors.png) | ![GPS](docs/images/gps.png) |
+![Forecast](docs/images/forecast.png)
 
-| Kamera | Konfiguracja |
-|---|---|
-| ![Camera](docs/images/camera.png) | ![Configuration](docs/images/config.png) |
+### Sun and Moon / Słońce i Księżyc
 
-| Kalibracja | Alarmy |
-|---|---|
-| ![Calibration](docs/images/calibration.png) | ![Alerts](docs/images/alerts.png) |
+![Sun and Moon](docs/images/astro.png)
 
-| Piny | Zegar RTC |
-|---|---|
-| ![Pins](docs/images/pins.png) | ![RTC](docs/images/rtc.png) |
+### Charts / Wykresy
 
-| Serwisy (wysyłka danych) | Sieć Wi-Fi |
-|---|---|
-| ![Services](docs/images/services.png) | ![Network](docs/images/network.png) |
+![Charts](docs/images/charts.png)
 
-| Karta SD | Aktualizacja OTA |
-|---|---|
-| ![SD card](docs/images/sd.png) | ![Update](docs/images/ota.png) |
+### Records / Rekordy i statystyki
 
-| Strona publiczna | Pierścień LED RGB |
-|---|---|
-| ![Public](docs/images/public.png) | ![LED ring](docs/images/ring.png) |
+![Records](docs/images/records.png)
 
-| Magistrala RS485 / węzły | Logi |
-|---|---|
-| ![RS485](docs/images/esp485.png) | ![Logs](docs/images/logs.png) |
+### Reports / Raporty min/śr./maks.
 
-| Diagnostyka | Informacje |
-|---|---|
-| ![Diagnostics](docs/images/diag.png) | ![Information](docs/images/info.png) |
+![Reports](docs/images/reports.png)
+
+### Sensors / Czujniki
+
+![Sensors](docs/images/sensors.png)
+
+### GPS
+
+![GPS](docs/images/gps.png)
+
+### Camera / Kamera
+
+![Camera](docs/images/camera.png)
+
+### Configuration / Konfiguracja
+
+![Configuration](docs/images/config.png)
+
+### Calibration / Kalibracja
+
+![Calibration](docs/images/calibration.png)
+
+### Alerts / Alarmy
+
+![Alerts](docs/images/alerts.png)
+
+### Pins / Piny
+
+![Pins](docs/images/pins.png)
+
+### RTC clock / Zegar RTC
+
+![RTC clock](docs/images/rtc.png)
+
+### Weather services / Serwisy wysyłki
+
+![Weather services](docs/images/services.png)
+
+### Network / Sieć Wi-Fi
+
+![Network](docs/images/network.png)
+
+### SD card / Karta SD
+
+![SD card](docs/images/sd.png)
+
+### Update (OTA) / Aktualizacja
+
+![Update](docs/images/ota.png)
+
+### Public page / Strona publiczna
+
+![Public page](docs/images/public.png)
+
+### LED ring / Pierścień LED RGB
+
+![LED ring](docs/images/ring.png)
+
+### RS485 bus / Magistrala RS485
+
+![RS485 bus](docs/images/esp485.png)
+
+### Logs / Logi
+
+![Logs](docs/images/logs.png)
+
+### Diagnostics / Diagnostyka
+
+![Diagnostics](docs/images/diag.png)
+
+### Information / Informacje
+
+![Information](docs/images/info.png)
 
 > Zrzuty wykonano z żywego urządzenia (master, IP `192.168.1.143`). Wartości
 > czujników na obrazkach są przykładowe i zależą od podłączonego sprzętu.
@@ -741,9 +1102,10 @@ wszystkie ścieżki odczytu. Koszt: kilka dodatkowych transferów na jedno żąd
 
 - **Autor i właściciel praw autorskich:** kruzio1985 — [github.com/kruzio1985](https://github.com/kruzio1985)
 - **Kontakt:** kruzio1985@users.noreply.github.com
-- **Licencja:** [Stacja Pogody Non-Commercial License 1.0](LICENSE) — kod, strona www i dokumentacja
+- **Licencja:** [PolyForm Noncommercial License 1.0.0](LICENSE) — kod, strona www i dokumentacja
   mogą być używane, kopiowane i zmieniane **tylko niekomercyjnie**, z zachowaniem informacji
-  o autorze. **Użytek komercyjny wymaga pisemnej zgody autora.**
+  o autorze (w tym linku do tego repozytorium w pracach pochodnych).
+  **Użytek komercyjny wymaga pisemnej zgody autora.**
 - **Pełny tekst licencji na stacji:** zakładka **Informacje** → przycisk *Pełny tekst licencji*
   (plik serwowany jako `/LICENSE.txt` — LittleFS rozróżnia wielkość liter) albo w repozytorium
   [data/LICENSE.txt](data/LICENSE.txt).
@@ -782,7 +1144,7 @@ oraz listę wykorzystanych bibliotek wraz z ich wersjami i licencjami.
 | Arduino-ESP32 (rdzeń) | 3.x | LGPL-2.1 |
 | ESP-IDF | 5.x | Apache-2.0 |
 
-Licencja Stacji Pogody dotyczy **tylko kodu tego projektu**. Każda biblioteka ma własne warunki
+Licencja PolyForm Noncommercial dotyczy **tylko kodu tego projektu**. Każda biblioteka ma własne warunki
 (linki i licencje są wypisane w zakładce *Informacje*), a firmware zbudowany z tych bibliotek
 objęty jest również ich postanowieniami.
 
@@ -817,7 +1179,7 @@ data/index.html     — interfejs WWW (SPA, menu boczne z podmenu: struktura MEN
 data/i18n.js        — słownik PL → EN/DE (napis źródłowy jako klucz)
 data/public.html    — publiczna strona z danymi i reklamą firmy
 data/node/          — obrazy węzłów (powstają z -PublishNode; serwowane jako /node/…)
-LICENSE             — licencja projektu (niekomercyjna, autor: kruzio1985)
+LICENSE             — licencja projektu (PolyForm Noncommercial 1.0.0, autor: Kruzio)
 data/LICENSE.txt    — kopia licencji wgrywana na stację (serwowana jako /LICENSE.txt)
 docs/CZUJNIKI.md    — legenda czujników: podłączenie, parametry, kalibracja, wykresy, logi
 ```

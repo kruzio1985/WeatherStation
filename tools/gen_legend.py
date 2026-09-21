@@ -2,7 +2,7 @@
 # =============================================================================
 #  Stacja Pogody - generator legendy czujnikow dla strony www
 #  Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
-#  Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+#  Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
 # =============================================================================
 #  Czyta docs/CZUJNIKI.md i zapisuje data/legend.js (window.CZUJNIKI),
 #  ktory rysuje zakladka "Piny" -> sekcja "Legenda czujnikow".
@@ -173,7 +173,7 @@ def main() -> int:
         "/* =============================================================================\n"
         " * Stacja Pogody - legenda czujnikow dla strony www\n"
         " * Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985\n"
-        " * Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)\n"
+        " * Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)\n"
         " * -----------------------------------------------------------------------------\n"
         " * PLIK GENEROWANY AUTOMATYCZNIE - nie edytuj recznie.\n"
         " * Zrodlo: docs/CZUJNIKI.md   Generator: tools/gen_legend.py\n"

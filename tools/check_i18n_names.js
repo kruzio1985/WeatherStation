@@ -1,7 +1,7 @@
 /* =============================================================================
  * Stacja Pogody - kontrola tlumaczen nazw kanalow (data/i18n.js)
  * Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
- * Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+ * Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
  * -----------------------------------------------------------------------------
  * Nazwa kanalu z firmware (ChanDef.name / mkChan / .name=) jest jednoczesnie
  * kluczem w SLOWNIK (data/i18n.js). Ten skrypt wypisuje nazwy, ktorych brakuje

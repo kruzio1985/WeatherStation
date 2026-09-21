@@ -1,6 +1,6 @@
 # Stacja Pogody - węzeł na płytce z 4 MB flash (ESP32-C3 SuperMini, ESP32-S3 N4)
 # Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
-# Licencja: Stacja Pogody Non-Commercial License 1.0 (plik LICENSE)
+# Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
 # Name,   Type, SubType, Offset,   Size,    Flags
 # 4 MB (0x400000) flashu: dwa sloty OTA po 1.63 MiB + system plików 0.67 MiB.
 # Firmware węzła na ESP32-S3 N4 ze wszystkimi sterownikami czujników (~1.5 MiB)
