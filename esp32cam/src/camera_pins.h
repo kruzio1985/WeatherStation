@@ -22,3 +22,7 @@
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
+
+// Dioda doświetlająca (flash LED) na module AI-Thinker ESP32-CAM.
+// Świeci tylko na czas wykonywania zdjęcia (nie świeci ciągle).
+#define FLASH_LED_GPIO     4

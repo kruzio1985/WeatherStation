@@ -13,6 +13,7 @@
 #include "drv_pm.h"
 #include "drv_table.h"
 #include <Wire.h>
+#include <SoftwareSerial.h>
 #include <math.h>
 
 // =============================================================
@@ -33,6 +34,7 @@
 #define KEY_SOIL_WET  "soil_wet_v"     // napięcie czujnika gleby w wodzie [V]
 #define KEY_MAG_DECL  "mag_decl"       // deklinacja magnetyczna [°]
 #define KEY_SOLAR_MV  "solar_mv_wm2"   // mV na W/m² - bez niego pyranometr nie startuje
+#define KEY_UV_MV     "uv_mv_uvi"      // mV na 1 UVI (GUVA-S12SD: 100 mV/UVI)
 
 #define SOIL_MAX_DRY_V 2.6f            // typowe dla czujników pojemnościowych
 #define SOIL_MAX_WET_V 1.2f
@@ -92,6 +94,10 @@ void SensorManager::registerExtraChannels() {
                              "temperature", "°C", "mdi:thermometer"));
   channels_.push_back(mkChan("sht_h", "Wilgotność (SHT4x)", "%", 1, "out",
                              "humidity", "%", "mdi:water-percent"));
+
+  // Czujnik Tuya (TLSR8258, firmware UART) zasila główne kanały "temp"/"hum"
+  // (rejestrowane w SensorManager::begin) - osobne kanały tuy_t/tuy_h nie są
+  // potrzebne, żeby nie dublować odczytów na pulpicie i w Home Assistant.
   channels_.push_back(mkChan("bmp_t", "Temperatura (BMP581)", "°C", 1, "in",
                              "temperature", "°C", "mdi:thermometer"));
   channels_.push_back(mkChan("bmp_p", "Ciśnienie (BMP581)", "hPa", 1, "in",
@@ -149,6 +155,8 @@ void SensorManager::registerExtraChannels() {
 //  Wykrywanie sprzętu (wołane z begin() po starcie magistrali I2C)
 // -------------------------------------------------------------
 bool SensorManager::beginExtra() {
+  beginTuya();   // UART działa niezależnie od magistrali I2C
+
   if (pinMap.pin("i2c_sda") < 0 || pinMap.pin("i2c_scl") < 0) {
     LOG_W("Magistrala I2C wyłączona w edytorze pinów - pomijam czujniki na I2C");
     drvBeginAll();   // sterowniki i tak zgłoszą brak sprzętu
@@ -173,6 +181,11 @@ bool SensorManager::beginExtra() {
   if (s_ltr.begin()) {
     setPresent("uv", true);
     LOG_I("LTR-390UV: wykryty (indeks UV)");
+  } else if (pinMap.pin("uv_adc") >= 0) {
+    // Analogowy czujnik UV (GUVA-S12SD i podobne): napięcie 0-1 V -> UVI
+    setPresent("uv", true);
+    LOG_I("UV analogowy: pin ADC %d (GUVA-S12SD, %d mV/UVI)",
+          pinMap.pin("uv_adc"), (int)config.extraF(KEY_UV_MV, 100.0f));
   }
   if (s_mmc.begin()) {
     setPresent("mmc_hdg", true);
@@ -260,6 +273,19 @@ void SensorManager::readExtra() {
     if (s_ltr.read(uv)) publishExtra("uv", uv);
   }
 
+  // --- Analogowy czujnik UV (GUVA-S12SD): UVI = mV / kalibracja ---
+  if (!s_ltr.ok()) {
+    const int uvPin = pinMap.pin("uv_adc");
+    if (uvPin >= 0 && !analogPinFloating(uvPin)) {
+      float mvPerUvi = config.extraF(KEY_UV_MV, 100.0f);
+      if (mvPerUvi < 1.0f) mvPerUvi = 100.0f;
+      float mv = analogVolts(uvPin) * 1000.0f;
+      float uvi = mv / mvPerUvi;
+      if (uvi < 0.0f) uvi = 0.0f;
+      publishExtra("uv", uvi);
+    }
+  }
+
   // --- MMC5983MA: azymut magnetyczny (z korektą deklinacji) ---
   if (s_mmc.ok()) {
     float deg = NAN;
@@ -335,6 +361,101 @@ void SensorManager::readExtra() {
 
   // --- Sterowniki modułowe (drv_*.cpp) ---
   drvReadAll();
+}
+
+// -------------------------------------------------------------
+//  Czujnik Tuya temp./wilg. (TLSR8258 + CHT8305, firmware UART)
+//
+//  Czujnik wysyła linię ASCII "T=xx.xx;RH=yy.yy" co ok. 2 s po UART
+//  115200 8N1. Wszystkie 3 sprzętowe UART-y na S3 są zajęte (RS485 / GPS /
+//  PMS5003), więc odbiór idzie po SoftwareSerial na pinie "tuy_rx".
+//  Parsowanie jest celowo tolerancyjne: akceptuje \r\n i \n, spacje oraz
+//  opcjonalny średnik na końcu (niektóre wersje firmware go dokładają).
+// -------------------------------------------------------------
+static bool parseTuyaLine(const String& line, float& t, float& h) {
+  int ti = line.indexOf("T=");
+  int hi = line.indexOf("RH=");
+  if (ti < 0 || hi < 0) return false;
+
+  int tEnd = line.indexOf(';', ti);
+  String ts = line.substring(ti + 2, tEnd < 0 ? line.length() : tEnd);
+  String hs = line.substring(hi + 3);
+  ts.trim();
+  hs.trim();
+  if (hs.endsWith(";")) hs = hs.substring(0, hs.length() - 1);
+  hs.trim();
+  if (ts.length() == 0 || hs.length() == 0) return false;
+
+  float tv = ts.toFloat();
+  float hv = hs.toFloat();
+  if (!isfinite(tv) || !isfinite(hv)) return false;
+  // Wartości spoza fizycznego zakresu = uszkodzona linia, nie pomiar
+  if (tv < -55.0f || tv > 85.0f) return false;
+  if (hv < 0.0f || hv > 100.0f) return false;
+
+  t = tv;
+  h = hv;
+  return true;
+}
+
+void SensorManager::beginTuya() {
+#if STACJA_ROLE_MASTER
+  const int rx = pinMap.pin("tuy_rx");
+  if (rx < 0) {
+    LOG_I("Tuya UART: wyłączony (pin RX = -1)");
+    return;
+  }
+
+  SoftwareSerial* ss = new SoftwareSerial(rx, -1, false);
+  ss->begin(115200);
+  tuySerial_ = ss;
+  tuyStarted_ = true;
+  tuyLastRxMs_ = millis();
+
+  setPresent("temp", true);
+  setPresent("hum", true);
+  LOG_I("Tuya UART: RX na GPIO %d, 115200 8N1 (linia T=xx.xx;RH=yy.yy)", rx);
+#else
+  // Na węźle głównym czujnikiem temp./wilg. jest BME280; Tuya jest tylko na
+  // masterze, więc niczego nie nadpisujemy i nie oznaczamy kanałów temp/hum.
+  LOG_I("Tuya UART: rola węzeł - pomijam (temp./wilg. podaje BME280)");
+#endif
+}
+
+void SensorManager::serviceTuya() {
+  if (!tuyStarted_ || !tuySerial_) return;
+  SoftwareSerial* ss = (SoftwareSerial*)tuySerial_;
+
+  while (ss->available()) {
+    char c = (char)ss->read();
+    tuyLastRxMs_ = millis();
+    if (c == '\n') {
+      String line = tuyBuf_;
+      tuyBuf_ = "";
+      line.trim();
+      float t = NAN, h = NAN;
+      if (parseTuyaLine(line, t, h)) {
+        publishExtra("temp", t);
+        publishExtra("hum", h);
+        if (!tuyOk_) {
+          tuyOk_ = true;
+          LOG_I("Tuya UART: odebrano poprawną linię - czujnik działa");
+        }
+      }
+    } else if (c != '\r') {
+      tuyBuf_ += c;
+      // Zepsuta/za długa linia - trzymaj tylko jej końcówkę
+      if (tuyBuf_.length() > 64) tuyBuf_ = tuyBuf_.substring(tuyBuf_.length() - 64);
+    }
+  }
+
+  // Czujnik odłączony / przestał nadawać - nie pokazuj nieaktualnych wartości
+  if (tuyOk_ && millis() - tuyLastRxMs_ > 60000UL) {
+    tuyOk_ = false;
+    clearExtra("temp");
+    clearExtra("hum");
+    LOG_W("Tuya UART: brak danych od 60 s - czujnik odłączony?");
+  }
 }
 
 // Nazwa dodatkowego czujnika jakości powietrza do diagnostyki ("" gdy brak)

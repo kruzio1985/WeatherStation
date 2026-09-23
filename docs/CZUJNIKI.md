@@ -96,14 +96,14 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **SHT30 / SHT31 / SHT35** ✅ | dokładniejsza T/RH (SHT35 ±0,1 °C) | I²C `0x44`/`0x45` | −40…+125 °C, 2,4…5,5 V | offset; wzorzec solny dla RH | `temp`, `hum` |
 | **SHT40 / SHT41 / SHT45** ✅ | T/RH nowej generacji, mały pobór | I²C `0x44`/`0x45`/`0x46` | −40…+125 °C, ±0,1 °C (SHT45) | jak SHT3x; offset kanału w *Kalibracja* | `sht_t` / `sht_h` → kolumny `sht_t`, `sht_h` |
 | **AHT10 / AHT20 / AHT21** ✅ | tani T/RH | I²C `0x38` | −40…+85 °C, ±0,3 °C | offset, RH × korekta liniowa | `temp`, `hum` |
-| **HDC1080 / HDC2010 / HDC3020** 🟡 | T/RH niski pobór (bateria) | I²C `0x40`/`0x41` | −40…+125 °C, ±0,2 °C | offset | `temp`, `hum` |
-| **TMP117 / MCP9808 / LM75 / Si7021** 🟡 | precyzyjna T (TMP117 ±0,1 °C, wzorzec NIST) | I²C `0x48…0x4F` | −55…+125 °C | wzorcowanie jednopunktowe w lodzie | `temp` |
+| **HDC1080 / HDC2010 / HDC2080** ✅ | T/RH niski pobór (bateria) | I²C `0x40`/`0x41` | −40…+125 °C, ±0,2 °C | offset | `temp`, `hum` |
+| **TMP117 / MCP9808 / Si7021 / HTU21D / SHT21** ✅ | precyzyjna T (TMP117 ±0,1 °C, wzorzec NIST) | I²C `0x48…0x4F` | −55…+125 °C | wzorcowanie jednopunktowe w lodzie | `temp` |
 | **DS18B20 ×N** ✅ | temperatura w wielu punktach (gleba, woda, grunt) | 1-Wire `GPIO 4` | −55…+125 °C, ±0,5 °C | offset per kanał (`DS18B20 #n`) | `ds_0…ds_7` → `ds0…ds7` |
 | **DS18B20 w wersji wodoodpornej** ✅ | j.w. na kablu 1–10 m | 1-Wire | j.w., kabel silikonowy | pomiar w wodzie lodowej (0 °C) | `ds_*` |
-| **PT100 / PT1000** 🟡 | temperatura wzorcowa, dokładna (±0,1…0,3 °C) | MAX31865 SPI (`CS 15`, `SCK 12`, `MOSI 11`, `MISO 13`) | −200…+600 °C | 2/3/4-przewodowo + rezystor odniesienia (`Rref`) w konfiguracji | `temp` (kanał zewnętrzny) |
+| **PT100 / PT1000** ✅ | temperatura wzorcowa, dokładna (±0,1…0,3 °C) | MAX31865 SPI (`CS 15`, `SCK 12`, `MOSI 11`, `MISO 13`) | −200…+600 °C | 2/3/4-przewodowo + rezystor odniesienia (`Rref`) w konfiguracji | `temp` (kanał zewnętrzny) |
 | **Termopary K / J / T (+ MAX31855 / MAX6675)** ✅ | bardzo wysokie temperatury (komin, piec) | SPI, `CS 16` | −200…+1350 °C (K) | kompensacja zimnych końców, offset | `temp` |
 | **NTC 10 k / 100 k** 🟡 | tani pomiar T (sonda glebowa/wodna) | ADC1: `GPIO 1..3`, `GPIO 14` | −40…+125 °C | tabela Steinharta–Harta (B25/85), 3 punkty | `temp` |
-| **MLX90614 / 90615** ✅ | temperatura bezdotykowa (niebo, chmury, grunt) | I²C `0x5A` | −70…+380 °C, ±0,5 °C | emisyjność (`mlx_emiss` w *Kalibracja*) + offset | `mot_ir_obj_t`, `mot_ir_amb_t` |
+| **MLX90614** ✅ | temperatura bezdotykowa (niebo, chmury, grunt) | I²C `0x5A` | −70…+380 °C, ±0,5 °C | emisyjność (`mlx_emiss` w *Kalibracja*) + offset | `mot_ir_obj_t`, `mot_ir_amb_t` |
 | **MLX90632 / MLX90640 / MLX90641** 🟡 | termowizja punktowa / matryca 32×24 | I²C `0x3A`/`0x33` | −40…+300 °C | jak wyżej, korekta tła (Ta) | `temp`, mapa w zakładce *Diagnostyka* |
 | **Si7051 / Si7060** 🟡 | T ultra-niski pobór | I²C `0x40` | −40…+125 °C, ±0,1 °C | offset | `temp` |
 
@@ -111,18 +111,18 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **BME280 / BME680 / BME688** ✅🟡 | RH bazowa | I²C | 0…100 % RH, ±3 % | sól: NaCl 75 %, MgCl₂ 33 %, K₂CO₃ 43 % | `hum` |
-| **SHT3x / SHT4x / AHT2x / HDC2xxx** ✅🟡 | alternatywa dla T/RH: SHT4x działa, SHT3x/AHT/HDC planowane (szczegóły — rozdział 1) | I²C | ±1,5…2 % RH | komora solna, 2 punkty → offset + nachylenie | `hum` (SHT4x: `sht_h`) |
+| **BME280** ✅ | RH bazowa | I²C | 0…100 % RH, ±3 % | sól: NaCl 75 %, MgCl₂ 33 %, K₂CO₃ 43 % | `hum` |
+| **SHT3x / SHT4x / AHT2x / HDC2xxx** ✅ | alternatywa dla T/RH: wszystkie wymienione działają (szczegóły — rozdział 1) | I²C | ±1,5…2 % RH | komora solna, 2 punkty → offset + nachylenie | `hum` (SHT4x: `sht_h`) |
 | **DHT11 / DHT22 / AM2301 / AM2320** ✅ | tanie T/RH (DHT11 tylko ±5 % RH, 1 Hz) | 1-Wire-like `GPIO 42` (+ 4,7 kΩ do 3V3) | DHT22: 0…100 % RH, ±2 % | offset, wymaga 2 s odstępu między odczytami | `temp`, `hum` |
-| **SHT85 / SHT75 (sonda kablowa)** 🟡 | RH w kanale pomiarowym stacji | I²C / napięciowy | ±1,5 % RH | jak SHT3x | `hum` |
+| **SHT85 (sonda kablowa)** ✅ | RH w kanale pomiarowym stacji | I²C / napięciowy | ±1,5 % RH | jak SHT3x | `hum` |
 | **Czujnik punktu rosy (obliczany)** ✅ | dew point z T i RH (Magnus) | — | z `temp` + `hum` | pośrednio przez kalibrację T i RH | `dew` (MQTT), `hum` w CSV |
 
 ## 3. Ciśnienie atmosferyczne
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **BME280 / BME680** ✅🟡 | ciśnienie absolutne | I²C | 300…1100 hPa, ±1 hPa | offset względem stacji meteo / wysokość n.p.m. | `press` |
-| **BMP180 / BMP280 / BMP380** 🟡 | ciśnienie (BMP380 ±0,03 hPa) | I²C `0x76`/`0x77` | 300…1100 hPa | offset + `altitude()` w kodzie | `press` |
+| **BME280** ✅ | ciśnienie absolutne | I²C | 300…1100 hPa, ±1 hPa | offset względem stacji meteo / wysokość n.p.m. | `press` |
+| **BMP280** ✅ | ciśnienie | I²C `0x76`/`0x77` | 300…1100 hPa | offset + `altitude()` w kodzie | `press` |
 | **BMP388 / BMP390** ✅ | najwyższa rozdzielczość | I²C/SPI `0x76` | 300…1250 hPa, ±0,02 hPa | offset, kompensacja temperatury | `press` |
 | **BMP581** ✅ | ciśnienie nowej generacji, ±0,06 hPa | I²C `0x46`/`0x47` (nie koliduje z BME280 0x76/77) | 300…1250 hPa | offset; tryb `continuous`, ODR 2 | `bmp_p` / `bmp_t` → kolumny `bmp_p`, `bmp_t` |
 | **DPS310 / DPS368 / LPS22HH / LPS28 / MPL3115A2 / MS5611** ✅ | ciśnienie/kierunek trendu (burza) | I²C `0x77`/`0x5C`/`0x76` | ±0,1…0,5 hPa | offset, filtr IIR | `press` |
@@ -137,7 +137,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **FC-37 / YL-83 / LM393 (płytka rezystancyjna)** 🟡 | „pada / nie pada” + wilgotność | ADC1 `GPIO 2` | 0…3,3 V | próg wilgotności w kodzie (`obwód suchy → 0 mm`) | `rain` (binarnie) |
 | **Deszczomierz optyczny / podczerwieniowy** 🟡 | opad bez części ruchomych | I²C / impuls | rozdzielczość 0,1 mm | kalibracja fabryczna + offset | `rain` |
 | **Deszczomierz wagowy (load cell + HX711)** ✅ | opad z najwyższą dokładnością | HX711: `GPIO 21/47`, 5 V | 0,1 mm, 10 Hz | tara przy zerze, współczynnik g/mm | `rain` |
-| **Liściowy — mokrość liścia (leaf wetness)** 🟡 | ryzyko chorób grzybowych roślin | ADC1 `GPIO 14` | 0…100 % | dwa punkty: sucho/pod wodą | `leaf` (MQTT + CSV) |
+| **Liściowy — mokrość liścia (leaf wetness)** ✅ | ryzyko chorób grzybowych roślin | ADC1 `GPIO 14` | 0…100 % | dwa punkty: sucho/pod wodą | `leaf` (MQTT + CSV) |
 
 ## 5. Prędkość wiatru
 
@@ -146,7 +146,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **Anemometr obrotowy (3/4-cup, impulsowy)** ✅ | prędkość wiatru i porywy | `GPIO 6` (impulsy) | 0…50 m/s, ±3 % | współczynnik `km/h na Hz` (domyślnie 2,4) w *Kalibracja* | `wind` (+ poryw w MQTT) |
 | **Anemometr z kontaktronem / Hall (A3144)** ✅ | j.w. | `GPIO 6` | 3,3 V | jak wyżej + 1 s okno uśredniania | `wind` |
 | **Anemometr ultradźwiękowy (bez części ruchomych)** 🟡 | prędkość + kierunek (kombajn) | UART/RS485 lub I²C | 0…60 m/s, ±0,3 m/s | kalibracja fabryczna, offset w kodzie | `wind`, `vane` |
-| **Czujnik różnicy ciśnień (Pitot: MPXV7002, SDP810)** 🟡 | prędkość z ciśnienia dynamicznego | ADC1 / I²C `0x25` | 0…30 m/s | współczynnik rurki Pitota | `wind` |
+| **Czujnik różnicy ciśnień (Pitot: SDP810)** ✅ | prędkość z ciśnienia dynamicznego | ADC1 / I²C `0x25` | 0…30 m/s | współczynnik rurki Pitota | `wind` |
 | **Wiatromierz ręczny / stacja komercyjna (Davis)** 🟡 | źródło referencyjne | RS485 / 1-Wire | — | porównanie z anemometrem własnym | `wind` |
 
 ## 6. Kierunek wiatru
@@ -162,23 +162,23 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
 | **QMC5883L** ✅ | kompas 3-osiowy | I²C `0x0D` | ±1…8 G, 2 mG | kalibracja twarda/miękka (obrót 360°) + deklinacja `mag_decl` | `mot_heading`, `mot_mag_x/y/z` |
-| **HMC5883L / HMC5983** 🟡 | j.w. | I²C `0x1E` | ±0,75…8 G | j.w. | `mot_heading`, `mot_mag_x/y/z` |
+| **HMC5883L** ✅ | j.w. | I²C `0x1E` | ±0,75…8 G | j.w. | `mot_heading`, `mot_mag_x/y/z` |
 | **LIS3MDL / LIS2MDL** 🟡 | kompas niski pobór | I²C `0x1C`/`0x1E` | ±4…16 G | j.w. + temperatura pracy | `vane` |
 | **MMC5983MA** ✅ | kompas bardzo dokładny (18-bit), azymut do kanału kierunku | I²C `0x30`/`0x31` | ±8 G, 0,4 mG | deklinacja magnetyczna `mag_decl` (NVS, *Kalibracja*) | `mmc_hdg` → kolumna `mmc_hdg` |
 | **MMC5603** 🟡 | kompas 20-bit, tańszy | I²C `0x30` | ±8 G | jak wyżej | `vane` |
 | **BMM150 / BMM350** 🟡 | kompas mały (kompatybilny z BMI270) | I²C `0x10`/`0x14` | ±1300 µT | j.w. | `vane` |
-| **AK09918 / AK8963 (w MPU-9250)** 🟡 | kompas w IMU | I²C `0x0C` | ±4900 µT | j.w. | `vane` |
+| **AK8963 (w MPU-9250)** ✅ | kompas w IMU | I²C `0x0C` | ±4900 µT | j.w. | `vane` |
 | **Korekcja deklinacji magnetycznej** ✅ | kierunek rzeczywisty | — | −180…+180° | wpisz deklinację dla miejscowości (`mag_decl` w *Kalibracja*) | `mot_heading` |
 
 ## 8. Czujniki Halla / kontaktrony / przełączniki
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **A3144 / AH3144 / SS49E / A1321** 🟡 | impulsy obrotowe (anemometr), licznik obrotów | `GPIO 6` / `GPIO 14` | 4,5…24 V (dzielnik!), 3,3 V | próg napięcia, filtr 100 ms | `wind`, licznik |
+| **A3144** ✅ | impulsy obrotowe (anemometr), licznik obrotów | `GPIO 6` / `GPIO 14` | 4,5…24 V (dzielnik!), 3,3 V | próg napięcia, filtr 100 ms | `wind`, licznik |
 | **DRV5032 / DRV5033 (cyfrowe Hall)** 🟡 | bezstykowy przełącznik, pozycja | `GPIO 2` | 1,65…5,5 V | brak | zdarzenie w logu |
 | **DRV5055 / DRV5056 (analogowe Hall)** 🟡 | pomiar liniowy pola (przesunięcie, poziom) | ADC1 | 0…3,3 V | offset i wzmocnienie liniowe | `pos` |
 | **TMAG3001 / TMAG5170** 🟡 | Hall 3D (kąt dokładny) | I²C | ±300 mT | kalibracja kąta | `vane` |
-| **Kontaktron / reed switch** 🟡 | zliczanie impulsów (deszcz, wiatr, obroty) | `GPIO 5` | 3,3 V, 1 mA | filtr drgań | `rain`, `wind` |
+| **Kontaktron / reed switch** ✅ | zliczanie impulsów (deszcz, wiatr, obroty) | `GPIO 5` | 3,3 V, 1 mA | filtr drgań | `rain`, `wind` |
 | **Krańcówka / przycisk na GPIO** ✅ | tryb AP, reset, ręczny wpis | `GPIO 0` | — | brak | zdarzenie w *Logi* |
 
 ## 9. Natężenie światła (lux)
@@ -187,7 +187,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 |---|---|---|---|---|---|
 | **BH1750** ✅ | lux (nasłonecznienie) | I²C `0x23`/`0x5C` | 1…65 535 lx, ±20 % | współczynnik „lux na jednostkę” w *Kalibracja* | `light` |
 | **VEML7700** ✅ | lux, 16-bit, wysoka rozdzielczość | I²C `0x10` | 0…120 klx | wsp. kalibracji (błąd kierunkowy) — kanał `light` tylko gdy brak BH1750 | `light` → kolumna `light` |
-| **OPT3001 / OPT3002** 🟡 | lux zbliżony do oka ludzkiego | I²C `0x44`/`0x45` | 0,01…83 klx | j.w. | `light` |
+| **OPT3001** ✅ | lux zbliżony do oka ludzkiego | I²C `0x44`/`0x45` | 0,01…83 klx | j.w. | `light` |
 | **LTR-329 / LTR-303** ✅ | lux + IR | I²C `0x29` | 0…64 klx | współczynnik + odjęcie IR | `light` |
 | **LTR-390 / LTR-390UV** ✅ | UV (UVA/UVB/UV-index) — sterownik czyta kanał UVS | I²C `0x53` | 0…15 UVI | wsp. UV w *Kalibracja* (offset kanału `uv`) | `uv` → kolumna `uv` |
 | **TSL2561 / TSL2591** ✅ | lux szerokopasmowy, wysoka czułość | I²C `0x29`/`0x39` | 0,01…88 klx | współczynnik i czas integracji | `light` |
@@ -200,7 +200,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **VEML6070** ✅ | UVA (jednokanałowy) | I²C `0x38`/`0x39` | 0…328 mW/m² | współczynnik UVI | `uv` |
 | **VEML6075** ✅ | UVA + UVB, liczony UV-index | I²C `0x10` | 0…15 UVI | współczynniki A/B fabryczne + offset | `uv` |
 | **LTR-390UV** ✅ | UVI z LTR-390UV (kanał UVS) | I²C `0x53` | 0…15 UVI | jak wyżej | `uv` |
-| **SI1145 / SI1146 / SI1147** 🟡 | UV-index + IR + widzialne | I²C `0x60` | 0…11 UVI | współczynnik z krzywej fabrycznej | `uv`, `light` |
+| **SI1145** ✅ | UV-index + IR + widzialne | I²C `0x60` | 0…11 UVI | współczynnik z krzywej fabrycznej | `uv`, `light` |
 | **GUVA-S12SD / GY-ML8511** 🟡 | analogowy UV | ADC1 `GPIO 2` | 0…3,3 V | przeliczenie mV → UVI, 2 punkty | `uv` |
 | **Zapisywanie UV do logów** ✅ (po dodaniu kanału) | kolumna `uv` w CSV + wykres | — | — | — | `uv` |
 
@@ -228,7 +228,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 |---|---|---|---|---|---|
 | **Rezystancyjny (YL-69, FC-28)** ✅ | wilgotność objętościowa (poglądowo) | ADC1 `GPIO 2` (`PIN_SOIL_ADC`) | 0…3,3 V | **należy** kalibrować 2 punktami: `soil_dry_v` / `soil_wet_v` (NVS, *Kalibracja*); korozja elektrod | `soil` → kolumna `soil` |
 | **Pojemnościowy (v1.2, v2.0, SMT)** ✅ | wilgotność gleby bez korozji (zalecany) | ADC1 `GPIO 2` | 0…3,3 V → % VWC | jak wyżej; suszenie i ważenie próbki, 3 punkty | `soil` → kolumna `soil` |
-| **Sonda SHT / DHT w glebie** 🟡 | T + „RH gleby” | I²C / 1-Wire | — | jak wyżej | `soil`, `temp` |
+| **Sonda SHT / DHT w glebie** ✅ | T + „RH gleby” | I²C / 1-Wire | — | jak wyżej | `soil`, `temp` |
 | **Czujnik tensjometryczny / ciśnieniowy** 🟡 | siła ssąca gleby | ADC1 | 0…−100 kPa | krzywa fabryczna | `soil` |
 | **SDI-12 (np. Teros 10/11/12)** 🟡 | profesjonalna wilgotność i temperatura gleby | UART 1200 baud, `GPIO 18`, adres `0` | ±3 % VWC | kalibracja z próbkami gleby | `soil`, `temp` |
 | **Modbus RTU / RS485 (np. NPK, JXCT)** 🟡 | wilgotność, temperatura, pH, przewodność | MAX485 `RO 16`, `DI 17`, `DE 15`, 9600 8N1 | ±5 %, adres 1…247 | rejestry kalibracyjne czujnika | `soil`, `ec`, `ph` |
@@ -253,10 +253,10 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 |---|---|---|---|---|---|
 | **BME680 / BME688** 🟡 | IAQ, VOC, T, RH, P | I²C `0x76` | 0…500 kΩ | 48 h wygrzewania, **baseline** zapisany w NVS | `iaq`, `tvoc` |
 | **SGP30** ✅ | TVOC (ppb) + eCO₂ (ppm) | I²C `0x58` | TVOC 0…60 000 ppb | 12 h pracy + baseline (`getBaseline`/`setBaseline`) w NVS | `tvoc`, `eco2` |
-| **SGP40 / SGP41** 🟡 | VOC-index, NOx-index (Sensirion) | I²C `0x59` | index 0…500 | kompensacja RH/T z BME280 | `voc_idx`, `nox_idx` |
-| **ENS160 / ENS161 (ScioSense)** 🟡 | AQI + TVOC + eCO₂ + T/RH | I²C `0x52`/`0x53` | AQI 1…5 | 3 × 1 h tryb „burn-in”, kalibracja z komorą odniesienia | `tvoc`, `eco2`, `aqi` |
-| **CCS811 / CCS801** 🟡 | TVOC + eCO₂ | I²C `0x5A`/`0x5B` | 0…1187 ppb | 48 h burn-in + baseline w NVS | `tvoc`, `eco2` |
-| **IAQ z gazów MQ (patrz rozdział 17)** 🟡 | orientacyjna jakość | ADC1 + dzielnik | — | R0 w powietrzu odniesienia | `gas` |
+| **SGP40 / SGP41** ✅ | VOC-index, NOx-index (Sensirion) | I²C `0x59` | index 0…500 | kompensacja RH/T z BME280 | `voc_idx`, `nox_idx` |
+| **ENS160 (ScioSense)** ✅ | AQI + TVOC + eCO₂ + T/RH | I²C `0x52`/`0x53` | AQI 1…5 | 3 × 1 h tryb „burn-in”, kalibracja z komorą odniesienia | `tvoc`, `eco2`, `aqi` |
+| **CCS811** ✅ | TVOC + eCO₂ | I²C `0x5A`/`0x5B` | 0…1187 ppb | 48 h burn-in + baseline w NVS | `tvoc`, `eco2` |
+| **IAQ z gazów MQ (patrz rozdział 17)** ✅ | orientacyjna jakość | ADC1 + dzielnik | — | R0 w powietrzu odniesienia | `gas` |
 | **Zapis do CSV** ✅ | kolumny `co2`, `eco2`, `tvoc` | — | — | — | `co2`, `eco2`, `tvoc` |
 
 ## 16. Jakość powietrza — CO₂
@@ -275,17 +275,17 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **MQ-7** 🟡 | tlenek węgla (CO) — czad | ADC1 + obciążenie | 20…2000 ppm | 24–48 h burn-in, potencjometr `RL`, R0 w powietrzu odniesienia | `gas_co` |
+| **MQ-7** ✅ | tlenek węgla (CO) — czad | ADC1 + obciążenie | 20…2000 ppm | 24–48 h burn-in, potencjometr `RL`, R0 w powietrzu odniesienia | `gas_co` |
 | **MQ-131** ✅ | ozon (O₃) | ADC1 | 10…1000 ppb | jak wyżej | `gas_o3` |
 | **MQ-136** ✅ | siarkowodór (H₂S) | ADC1 | 1…200 ppm | j.w. | `gas_h2s` |
 | **MQ-137** ✅ | amoniak (NH₃) | ADC1 | 1…100 ppm | j.w. | `gas_nh3` |
-| **MQ-5** 🟡 | gaz ziemny / LPG | ADC1 | 200…10 000 ppm | j.w. | `gas_ch4` |
-| **MQ-6** 🟡 | LPG / butan | ADC1 | 200…10 000 ppm | j.w. | `gas_lpg` |
+| **MQ-5** ✅ | gaz ziemny / LPG | ADC1 | 200…10 000 ppm | j.w. | `gas_ch4` |
+| **MQ-6** ✅ | LPG / butan | ADC1 | 200…10 000 ppm | j.w. | `gas_lpg` |
 | **MQ-2 / MQ-135 / MQ-9** ✅ | dym / jakość powietrza / CO+CH₄ | ADC1 | — | j.w. | `gas` |
 | **MiCS-4514 / MiCS-6814** ✅ | CO, NO₂, NH₃ + redukujące | I²C (z ADC) | 1…1000 ppm | 3 tryby grzania, kalibracja w 2 gazach | `gas_*` |
 | **Czujnik elektrochemiczny (np. Alphasense CO-A4, NO2-A1)** 🟡 | pomiar analityczny | ADC (przetwornik LMP91000) | ppm / ppb | wzorzec gazowy — kosztowne | `gas` |
-| **Czujnik katalityczny / półprzewodnikowy (TGS2600, TGS2611)** 🟡 | trend zanieczyszczeń | ADC1 | — | jak MQ | `gas` |
-| **Zapis gazów** 🟡 | kolumny `gas_*` w CSV + wykres | — | — | — | `gas_*` |
+| **Czujnik katalityczny / półprzewodnikowy (TGS2600)** ✅ | trend zanieczyszczeń | ADC1 | — | jak MQ | `gas` |
+| **Zapis gazów** ✅ | kolumny `gas_*` w CSV + wykres | — | — | — | `gas_*` |
 
 ## 18. Temperatura bezdotykowa (IR)
 
@@ -296,7 +296,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **MLX90632** 🟡 | SMD punktowy IR | I²C `0x3A` | −20…+200 °C | j.w. | `temp_ir` |
 | **MLX90640 / MLX90641 (32×24)** 🟡 | matryca termowizyjna — chmury, izolacja domu | I²C `0x33` | −40…+300 °C | emisyjność + korekta tła, 4 Hz | `temp_ir`, mapa |
 | **AMG8833 / Grid-EYE** 🟡 | 8×8 termowizja | I²C `0x69` | 0…80 °C, ±2,5 °C | offset w polu widzenia | `temp_ir` |
-| **MLX90614 + niebo (zachmurzenie)** 🟡 | 100 % chmur = ΔT ≈ 0 | I²C | — | zależność empiryczna, kalibracja w bezchmurną noc | `cloud` |
+| **MLX90614 + niebo (zachmurzenie)** ✅ | 100 % chmur = ΔT ≈ 0 | I²C | — | zależność empiryczna, kalibracja w bezchmurną noc | `cloud` |
 
 ## 19. Dodatkowe DS18B20 i pomiary wielopunktowe
 
@@ -315,19 +315,19 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **VL53L1X** ✅ | do 4 m, szybszy | I²C `0x29` | 40 mm…4 m | j.w. | `mot_tof_l1_dist` |
 | **VL53L4CD** 🟡 | krótki zasięg, bardzo dokładny (poziom w studni) | I²C `0x29` | 1…130 cm | j.w. | `level` |
 | **VL53L5CX / VL53L8CX** 🟡 | matryca 8×8 ToF (fala, śnieg, woda) | I²C `0x29` | 4 m, 15/60 Hz | j.w. + filtr medianowy | `level`, mapa |
-| **HC-SR04 / HC-SR04P** 🟡 | ultradźwiękowy poziom (zbiornik) | `TRIG 21`, `ECHO 47` (5 V → dzielnik!) | 2 cm…4 m, ±3 mm | offset, kompensacja temperatury | `level` |
-| **JSN-SR04T / A02YYUW (wodoodporny)** 🟡 | poziom w zbiorniku na zewnątrz | UART / TRIG-ECHO | 20 cm…6 m | j.w., ochrona przed szronem | `level` |
-| **Czujnik pływakowy (kontaktron)** 🟡 | stan „woda powyżej progu” | `GPIO 2` | — | brak | zdarzenie |
+| **HC-SR04 / HC-SR04P** ✅ | ultradźwiękowy poziom (zbiornik) | `TRIG 21`, `ECHO 47` (5 V → dzielnik!) | 2 cm…4 m, ±3 mm | offset, kompensacja temperatury | `level` |
+| **JSN-SR04T / A02YYUW (wodoodporny)** ✅ | poziom w zbiorniku na zewnątrz | UART / TRIG-ECHO | 20 cm…6 m | j.w., ochrona przed szronem | `level` |
+| **Czujnik pływakowy (kontaktron)** ✅ | stan „woda powyżej progu” | `GPIO 2` | — | brak | zdarzenie |
 | **CZujnik ciśnienia hydrostatycznego (4–20 mA)** 🟡 | poziom w zbiorniku/studni | ADS1115 (I²C `0x48`) + rezystor | 0…10 m | zerowanie + skala | `level` |
-| **Pomiar poziomu śniegu (ultrasonic + T)** 🟡 | grubość pokrywy śnieżnej | jak HC-SR04 | 0…3 m | zerowanie na gruncie bez śniegu | `snow` |
+| **Pomiar poziomu śniegu (ultrasonic + T)** ✅ | grubość pokrywy śnieżnej | jak HC-SR04 | 0…3 m | zerowanie na gruncie bez śniegu | `snow` |
 
 ## 21. Ultradźwięki — odległość i wykrywanie
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **HC-SR04 / HC-SR04+** 🟡 | odległość (poziom wody, śnieg) | TRIG/ECHO | 2 cm…4 m | kompensacja temperatury z `temp` | `level` |
-| **JSN-SR04T (wodoodporny)** 🟡 | j.w. na zewnątrz | TRIG/ECHO lub UART | 20 cm…6 m | j.w. | `level` |
-| **A02YYUW (UART, IP67)** 🟡 | j.w., wersja przemysłowa | UART 9600 | 3 cm…4,5 m | offset, filtr medianowy | `level` |
+| **HC-SR04 / HC-SR04+** ✅ | odległość (poziom wody, śnieg) | TRIG/ECHO | 2 cm…4 m | kompensacja temperatury z `temp` | `level` |
+| **JSN-SR04T (wodoodporny)** ✅ | j.w. na zewnątrz | TRIG/ECHO lub UART | 20 cm…6 m | j.w. | `level` |
+| **A02YYUW (UART, IP67)** ✅ | j.w., wersja przemysłowa | UART 9600 | 3 cm…4,5 m | offset, filtr medianowy | `level` |
 | **US-100 / US-016** 🟡 | tanie ultradźwięki | UART / analog | 2 cm…4,5 m | j.w. | `level` |
 | **MB1000 / LV-MaxSonar** 🟡 | bezkontaktowy, analogowy odczyt | ADC1 | 0…6 m | krzywa liniowa | `level` |
 
@@ -339,11 +339,11 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **MPU6886 / ICM-20602** 🟡 | j.w. mniejszy | I²C `0x68` | j.w. | j.w. | `tilt` |
 | **ICM-42688-P / ICM-20948** 🟡 | IMU 6/9-osiowy, dokładny | I²C/SPI `0x68` | j.w. | j.w. | `tilt`, `vane` |
 | **BMI270 / BMI160 / BMI088** 🟡 | IMU niski pobór (Bosch) | I²C `0x68` | j.w. | j.w. | `tilt` |
-| **LIS3DH / LIS2DW12 / LIS3LV02DL** 🟡 | akcelerometr (detekcja wstrząsu, drgań) | I²C `0x18`/`0x19` | ±2…16 g | j.w. | `mot_acc_x`, `mot_acc_y`, `mot_acc_z` |
-| **ADXL345 / ADXL355 / ADXL362** 🟡 | akcelerometr (ADXL355 bardzo stabilny) | I²C `0x53`, SPI | ±2…16 g | j.w. | `mot_acc_x`, `mot_acc_y`, `mot_acc_z` |
+| **LIS3DH** ✅ | akcelerometr (detekcja wstrząsu, drgań) | I²C `0x18`/`0x19` | ±2…16 g | j.w. | `mot_acc_x`, `mot_acc_y`, `mot_acc_z` |
+| **ADXL345** ✅ | akcelerometr (ADXL355 bardzo stabilny) | I²C `0x53`, SPI | ±2…16 g | j.w. | `mot_acc_x`, `mot_acc_y`, `mot_acc_z` |
 | **BNO055 / BNO085 / BNO086** 🟡 | IMU z fuzją i kompasem (orientacja bezwzględna) | I²C `0x28`/`0x4B` | 9 DOF, ±2000 °/s | kalibracja 3D (ósemka), magnetometr patrz rozdz. 7 | `heading` |
 | **QMI8658 / BNO08x (kombajn)** 🟡 | j.w. | I²C | j.w. | j.w. | `heading` |
-| **Detekcja wstrząsu masztu** 🟡 | alarm wichury / oblodzenia | — | próg przyspieszenia | próg w kodzie | zdarzenie |
+| **Detekcja wstrząsu masztu** ✅ | alarm wichury / oblodzenia | — | próg przyspieszenia | próg w kodzie | zdarzenie |
 
 ## 23. GPS / GNSS
 
@@ -352,42 +352,42 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **NEO-6M** ✅ | pozycja + dokładny czas (RTC stacji) | UART1 9600, `RX 21`, `TX 47` | 2,5 m CEP, 1 Hz | brak (można ustawić SBAS) | `gps` |
 | **NEO-M8N / M8Q** ✅ | dokładniejszy czas i pozycja | UART 9600/38400 | 2,0 m, 10 Hz | j.w. | `gps` |
 | **NEO-M9N / M9V** ✅ | wielokonstelacyjny (Galileo/BeiDou) | UART 38400 | 1,5 m | j.w. | `gps` |
-| **MAX-M10S / MAX-M8Q** 🟡 | mały, niski pobór | I²C `0x42` lub UART | 1,5 m | j.w. | `gps` |
+| **MAX-M8Q** ✅ | mały, niski pobór | I²C `0x42` lub UART | 1,5 m | j.w. | `gps` |
 | **ZED-F9P / ZED-F9R (RTK)** 🟡 | centymetrowa dokładność (korekcja NTRIP) | UART + USB | 1 cm + 1 ppm | konfiguracja korekcji NTRIP | `gps` |
-| **Czas z GPS dla logów** 🟡 | dokładny timestamp w CSV i MQTT | — | ±1 µs | synchronizacja po fixie 3D | `datetime` w CSV |
+| **Czas z GPS dla logów** ✅ | dokładny timestamp w CSV i MQTT | — | ±1 µs | synchronizacja po fixie 3D | `datetime` w CSV |
 
 ## 24. Pozycja Słońca (obliczana)
 
 | Pozycja | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **Wysokość i azymut Słońca** 🟡 | kąt padania, przewidywanie nasłonecznienia, sterowanie roletą | z pozycji GPS + czasu | ±0,01° | poprawna strefa czasowa i DST | `sun_el`, `sun_az` |
+| **Wysokość i azymut Słońca** ✅ | kąt padania, przewidywanie nasłonecznienia, sterowanie roletą | z pozycji GPS + czasu | ±0,01° | poprawna strefa czasowa i DST | `sun_el`, `sun_az` |
 | **Wschód / zachód / górowanie** ✅ | sterowanie oświetleniem i logami dobowymi | j.w. | ±1 min | j.w. | w *Pulpit* |
-| **Współczynnik „clear sky”** 🟡 | zachmurzenie = 1 − solar/solar_max | z `solar` + pozycji Słońca | 0…1 | porównanie z pyranometrem | `cloud` |
+| **Współczynnik „clear sky”** ✅ | zachmurzenie = 1 − solar/solar_max | z `solar` + pozycji Słońca | 0…1 | porównanie z pyranometrem | `cloud` |
 
 ## 25. Zasilanie i bateria
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **INA219** 🟡 | napięcie, prąd, moc | I²C `0x40` | 0…26 V, ±3,2 A | rezystor bocznikowy `R_shunt` | `vbus`, `current` |
-| **INA226** 🟡 | j.w. dokładniejszy | I²C `0x40` | 0…36 V, ±20 A | `R_shunt`, `MaxCurrent` | `vbus`, `current` |
-| **INA228 / INA238** 🟡 | 20-bit, energia | I²C `0x40` | ±85 V, dokładność 0,1 % | j.w. | `vbus`, `energy` |
-| **INA3221** 🟡 | 3 kanały (panel, bateria, obciążenie) | I²C `0x40` | 0…26 V | j.w. | `vbus*` |
-| **ACS712 / ACS758** 🟡 | prąd (Hall, izolowany) | ADC1 (dzielnik + 2,5 V ref) | ±5…50 A | offset przy zerowym prądzie, czułość mV/A | `current` |
-| **MAX17048 / MAX17049 / MAX17055** 🟡 | % naładowania baterii Li-Ion | I²C `0x36` | ±1 % SOC | chemia ogniwa w kodzie | `soc` |
-| **LC709203F** 🟡 | j.w. | I²C `0x0B` | ±1 % | typ ogniwa | `soc` |
+| **INA219** ✅ | napięcie, prąd, moc | I²C `0x40` | 0…26 V, ±3,2 A | rezystor bocznikowy `R_shunt` | `vbus`, `current` |
+| **INA226** ✅ | j.w. dokładniejszy | I²C `0x40` | 0…36 V, ±20 A | `R_shunt`, `MaxCurrent` | `vbus`, `current` |
+| **INA228** ✅ | 20-bit, energia | I²C `0x40` | ±85 V, dokładność 0,1 % | j.w. | `vbus`, `energy` |
+| **INA3221** ✅ | 3 kanały (panel, bateria, obciążenie) | I²C `0x40` | 0…26 V | j.w. | `vbus*` |
+| **ACS712 / ACS758** ✅ | prąd (Hall, izolowany) | ADC1 (dzielnik + 2,5 V ref) | ±5…50 A | offset przy zerowym prądzie, czułość mV/A | `current` |
+| **MAX17048 / MAX17049 / MAX17055** ✅ | % naładowania baterii Li-Ion | I²C `0x36` | ±1 % SOC | chemia ogniwa w kodzie | `soc` |
+| **LC709203F** ✅ | j.w. | I²C `0x0B` | ±1 % | typ ogniwa | `soc` |
 | **Pomiar napięcia baterii (dzielnik)** ✅ | napięcie zasilania (alarm) | ADC1 `GPIO 3` | 0…20 V | współczynnik dzielnika | `vbat` |
-| **Monitoring pojemności ogniwa Li-Po/Li-Ion + PV** 🟡 | bilans energetyczny stacji | jak wyżej | — | — | `vbat`, `current` |
+| **Monitoring pojemności ogniwa Li-Po/Li-Ion + PV** ✅ | bilans energetyczny stacji | jak wyżej | — | — | `vbat`, `current` |
 
 ## 26. Czujniki do ogrodu / rolnicze
 
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **Mokrość liścia (leaf wetness)** 🟡 | ryzyko chorób roślin | ADC1 `GPIO 14` | 0…100 % | sucho/pod wodą, 2 punkty | `leaf` |
-| **Wilgotność gleby (rozdz. 13)** 🟡 | podlewanie | ADC1 / RS485 | % VWC | suszenie i ważenie | `soil` |
+| **Mokrość liścia (leaf wetness)** ✅ | ryzyko chorób roślin | ADC1 `GPIO 14` | 0…100 % | sucho/pod wodą, 2 punkty | `leaf` |
+| **Wilgotność gleby (rozdz. 13)** ✅ | podlewanie | ADC1 / RS485 | % VWC | suszenie i ważenie | `soil` |
 | **Temperatura gleby (rozdz. 12)** ✅ | wegetacja | 1-Wire / ADC | °C | offset | `ds_*` |
-| **Natężenie światła PAR (S2-131)** 🟡 | fotosyntetycznie czynne promieniowanie | ADC1 | 0…2000 µmol/m²s | współczynnik fabryczny | `par` |
-| **Anemometr + wiatrak na dachu (ochrona przed wiatrem)** 🟡 | j.w. | jak anemometr | — | j.w. | `wind` |
-| **Czujnik oblodzenia (element rezystancyjny / wibracyjny)** 🟡 | alarm gołoledzi | ADC1 / I²C | — | tabela T-wilgotność | `ice` |
+| **Natężenie światła PAR (S2-131)** ✅ | fotosyntetycznie czynne promieniowanie | ADC1 | 0…2000 µmol/m²s | współczynnik fabryczny | `par` |
+| **Anemometr + wiatrak na dachu (ochrona przed wiatrem)** ✅ | j.w. | jak anemometr | — | j.w. | `wind` |
+| **Czujnik oblodzenia (element rezystancyjny / wibracyjny)** ✅ | alarm gołoledzi | ADC1 / I²C | — | tabela T-wilgotność | `ice` |
 | **Czujnik opadów + licznik dzienny** ✅ | dobowe i miesięczne sumy | jak deszczomierz | mm | mm/impuls | `rain` |
 
 ## 27. Czujniki radarowe / obecności (opcjonalne)
@@ -482,23 +482,22 @@ bez rozszerzania nagłówka szerokiego CSV i bez psucia starszych plików.
       │ 8 / 9     │ 8 / 9        │ 17 / 18       │ 21 / 47      │ 4             │ 1..3, 5, 6, 14
       │           │              │               │              │               │
   ┌───┴────┐ ┌────┴──────┐ ┌─────┴──────┐ ┌──────┴─────┐ ┌──────┴──────┐ ┌──────┴─────────────┐
-  │ BME688 │ │ SCD41     │ │ SEN55      │ │ GPS NEO-M9N│ │ DS18B20 ×4  │ │ anemometr  GPIO 6  │
+  │ BME280 │ │ SCD41     │ │ SEN55      │ │ GPS NEO-M9N│ │ DS18B20 ×4  │ │ anemometr  GPIO 6  │
   │ T/RH/P │ │ CO₂ NDIR  │ │ PM1/2,5/10 │ │ (NMEA)     │ │ gleba/woda  │ │ wiatrowskaz GPIO 1 │
-  │ + IAQ  │ │ + T + RH  │ │ VOC + NOx  │ │            │ │             │ │ deszczomierz GPIO 5│
+  │ bazowy │ │ + T + RH  │ │ VOC + NOx  │ │            │ │             │ │ deszczomierz GPIO 5│
   └────────┘ └───────────┘ └────────────┘ └────────────┘ └─────────────┘ └────────────────────┘
       │            │              │
-      │            │              ├──── SPS30 (I²C 0x69)  – pyły 7 frakcji, dokładniejszy
-      │            │              └──── MLX90640 (I²C)     – termowizja 32×24 (chmury, grunt)
+      │            │              └──── SPS30 (I²C 0x69)  – pyły 7 frakcji (dokładniejszy, zamiast SEN55)
       │            │
       │            └──── opcjonalnie: PT1000 + MAX31865 (SPI) – temperatura wzorcowa
       │
       ├──── BH1750 (I²C 0x23) – lux   ·   VEML6075 (0x10) – UV   ·   MMC5983MA (0x30) – kompas
       ├──── INA228 (0x40) – napięcie/prąd/energia   ·   MAX17048 (0x36) – stan baterii
-      ├──── VL53L5CX (0x29) – poziom śniegu / wody  ·   mokrość liścia (GPIO 14)
+      ├──── VL53L0X / VL53L1X (0x29) – poziom śniegu / wody  ·   mokrość liścia (GPIO 14)
       └──── SD 8 GB (SD_MMC 40/41/42)   ·   WS2812B 36 px (GPIO 7, 5 V)   ·   przycisk GPIO 0
 ```
 
-> ⚠️ **BME688, SCD41 i SEN55 nie mogą być w szczelnej obudowie!**
+> ⚠️ **BME280, SCD41 i SEN55 nie mogą być w szczelnej obudowie!**
 > Potrzebują swobodnego przepływu powietrza (DIN, kanał wentylacyjny lub perforowany komin
 > od dołu obudowy), inaczej wilgotność i CO₂ są zafałszowane. Czujniki umieszczamy
 > najniżej w obudowie, elektronikę i zasilanie wyżej. Wiatromierz, anemometr i deszczomierz
@@ -541,11 +540,11 @@ alarmy (burza, przymrozek, wiatr).
 | Czujnik / moduł | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
 | **INMP441** ✅ | mikrofon cyfrowy I²S: hałas w dB, wykrywanie deszczu/gradobicia | I²S `i2s_bclk`, `i2s_ws`, `i2s_din` — dowolne wolne GPIO (edytor pinów), 3V3 | 24 bit, 60 Hz…15 kHz, 1,4 mA | poziom odniesienia dB (cicha noc) → korekta `snd_offset_db` w *Kalibracja* | `snd_level`, `snd_peak`, `snd_leq` |
-| **ICS-43434 / ICS-43432** 🟡 | mikrofon I²S (mały, wbudowany filtr) | I²S jak wyżej (obsługiwany jest ICS-43434) | 24 bit, SNR 65 dB | jak INMP441 | `snd_level` |
+| **ICS-43434** ✅ | mikrofon I²S (mały, wbudowany filtr) | I²S jak wyżej (obsługiwany jest ICS-43434) | 24 bit, SNR 65 dB | jak INMP441 | `snd_level` |
 | **SPH0645LM4H** 🟡 | mikrofon I²S (Adafruit 3421) | I²S j.w., zasilanie 3V3 | 18 bit, −26 dBFS | offset + okno uśredniania 1 s | `noise` |
 | **MSM261S4030H0 / MP34DT01 (PDM)** 🟡 | mikrofon PDM (jeden przewód danych + zegar) | PDM: `DATA 40`, `CLK 41`, 3V3 | SNR 61 dB | filtr decymacyjny, offset | `noise` |
 | **MAX9814 / MAX4466 / KY-038 (analogowy)** 🟡 | tani mikrofon analogowy (detekcja deszczu) | przez ADS1115 `A3` (albo ADC1 `GPIO 2`) | 0…3,3 V, wzmocnienie 40/50/60 dB | próg napięcia dla „pada" | `rain` (binarnie) / `noise` |
-| **MAX98357A** 🟡 | wzmacniacz + głośnik 3 W z I²S (zapowiedzi alarmów) | I²S `i2s_dout` (+ `i2s_bclk`), 5V | 3 W / 4 Ω | poziom w kodzie | — (wyjście TX w trybie ciszy, odtwarzanie jeszcze nie) |
+| **MAX98357A** ✅ | wzmacniacz + głośnik 3 W z I²S (zapowiedzi alarmów) | I²S `i2s_dout` (+ `i2s_bclk`), 5V | 3 W / 4 Ω | poziom w kodzie | — (wyjście TX w trybie ciszy, odtwarzanie jeszcze nie) |
 | **PCM5102 / UDA1334A (DAC I²S)** 🟡 | wyjście liniowe audio (sygnały, dzwonek) | I²S j.w. + `VIN` 5V | 24 bit / 96 kHz | poziom w kodzie | — (wyjście) |
 
 > **Uwaga:** sterownik I²S (`src/drv_i2s.cpp`) obsługuje **INMP441** i **ICS-43434**
@@ -567,16 +566,16 @@ magistrala i piny są jednak ustalone, więc kabel można przygotować już tera
 
 | Moduł | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
-| **HX711** 🟡 | waga: deszczomierz wagowy, poziom zbiornika, śnieg | `DT 40`, `SCK 41`, 5V | 24 bit, 10/80 Hz | tara przy zerze + współczynnik g/zliczenie | `rain_w` / `tank` |
+| **HX711** ✅ | waga: deszczomierz wagowy, poziom zbiornika, śnieg | `DT 40`, `SCK 41`, 5V | 24 bit, 10/80 Hz | tara przy zerze + współczynnik g/zliczenie | `rain_w` / `tank` |
 | **MAX31865** ✅ | PT100 / PT1000 (temperatura wzorcowa) | SPI bit-bang: `CS` = `rtd_cs` (dowolny GPIO), `SCK`/`MOSI`/`MISO` w edytorze pinów | −200…+600 °C, ±0,1 °C | rezystor odniesienia `Rref` (`rtd_rref`), `rtd_r0`, liczba przewodów (`rtd_wires`), filtr (`rtd_filter`) | `rtd_temp`, `rtd_res` |
 | **MAX6675 / MAX31855** ✅ | termopary K/J/T (komin, piec) | SPI bit-bang: `CS` = `tc_cs`, `SCK`/`MISO` w edytorze pinów | −200…+1350 °C | typ termopary (`tc_type`), kompensacja zimnych końców wbudowana w MAX31855 | `tc_max6675`, `tc_31855_t` |
 | **MCP3008 (10 bit) / MCP3208 (12 bit)** ✅ | 8 dodatkowych wejść analogowych (NTC, foto-dioda, miernik napięcia, elektroda pH) | SPI bit-bang: `CS` = `adc_cs` (**własna linia**), `SCK`/`MOSI`/`MISO` = `tc_*` w edytorze pinów | 0…Vref (domyślnie 3,3 V), 10/12 bit | napięcie odniesienia `adc_spi_vref` (0,5…5,5 V), typ układu wykrywany automatycznie | `adc_mcp_ch0` … `adc_mcp_ch7` |
 | **MCP23017** ✅ | ekspander 16 dodatkowych GPIO na I²C | I²C `0x20…0x27` | 16 linii, przerwanie INT | — | — |
 | **PCF8574 / PCF8575** ✅ | ekspander 8/16 GPIO (LCD, przekaźniki) | I²C `0x20…0x27` | 8/16 linii | — | — |
 | **DS2482-100** 🟡 | mostek 1-Wire (długie kable, wiele DS18B20) | I²C `0x18` | do 8 magistral | jak DS18B20 | `ds_*` |
-| **INA219 / INA226 / INA260** 🟡 | napięcie, prąd i moc (zasilanie, panel PV, grzałka) | I²C `0x40`/`0x41`/`0x44` | do 36 V, ±0,5 % | `R_shunt` + zero | `vbat`, `ibat`, `pbat` |
+| **INA219 / INA226** ✅ | napięcie, prąd i moc (zasilanie, panel PV, grzałka) | I²C `0x40`/`0x41`/`0x44` | do 36 V, ±0,5 % | `R_shunt` + zero | `vbat`, `ibat`, `pbat` |
 | **VL53L0X / VL53L1X** ✅ | pomiar odległości ToF: poziom wody, śniegu | I²C `0x29` | 30…2000 mm / 4 m, ±3 % | zerowanie przy znanym poziomie (`tof_offset_mm` w *Kalibracja*) | `mot_tof_dist`, `mot_tof_l1_dist` |
-| **JSN-SR04T / HC-SR04** 🟡 | ultradźwięki: poziom, pokrywa śnieżna | `TRIG 40`, `ECHO 41` (dzielnik 1 kΩ/2 kΩ!) | 20…600 cm | zerowanie + korekta temperatury | `level` |
+| **JSN-SR04T / HC-SR04** ✅ | ultradźwięki: poziom, pokrywa śnieżna | `TRIG 40`, `ECHO 41` (dzielnik 1 kΩ/2 kΩ!) | 20…600 cm | zerowanie + korekta temperatury | `level` |
 | **RC522 / PN532** 🟡 | RFID/NFC — dostęp serwisowy do ustawień | SPI (`CS 42`) lub I²C `0x24` | 13,56 MHz | — | — |
 | **OLED SSD1306 (0x3C) / LCD 20×4 (0x27)** 🟡 | lokalny wyświetlacz na obudowie | I²C `0x3C`/`0x27` | 128×64 / 20×4 | — | — |
 | **TFT ST7789 / ILI9341** 🟡 | ekran graficzny (wykresy lokalnie) | SPI: `CS 42`, `DC 40`, `RST 41` | 240×320 | — | — |
@@ -584,7 +583,7 @@ magistrala i piny są jednak ustalone, więc kabel można przygotować już tera
 | **Przekaźnik / SSR** 🟡 | sterowanie: nawadnianie, wentylator, grzałka | wolny GPIO (np. `45`) przez transoptor | 3,3 V / 10 mA | — | — (wyjście) |
 | **Buzzer / syrena** 🟡 | alarm akustyczny (burza, przymrozek) | wolny GPIO (np. `45`) | 3,3–5 V | próg alarmu w kodzie | — (wyjście) |
 | **Servo / PWM (SG90)** 🟡 | osłona radiacyjna, żaluzja, klapka | wolny GPIO (np. `42`) | 50 Hz PWM | zakres kąta w kodzie | — (wyjście) |
-| **Kamera OV2640 / OV5640** 🟡 | zdjęcia na kartę SD i podgląd na stronie | SPI + DVP (piny do ustalenia), 3,3 V | 2 MP / 5 MP | ostrość i ekspozycja w kodzie | pliki JPG na SD |
+| **Kamera OV2640 / OV5640** ✅ | zdjęcia na kartę SD i podgląd na stronie | SPI + DVP (piny do ustalenia), 3,3 V | 2 MP / 5 MP | ostrość i ekspozycja w kodzie | pliki JPG na SD |
 
 > **Wolne piny na N16R8** (po domyślnym przypisaniu): `40`, `41`, `42` oraz `19`/`20`
 > (USB — z ostrzeżeniem) i `3` (strapping). `47`/`48` zajmuje druga magistrala I²C dla RTC

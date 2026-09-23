@@ -37,7 +37,9 @@ static const char* COLS[] = {
   "x2_sen_t", "x2_sen_h", "x2_sen_voc", "x2_sen_nox",
   "x2_sht_t", "x2_sht_h", "x2_bmp_t", "x2_bmp_p",
   "x2_ads0", "x2_ads1", "x2_ads2", "x2_ads3",
-  "x2_ds0", "x2_ds1", "x2_ds2", "x2_ds3", "x2_ds4", "x2_ds5", "x2_ds6", "x2_ds7"
+  "x2_ds0", "x2_ds1", "x2_ds2", "x2_ds3", "x2_ds4", "x2_ds5", "x2_ds6", "x2_ds7",
+  // Druga temperatura na masterze (BME280, obok Tuya na "temp")
+  "temp2"
 };
 static const int NCOLS = sizeof(COLS) / sizeof(COLS[0]);
 
@@ -62,6 +64,7 @@ String DataLogger::columnName(int idx) {
 
 String DataLogger::columnForMetric(const String& metric) {
   if (metric == "temp") return "temp";
+  if (metric == "temp2") return "temp2";
   if (metric == "hum") return "hum";
   if (metric == "press") return "press";
   if (metric == "light") return "light";

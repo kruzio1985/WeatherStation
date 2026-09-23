@@ -2867,12 +2867,18 @@ async function loadCamera() {
   add(t('Wsparcie sprzętowe'), d.supported ? t('Tak') : t('Nie'), '',
       d.supported ? 'ESP32-S3 z PSRAM' : t('Ten wariant nie obsługuje kamery'),
       d.supported ? 'var(--ok)' : 'var(--warn)');
-  add(t('Kamera'), d.present ? t('Zainicjalizowana') : t('Brak'), '',
-      d.present ? (d.model || '') : (d.enabled ? t('włączona, ale nie działa') : t('wyłączona')),
-      d.present ? 'var(--ok)' : (d.enabled ? 'var(--err)' : 'var(--muted)'));
-  add(t('Piny'), d.configured ? t('Skonfigurowane') : t('Niekompletne'), '',
-      d.configured ? '' : t('Uzupełnij piny XCLK, PCLK, VSYNC, HREF i D0–D7'),
-      d.configured ? 'var(--ok)' : 'var(--warn)');
+  const ext = (d.mode === 'external');
+  add(t('Kamera'),
+      ext ? t('Zewnętrzna') : (d.present ? t('Zainicjalizowana') : t('Brak')), '',
+      ext ? (d.cam_remote_url || '')
+          : (d.present ? (d.model || '') : (d.enabled ? t('włączona, ale nie działa') : t('wyłączona'))),
+      ext ? (d.enabled ? 'var(--ok)' : 'var(--muted)')
+          : (d.present ? 'var(--ok)' : (d.enabled ? 'var(--err)' : 'var(--muted)')));
+  if (!ext) {
+    add(t('Piny'), d.configured ? t('Skonfigurowane') : t('Niekompletne'), '',
+        d.configured ? '' : t('Uzupełnij piny XCLK, PCLK, VSYNC, HREF i D0–D7'),
+        d.configured ? 'var(--ok)' : 'var(--warn)');
+  }
   add(t('Rozdzielczość'), camResLabel(d.resolution), '', t('Jakość JPEG') + ': ' + d.quality);
   add(t('Timelapse'), fmtNum(d.interval_min, 0), t('min'), d.interval_min === 0 ? t('tylko zdjęcia ręczne') : '');
   if (d.last_file) add(t('Ostatnie zdjęcie'), d.last_file.split('/').pop(), '', d.last_file);
@@ -2900,11 +2906,17 @@ function renderCameraAnalysis(a) {
     return;
   }
   const phaseLabel = { day: t('Dzień'), 'dawn/dusk': t('Świt / zmierzch'), night: t('Noc') };
+  const weatherLabel = { clear: t('Bezchmurnie'), cloudy: t('Pochmurno'), fog: t('Mgła'),
+                         rain: t('Deszcz'), snow: t('Śnieg'), night: t('Noc') };
   add(t('Faza dnia'), phaseLabel[a.phase] || a.phase, '', t('jasność') + ': ' + fmtNum(a.brightness, 0) + '/255');
+  if (a.weather) add(t('Warunki'), weatherLabel[a.weather] || a.weather, '', t('szacunkowe z jednego zdjęcia'));
   add(t('Natężenie światła'), fmtNum(a.lux, 0), 'lx', a.lux < 1 ? t('ciemno') : (a.lux > 30000 ? t('pełne słońce') : ''));
   add(t('Składowe RGB'), 'R ' + fmtNum(a.mean_r, 0) + ' G ' + fmtNum(a.mean_g, 0) + ' B ' + fmtNum(a.mean_b, 0), '', '');
   add(t('Ruch'), fmtNum(a.motion_pct, 1), '%', t('zmiana względem poprzedniego zdjęcia'));
   add(t('Zachmurzenie'), a.cloud_pct < 0 ? t('brak danych') : fmtNum(a.cloud_pct, 0) + '%', '', t('szacunkowe, górna część kadru'));
+  if (typeof a.snow_pct === 'number' && a.snow_pct >= 0) add(t('Śnieg'), fmtNum(a.snow_pct, 0) + '%', '', t('szacunkowa pokrywa / intensywność'));
+  if (typeof a.rain_pct === 'number' && a.rain_pct >= 0) add(t('Deszcz'), fmtNum(a.rain_pct, 0) + '%', '', t('szacunkowa intensywność'));
+  if (typeof a.fog_pct === 'number' && a.fog_pct >= 0) add(t('Mgła'), fmtNum(a.fog_pct, 0) + '%', '', t('szacunkowa intensywność'));
   if (a.w && a.h) add(t('Rozdzielczość'), a.w + '×' + a.h, '', t('oryginalne zdjęcie'));
 }
 

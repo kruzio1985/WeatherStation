@@ -86,32 +86,32 @@ A complete weather station with a web interface, MQTT publishing to Home Assista
 
 | Group | Models (✅ = driver already in code, 🟡 = ready to add) |
 |---|---|
-| Temperature | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ thermocouples K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614/90615 (via `drv_motion`) · 🟡 BME680/688, SHT3x/85, AHT1x/2x, HDC1080/2010, TMP117, MCP9808, NTC, MLX90632/90640/90641, Si7051 |
-| Humidity | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · 🟡 SHT3x/85, AHT2x, HDC2xxx |
-| Pressure | ✅ BME280 · ✅ BMP581 · 🟡 BMP180/280/380/388/390, DPS310/368, LPS22/28, MPL3115A2, MS5611 |
-| Rain | ✅ tipping-bucket (reed switch) + Hall/reed · 🟡 FC-37/YL-83, optical, weighing (HX711) |
+| Temperature | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ thermocouples K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614 (via `drv_motion`) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080, TMP117, MCP9808 · 🟡 BME680/688, NTC, MLX90632/90640/90641, Si7051 |
+| Humidity | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080 · 🟡 HDC3020 |
+| Pressure | ✅ BME280 · ✅ BMP581 · ✅ BMP280 · ✅ BMP388/390 · ✅ DPS310/368 · ✅ LPS22HB/LPS25HB/LPS28DFW · ✅ MPL3115A2 · ✅ MS5611 · 🟡 BMP180 |
+| Rain | ✅ tipping-bucket (reed switch) + Hall/reed · ✅ HX711 (weighing gauge) · 🟡 FC-37/YL-83, optical |
 | Wind (speed) | ✅ pulse/reed anemometer · 🟡 ultrasonic, differential pressure (Pitot) |
 | Wind (direction) | ✅ ADC wind vane (16 directions, compass) · ✅ AS5600 (12-bit I²C encoder) · 🟡 AS5048A/B, AS5047P, MT6701, MA730/732, TLE5012B |
 | Magnetometers | ✅ MMC5983MA (azimuth) · ✅ QMC5883L · ✅ HMC5883L · 🟡 HMC5983, LIS3MDL, LIS2MDL, MMC5603, BMM150/350, AK09918 |
 | Hall sensors | ✅ reed switches · 🟡 A3144, AH3144, SS49E, A132x, DRV5032/5033/5055/5056, TMAG3001/5170 |
-| Light (lux) | ✅ BH1750 · ✅ VEML7700 · 🟡 OPT3001/3002, LTR-329/303, TSL2591/2561, ISL29125, TCS34725 |
-| UV | ✅ LTR-390UV (UVS channel) · 🟡 VEML6070, VEML6075, SI1145, GUVA-S12SD, GY-ML8511 |
+| Light (lux) | ✅ BH1750 · ✅ VEML7700 · ✅ OPT3001 · ✅ TSL2591/2561 · ✅ LTR-329/303 · 🟡 OPT3002, ISL29125, TCS34725 |
+| UV | ✅ LTR-390UV (UVS channel) · ✅ VEML6070/6075 · ✅ SI1145 · 🟡 GUVA-S12SD, GY-ML8511 |
 | Pyranometer | ✅ calibrated cell via ADC or ADS1115 (W/m²) · 🟡 cell + shunt, MLX90614 pointed at the sky |
 | Soil | ✅ DS18B20 · ✅ analogue YL-69 / capacitive probe (dry/wet calibration) · 🟡 SHT in soil, tensiometers, **SDI-12**, Modbus/RS485 (NPK, pH, EC) |
 | Analog inputs | ✅ ADS1115 ×4 (16-bit, I²C 0x48–0x4B; channels `ads_0…ads_3` off by default) · ✅ MCP3008 (10-bit) / MCP3208 (12-bit) ×8 on bit-bang SPI (own `adc_cs` line, shared `tc_sck/tc_mosi/tc_miso` with thermocouples) |
 | Particulate matter | ✅ PMS5003/7003/6003 · ✅ SPS30 · ✅ SEN50/54/55 (SEN5x) · 🟡 PMSA003I, SDS011/018, HPMA115, OPC-N3 |
-| VOC / IAQ | ✅ SGP30 (eCO₂ + TVOC) · 🟡 BME680/688, SGP40/41, ENS160/161, CCS811 |
+| VOC / IAQ | ✅ SGP30 (eCO₂ + TVOC) · ✅ SGP40/41 · ✅ ENS160 · ✅ CCS811 · 🟡 BME680/688 |
 | CO₂ | ✅ **SCD30/40/41** (NDIR) · 🟡 SenseAir S8, Sunrise, MH-Z19B/C/D |
 | Gases | ✅ MQ-2/3/4/5/6/7/8/9/131/135/136/137 (R0, RL, ppm chart) · ✅ MiCS-4514 (CO) / MiCS-6814 (NO₂) · ✅ TGS2600 · 🟡 TGS2602/2611, electrochemical cells |
-| IR temperature | ✅ MLX90614/90615 · 🟡 MLX90632/90640/90641, AMG8833 |
-| Water / snow level | ✅ VL53L0X / VL53L1X · 🟡 **L4CD**/**L5CX**/L7CX, HC-SR04, JSN-SR04T, A02YYUW, 4–20 mA hydrostatic probes |
+| IR temperature | ✅ MLX90614 · 🟡 MLX90615/90632/90640/90641, AMG8833 |
+| Water / snow level | ✅ VL53L0X / VL53L1X · ✅ HC-SR04 · 🟡 **L4CD**/**L5CX**/L7CX, JSN-SR04T, A02YYUW, 4–20 mA hydrostatic probes |
 | IMU | ✅ MPU6050/6500/9250/9255, LIS3DH, ADXL345 · 🟡 MPU6886, LIS2DW12, ADXL355, ICM-42688, BMI270, BNO055/085/086 |
 | GPS | ✅ NEO-6M/7M/8M/M8N/M8Q/M9N/M9V, ATGM336H, L76K, L86, GT-U7 (NMEA 0183 over UART, time source) · 🟡 ZED-F9P (RTK/UBX), modules without NMEA |
-| Sun | 🟡 Sun position (altitude, azimuth), sunrise/sunset, clear-sky factor |
-| Power | ✅ ACS712 / ACS758 (current and power) · ✅ battery voltage measurement · 🟡 INA219/226/228/238/3221, MAX17048/49/55, LC709203F |
-| Garden | ✅ leaf wetness **or** icing (one input, two channels) · 🟡 PAR (S2-131), daily rain counter |
+| Sun | ✅ Sun position (altitude, azimuth), sunrise/sunset, clear-sky factor |
+| Power | ✅ ACS712 / ACS758 (current and power) · ✅ battery voltage measurement · ✅ INA219/226/228/3221 · ✅ MAX17048/49/55 · ✅ LC709203F · 🟡 INA238 |
+| Garden | ✅ leaf wetness **or** icing (one input, two channels) · ✅ PAR (S2-131) · 🟡 daily rain counter |
 | Radar / presence | 🟡 HLK-LD2410, **LD2450**, LD2461 |
-| Sound / audio | ✅ I²S microphone INMP441 / ICS-43434 / SPH0645 (`snd_level`, `snd_peak`, `snd_leq`) · ✅ MAX98357A (TX installation) · 🟡 PDM/analogue |
+| Sound / audio | ✅ I²S microphone INMP441 / ICS-43434 (`snd_level`, `snd_peak`, `snd_leq`) · ✅ MAX98357A (TX installation) · 🟡 SPH0645, PDM/analogue |
 | Station modules | ✅ WS2812B 36 px, microSD 8 GB · 🟡 OLED SSD1306/SH1106, LCD1602/2004, TFT/e-ink, buzzer/relay |
 
 > Extra drivers (I²C/analog): **SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600,
@@ -123,7 +123,7 @@ A complete weather station with a web interface, MQTT publishing to Home Assista
 
 | Module | Pins |
 |---|---|
-| I²C (BME280/BME680, SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600, ADS1115, SCD4x, SGP30, SEN5x/SPS30, BH1750, AS3935) | SDA=8, SCL=9 |
+| I²C (BME280, SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600, ADS1115, SCD4x, SGP30, SEN5x/SPS30, BH1750, AS3935) | SDA=8, SCL=9 |
 | DS18B20 (OneWire) | 4 |
 | Rain gauge | 5 (interrupt) |
 | Anemometer | 6 (interrupt) |
@@ -393,32 +393,32 @@ znajduje się w osobnym dokumencie: **[docs/CZUJNIKI.md](docs/CZUJNIKI.md)**.
 
 | Grupa | Modele (✅ = sterownik już w kodzie, 🟡 = gotowy do dopisania) |
 |---|---|
-| Temperatura | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ termopary K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614/90615 (przez `drv_motion`) · 🟡 BME680/688, SHT3x/85, AHT1x/2x, HDC1080/2010, TMP117, MCP9808, NTC, MLX90632/90640/90641, Si7051 |
-| Wilgotność | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · 🟡 SHT3x/85, AHT2x, HDC2xxx |
-| Ciśnienie | ✅ BME280 · ✅ BMP581 · 🟡 BMP180/280/380/388/390, DPS310/368, LPS22/28, MPL3115A2, MS5611 |
-| Deszcz | ✅ przechyłowy (bąbelkowy) + Hall/kontaktron · 🟡 FC-37/YL-83, optyczny, wagowy (HX711) |
+| Temperatura | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ termopary K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614 (przez `drv_motion`) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080, TMP117, MCP9808 · 🟡 BME680/688, NTC, MLX90632/90640/90641, Si7051 |
+| Wilgotność | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080 · 🟡 HDC3020 |
+| Ciśnienie | ✅ BME280 · ✅ BMP581 · ✅ BMP280 · ✅ BMP388/390 · ✅ DPS310/368 · ✅ LPS22HB/LPS25HB/LPS28DFW · ✅ MPL3115A2 · ✅ MS5611 · 🟡 BMP180 |
+| Deszcz | ✅ przechyłowy (bąbelkowy) + Hall/kontaktron · ✅ HX711 (wagowy) · 🟡 FC-37/YL-83, optyczny |
 | Wiatr (prędkość) | ✅ anemometr impulsowy/contactron · 🟡 ultradźwiękowy, różnica ciśnień (Pitot) |
 | Wiatr (kierunek) | ✅ wiatrowskaz ADC (16 kierunków, kompas) · ✅ AS5600 (enkoder 12-bit na I²C) · 🟡 AS5048A/B, AS5047P, MT6701, MA730/732, TLE5012B |
 | Magnetometry | ✅ MMC5983MA (azymut) · ✅ QMC5883L · ✅ HMC5883L · 🟡 HMC5983, LIS3MDL, LIS2MDL, MMC5603, BMM150/350, AK09918 |
 | Czujniki Halla | ✅ kontaktron/reeds · 🟡 A3144, AH3144, SS49E, A132x, DRV5032/5033/5055/5056, TMAG3001/5170 |
-| Światło (lux) | ✅ BH1750 · ✅ VEML7700 · 🟡 OPT3001/3002, LTR-329/303, TSL2591/2561, ISL29125, TCS34725 |
-| UV | ✅ LTR-390UV (kanał UVS) · 🟡 VEML6070, VEML6075, SI1145, GUVA-S12SD, GY-ML8511 |
+| Światło (lux) | ✅ BH1750 · ✅ VEML7700 · ✅ OPT3001 · ✅ TSL2591/2561 · ✅ LTR-329/303 · 🟡 OPT3002, ISL29125, TCS34725 |
+| UV | ✅ LTR-390UV (kanał UVS) · ✅ VEML6070/6075 · ✅ SI1145 · 🟡 GUVA-S12SD, GY-ML8511 |
 | Pyranometr | ✅ ogniwo kalibrowane przez ADC lub ADS1115 (W/m²) · 🟡 ogniwo + bocznik, MLX90614 na niebo |
 | Gleba | ✅ DS18B20 · ✅ sonda analogowa YL-69 / pojemnościowa (kalibracja sucho/mokro) · 🟡 SHT w glebie, tensjometry, **SDI-12**, Modbus/RS485 (NPK, pH, EC) |
 | Wejścia analogowe | ✅ ADS1115 ×4 (16 bit, I²C 0x48–0x4B; kanały `ads_0…ads_3` domyślnie wyłączone) · ✅ MCP3008 (10 bit) / MCP3208 (12 bit) ×8 na SPI bit-bang (własna linia `adc_cs`, wspólne `tc_sck/tc_mosi/tc_miso` z termoparami) |
 | Pyły PM | ✅ PMS5003/7003/6003 · ✅ SPS30 · ✅ SEN50/54/55 (SEN5x) · 🟡 PMSA003I, SDS011/018, HPMA115, OPC-N3 |
-| VOC / IAQ | ✅ SGP30 (eCO₂ + TVOC) · 🟡 BME680/688, SGP40/41, ENS160/161, CCS811 |
+| VOC / IAQ | ✅ SGP30 (eCO₂ + TVOC) · ✅ SGP40/41 · ✅ ENS160 · ✅ CCS811 · 🟡 BME680/688 |
 | CO₂ | ✅ **SCD30/40/41** (NDIR) · 🟡 SenseAir S8, Sunrise, MH-Z19B/C/D |
 | Gazy | ✅ MQ-2/3/4/5/6/7/8/9/131/135/136/137 (R0, RL, wykres ppm) · ✅ MiCS-4514 (CO) / MiCS-6814 (NO₂) · ✅ TGS2600 · 🟡 TGS2602/2611, ogniwa elektrochemiczne |
-| Temperatura IR | ✅ MLX90614/90615 · 🟡 MLX90632/90640/90641, AMG8833 |
-| Poziom wody / śniegu | ✅ VL53L0X / VL53L1X · 🟡 **L4CD**/**L5CX**/L7CX, HC-SR04, JSN-SR04T, A02YYUW, sondy hydrostatyczne 4–20 mA |
+| Temperatura IR | ✅ MLX90614 · 🟡 MLX90615/90632/90640/90641, AMG8833 |
+| Poziom wody / śniegu | ✅ VL53L0X / VL53L1X · ✅ HC-SR04 · 🟡 **L4CD**/**L5CX**/L7CX, JSN-SR04T, A02YYUW, sondy hydrostatyczne 4–20 mA |
 | IMU | ✅ MPU6050/6500/9250/9255, LIS3DH, ADXL345 · 🟡 MPU6886, LIS2DW12, ADXL355, ICM-42688, BMI270, BNO055/085/086 |
 | GPS | ✅ NEO-6M/7M/8M/M8N/M8Q/M9N/M9V, ATGM336H, L76K, L86, GT-U7 (NMEA 0183 po UART, źródło czasu) · 🟡 ZED-F9P (RTK/UBX), moduły bez NMEA |
-| Słońce | 🟡 pozycja Słońca (wysokość, azymut), wschód/zachód, współczynnik „clear sky” |
-| Zasilanie | ✅ ACS712 / ACS758 (prąd i moc) · ✅ pomiar napięcia baterii · 🟡 INA219/226/228/238/3221, MAX17048/49/55, LC709203F |
-| Ogród | ✅ mokrość liścia **albo** oblodzenie (jedno wejście, dwa kanały) · 🟡 PAR (S2-131), licznik opadów dobowych |
+| Słońce | ✅ pozycja Słońca (wysokość, azymut), wschód/zachód, współczynnik „clear sky” |
+| Zasilanie | ✅ ACS712 / ACS758 (prąd i moc) · ✅ pomiar napięcia baterii · ✅ INA219/226/228/3221 · ✅ MAX17048/49/55 · ✅ LC709203F · 🟡 INA238 |
+| Ogród | ✅ mokrość liścia **albo** oblodzenie (jedno wejście, dwa kanały) · ✅ PAR (S2-131) · 🟡 licznik opadów dobowych |
 | Radar / obecność | 🟡 HLK-LD2410, **LD2450**, LD2461 |
-| Dźwięk / audio | ✅ mikrofon I²S INMP441 / ICS-43434 / SPH0645 (`snd_level`, `snd_peak`, `snd_leq`) · ✅ MAX98357A (instalacja TX) · 🟡 PDM/analogowe |
+| Dźwięk / audio | ✅ mikrofon I²S INMP441 / ICS-43434 (`snd_level`, `snd_peak`, `snd_leq`) · ✅ MAX98357A (instalacja TX) · 🟡 SPH0645, PDM/analogowe |
 | Moduły stacji | ✅ WS2812B 36 px, SD microSD 8 GB · 🟡 OLED SSD1306/SH1106, LCD1602/2004, TFT/e-ink, buzzer/przekaźnik |
 
 > Sterowniki dodatkowe (I²C/analog): **SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA,
@@ -448,7 +448,7 @@ znajduje się w osobnym dokumencie: **[docs/CZUJNIKI.md](docs/CZUJNIKI.md)**.
 
 | Moduł | Piny |
 |---|---|
-| I2C (BME280/BME680, SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600, ADS1115, SCD4x, SGP30, SEN5x/SPS30, BH1750, AS3935) | SDA=8, SCL=9 |
+| I2C (BME280, SHT4x, BMP581, VEML7700, LTR-390UV, MMC5983MA, AS5600, ADS1115, SCD4x, SGP30, SEN5x/SPS30, BH1750, AS3935) | SDA=8, SCL=9 |
 | DS18B20 (OneWire) | 4 |
 | Deszczomierz | 5 (przerwanie) |
 | Anemometr | 6 (przerwanie) |

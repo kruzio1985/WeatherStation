@@ -32,7 +32,9 @@
 #define PIN_RTC_SCL2        48
 
 // --- OneWire: czujniki zewnętrzne DS18B20 (można kilka równolegle) ---
-#define PIN_ONEWIRE         4
+//  Domyślnie wyłączone (-1): GPIO 4 przejął analogowy czujnik UV (GUVA-S12SD).
+//  DS18B20 podepniesz na wolnym pinie i ustawisz go w zakładce "Piny".
+#define PIN_ONEWIRE         -1
 
 // --- Deszczomierz (kontaktron, zwarty do GND przy impulsie) ---
 #define PIN_RAIN            5
@@ -122,17 +124,18 @@
 
 // --- Czujniki analogowe (ADC) ---
 //     ADC1 (GPIO 1-10) działa równolegle z Wi-Fi, ADC2 (GPIO 11-20) NIE.
-//     Wszystkie piny ADC1 są już zajęte (1 = wiatrowskaz, 4 = OneWire,
+//     Wszystkie piny ADC1 są już zajęte (1 = wiatrowskaz, 4 = UV analogowy,
 //     5/6 = deszcz/wiatr, 7 = RGB, 8/9 = I2C, 10 = SCK karty SD w trybie SPI).
 //     Dlatego domyślnie wolne zostaje tylko GPIO 2 - więcej czujników
 //     analogowych podłącz przez ADS1115 na I2C (4 kanały, 16 bitów).
-#define PIN_SOIL_ADC        2     // sonda wilgotności gleby
+#define PIN_SOIL_ADC        -1    // sonda wilgotności gleby (GPIO2 przejął czujnik deszczu/śniegu)
 #define PIN_PYRANO_ADC      -1    // pyranometr / ogniwo słoneczne (W/m2)
+#define PIN_UV_ADC          4     // analogowy czujnik UV (GUVA-S12SD, 100 mV/UVI)
 #define PIN_SCATTER_ADC     -1    // widzialność (rozproszenie światła)
 #define PIN_GAS_ADC         -1    // MQ-2/5/7/135, MiCS-4514 (przez dzielnik)
 #define PIN_GAS_ADC2        -1    // drugi czujnik gazów równolegle (np. MQ-7 + MQ-135)
 #define PIN_PAR_ADC         -1    // czujnik PAR (S2-131, fotodioda) - W/m2 w zakresie 400-700 nm
-#define PIN_LEAF_ADC        -1    // mokrość liścia / oblodzenie
+#define PIN_LEAF_ADC        2     // mokrość liścia / deszcz-śnieg (FC-37/YL-83, wyjście A0)
 #define PIN_ACS_ADC         -1    // ACS712 / ACS758 (pomiar prądu)
 
 // --- Czujnik radarowy obecności HLK-LD2410 / LD2450 (UART 256000) ---
@@ -151,6 +154,12 @@
 //     GPIO 42 = wolny pin złącza J3 (grupa JTAG 39-42, czyli bez zewnętrznego
 //     debuggera); 40/41 zostają wolne. Tryb SDMMC 1-bit (40/41/42) koliduje.
 #define PIN_DHT             42
+
+// --- Czujnik Tuya temp./wilg. (TLSR8258, firmware UART) ---
+//     TX czujnika -> RX ESP32. Linia ASCII "T=xx.xx;RH=yy.yy" co ~2 s,
+//     115200 8N1. Odczyt bit-bang (SoftwareSerial), bo wszystkie 3 sprzętowe
+//     UART-y są zajęte (RS485 / GPS / PMS5003). GPIO 41 = wolny pin grupy JTAG.
+#define PIN_TUY_RX          41
 
 // --- Waga / tensjometr / siła na HX711 (2 przewody: DT i SCK) ---
 #define PIN_HX711_DT        -1

@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 #include <time.h>
 #include <string.h>
+#include <math.h>
 #include <algorithm>
 
 #if STACJA_HAS_CAMERA
@@ -110,6 +111,18 @@ bool CameraManager::begin() {
     LOG_I("Kamera: wyłączona w ustawieniach");
     return true;
   }
+
+  String remoteUrl = config.camRemoteUrl();
+  remoteUrl.trim();
+  if (remoteUrl.length() > 0) {
+    // Tryb zewnętrzny: zdjęcia robi i wysyła zewnętrzna kamera (ESP32-CAM)
+    // przez /api/camera/upload. Lokalny sterownik nie jest uruchamiany, więc
+    // piny magistrali równoległej nie są wymagane.
+    lastError_ = "";
+    LOG_I("Kamera: tryb zewnętrzny (%s)", remoteUrl.c_str());
+    return true;
+  }
+
   return start();
 #endif
 }
@@ -313,22 +326,50 @@ bool CameraManager::triggerRemote() {
   String url = config.camRemoteUrl();
   url.trim();
   if (url.length() == 0) return false;
+  if (!url.startsWith("http://")) {
+    lastError_ = "adres kamery musi zaczynać się od http://";
+    LOG_W("Kamera: trigger - zły adres %s", url.c_str());
+    return false;
+  }
 
-  HTTPClient http;
-  http.setConnectTimeout(8000);
-  http.setTimeout(15000);
-  if (!http.begin(url)) {
-    lastError_ = "nie udało się połączyć z kamerą (błędny adres)";
-    LOG_E("Kamera: trigger - begin() nieudany dla %s", url.c_str());
+  // Parsowanie "http://host[:port]/sciezka".
+  String rest = url.substring(7);
+  String host = rest;
+  String path = "/";
+  int slash = rest.indexOf('/');
+  if (slash >= 0) { path = rest.substring(slash); host = rest.substring(0, slash); }
+
+  uint16_t port = 80;
+  int colon = host.indexOf(':');
+  if (colon >= 0) {
+    port = (uint16_t)host.substring(colon + 1).toInt();
+    host = host.substring(0, colon);
+  }
+  if (host.length() == 0) { lastError_ = "nieprawidłowy adres kamery"; return false; }
+
+  // Fire-and-forget: wysyłamy jedynie sygnał "zrób zdjęcie" i od razu
+  // zamykamy połączenie. Blokujący GET (HTTPClient) wieszał jedyny wątek
+  // AsyncWebServer - kamera nie mogła wtedy wysłać zdjęcia z powrotem na
+  // /api/camera/upload i stacja restartowała się (deadlock).
+  WiFiClient client;
+  IPAddress ip;
+  bool connected = ip.fromString(host)
+      ? client.connect(ip, port)
+      : client.connect(host.c_str(), port);
+  if (!connected) {
+    lastError_ = "nie udało się połączyć z kamerą (" + host + ")";
+    LOG_W("Kamera: trigger - brak połączenia z %s", host.c_str());
     return false;
   }
-  int code = http.GET();
-  http.end();
-  if (code != 200) {
-    lastError_ = "kamera odpowiedziała kodem " + String(code);
-    LOG_W("Kamera: trigger - HTTP %d", code);
-    return false;
-  }
+
+  client.print("GET " + path + " HTTP/1.1\r\n");
+  client.print("Host: " + host + "\r\n");
+  client.print("User-Agent: stacja-pogody\r\n");
+  client.print("Connection: close\r\n\r\n");
+  client.flush();
+  delay(100);
+  client.stop();
+
   lastError_ = "";
   return true;
 #endif
@@ -440,7 +481,7 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   const uint16_t* px = (const uint16_t*)buf;
   float sumLum = 0, sumR = 0, sumG = 0, sumB = 0;
   float motion = 0;
-  uint32_t cloud = 0, sky = 0;
+  uint32_t cloud = 0, sky = 0, whiteCnt = 0, grayCnt = 0;
 
   for (int gy = 0; gy < gh; gy++) {
     int y = gy * stepY; if (y >= (int)h) y = h - 1;
@@ -456,6 +497,12 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
       int idx = gy * gw + gx;
       cur[idx] = (uint8_t)lum;
       sumLum += lum; sumR += r; sumG += g; sumB += b;
+
+      int mx = r > g ? r : g; if (b > mx) mx = b;
+      int mn = r < g ? r : g; if (b < mn) mn = b;
+      int sat = mx - mn;
+      if (lum > 160 && sat < 45) whiteCnt++;   // biel śniegu / gęstych chmur
+      if (sat < 30) grayCnt++;                 // niskie nasycenie (mgła / deszcz)
 
       if (havePrevLum_) {
         int d = (int)cur[idx] - (int)prevLum_[idx];
@@ -482,6 +529,40 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   if (a.brightness >= 70)      a.phase = "day";
   else if (a.brightness >= 25) a.phase = "dawn/dusk";
   else                         a.phase = "night";
+
+  // Kontrast = odchylenie standardowe luminancji siatki (mgła go mocno obniża).
+  float contrast = 0;
+  for (int i = 0; i < n; i++) {
+    float d = (float)cur[i] - a.brightness;
+    contrast += d * d;
+  }
+  contrast = sqrtf(contrast / (float)n);
+
+  float whitePct = (float)whiteCnt * 100.0f / (float)n;
+  float grayPct  = (float)grayCnt * 100.0f / (float)n;
+
+  // Orientacyjna klasyfikacja pogody z pojedynczego zdjęcia. To heurystyka
+  // (jasność + nasycenie + kontrast + zachmurzenie), nie pomiar - traktować
+  // jako wskaźnik do porównywania kolejnych zdjęć, nie jako dokładny opad.
+  a.snowPct = a.rainPct = a.fogPct = -1;
+  if (a.brightness < 40) {
+    a.weather = "night";
+  } else if (whitePct >= 30.0f && a.brightness >= 110.0f) {
+    a.weather = "snow";
+    a.snowPct = constrain(whitePct * 1.6f - 16.0f, 10.0f, 100.0f);
+  } else if (contrast < 26.0f && a.brightness >= 55.0f &&
+             a.brightness <= 160.0f && grayPct >= 55.0f) {
+    a.weather = "fog";
+    a.fogPct = constrain((grayPct - 50.0f) * 3.0f, 5.0f, 100.0f);
+  } else if (a.cloudCover >= 40.0f && grayPct >= 45.0f && a.brightness < 125.0f) {
+    a.weather = "rain";
+    a.rainPct = constrain((a.cloudCover - 35.0f) * 1.8f, 5.0f, 100.0f);
+  } else if (a.cloudCover > 55.0f) {
+    a.weather = "cloudy";
+  } else {
+    a.weather = "clear";
+  }
+
   a.valid = true;
 
   memcpy(prevLum_, cur, n);
@@ -509,6 +590,10 @@ void CameraManager::writeAnalysisJson(const String& jpgPath) {
   d["motion_pct"]  = a.motion;
   d["cloud_pct"]   = a.cloudCover;
   d["phase"]       = a.phase;
+  d["weather"]     = a.weather;
+  d["snow_pct"]    = a.snowPct;
+  d["rain_pct"]    = a.rainPct;
+  d["fog_pct"]     = a.fogPct;
 
   String s;
   serializeJson(d, s);
@@ -568,10 +653,16 @@ void CameraManager::deletePhotoWithMeta(const String& jpgPath) {
 
 String CameraManager::toJson() const {
   JsonDocument d;
+  String remoteUrl = config.camRemoteUrl();
+  remoteUrl.trim();
+  const char* mode = "off";
+  if (enabled_) mode = (remoteUrl.length() > 0) ? "external" : "local";
+
   d["supported"]  = (STACJA_HAS_CAMERA != 0);
   d["enabled"]    = enabled_;
   d["present"]    = present_;
-  d["configured"] = configured();
+  d["mode"]       = mode;
+  d["configured"] = (remoteUrl.length() > 0) ? true : configured();
   d["interval_min"] = intervalMin_;
   d["resolution"] = config.camResolution();
   d["quality"]    = config.camQuality();
@@ -598,6 +689,10 @@ String CameraManager::toJson() const {
   ana["motion_pct"] = a.motion;
   ana["cloud_pct"]  = a.cloudCover;
   ana["phase"]      = a.phase;
+  ana["weather"]    = a.weather;
+  ana["snow_pct"]   = a.snowPct;
+  ana["rain_pct"]   = a.rainPct;
+  ana["fog_pct"]    = a.fogPct;
 
   // Piny kamery (sekcja "pins") - do podglądu i edycji w zakładce Kamera.
   JsonObject pins = d["pins"].to<JsonObject>();

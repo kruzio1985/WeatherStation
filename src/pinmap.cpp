@@ -74,6 +74,7 @@ static const PinRole ROLES[] = {
   // --- Czujniki analogowe (ADC) ---
   {"soil_adc",   "Gleba - wilgotność", "Czujniki analogowe", "Sonda pojemnościowa (capacitive v1.2, VH400) - wyjście AOUT; tylko GPIO 1-10 (ADC1)", PIN_SOIL_ADC, true},
   {"pyrano_adc", "Pyranometr / nasłonecznienie", "Czujniki analogowe", "Pyranometr (ML-01, 0-3 V) albo ogniwo słoneczne - daje W/m² i zachmurzenie; tylko ADC1 (wolny jest np. GPIO 10 - wtedy wyłącz kartę SD w trybie SPI na pinie 10)", PIN_PYRANO_ADC, true},
+  {"uv_adc",     "UV analogowy (GUVA-S12SD)", "Czujniki analogowe", "Analogowy czujnik indeksu UV (GUVA-S12SD / eleking 743): wyjście 0-1 V, 100 mV = 1 UVI; tylko pin ADC1", PIN_UV_ADC, true},
   {"scatter_adc", "Widzialność (rozproszenie światła)", "Czujniki analogowe", "Analogowy czujnik mgły/widzialności. UWAGA: GPIO 11-20 to ADC2, który przy włączonym Wi-Fi nie działa - użyj ADS1115 na I2C", PIN_SCATTER_ADC, true},
   {"gas_adc",    "Czujniki gazów (MQ-x, MiCS)", "Czujniki analogowe", "MQ-2/3/4/5/6/7/8/9/131/135, MiCS-4514/6814, TGS - wyjście analogowe przez dzielnik nap. (wolny pin ADC1)", PIN_GAS_ADC, true},
   {"gas_adc2",   "Czujniki gazów 2 (drugi MQ-x)", "Czujniki analogowe", "Drugi czujnik gazów pracujący równolegle (np. MQ-7 na CO + MQ-135); osobny wolny pin ADC1", PIN_GAS_ADC2, true},
@@ -83,6 +84,7 @@ static const PinRole ROLES[] = {
 
   // --- Czujniki cyfrowe na pojedynczych liniach ---
   {"dht",        "DHT11 / DHT22 / AM2302", "Czujniki cyfrowe", "Jeden przewód danych + rezystor 4,7 kΩ do 3V3; odczyt co 2 s (DHT11) lub 1 s (DHT22) - przy 5 m kabla użyj DHT22", PIN_DHT, false},
+  {"tuy_rx",     "Tuya temp./wilg. - RX", "Czujniki cyfrowe", "TX czujnika Tuya (TLSR8258, firmware UART) -> RX ESP32; 115200 8N1, linia T=xx.xx;RH=yy.yy", PIN_TUY_RX, false},
   {"us_trig",    "HC-SR04 - TRIG",      "Czujniki cyfrowe", "Wyzwalanie ultradźwięków (HC-SR04, JSN-SR04T, A02YYUW) - poziom lodu, śniegu, poziom wody w studni", PIN_US_TRIG, false},
   {"us_echo",    "HC-SR04 - ECHO",      "Czujniki cyfrowe", "Odbicie ultradźwięków -> odległość; daje też poziom wody/śniegu i wykrywanie obecności", PIN_US_ECHO, false},
   {"hx711_dt",   "HX711 - DT (dane)",   "Czujniki cyfrowe", "Waga deszczomierza wagowego, tensjometr gleby, siła wiatru - przetwornik 24-bit", PIN_HX711_DT, false},

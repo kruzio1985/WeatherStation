@@ -1,0 +1,12 @@
+# Stacja Pogody - węzeł na płytce z 16 MB flash (ESP32-C6 WROOM-1 N16)
+# Copyright (c) 2026 kruzio1985 - https://github.com/kruzio1985
+# Licencja: PolyForm Noncommercial License 1.0.0 (plik LICENSE)
+# Name,   Type, SubType, Offset,   Size,    Flags
+# 16 MB (0x1000000) flashu: dwa sloty OTA po 3 MiB + reszta na LittleFS.
+# Węzeł jest headless (bez www), ale zachowujemy tę samą mapę co master S3,
+# żeby binarki C6 były wymienne z układem partycji płytek 16 MB.
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x300000,
+app1,     app,  ota_1,   0x310000, 0x300000,
+spiffs,   data, spiffs,  0x610000, 0x9F0000,
