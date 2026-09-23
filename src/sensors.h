@@ -103,6 +103,10 @@ public:
   void readExtra();               // odczyt dodatkowych czujników
   String extraAqName();           // nazwa czujnika pyłu wewnątrz ("" gdy brak)
 
+  // --- Czujnik Tuya temp./wilg. na UART (SoftwareSerial, 115200 8N1) ---
+  void beginTuya();               // start odbiornika (wołane z beginExtra)
+  void serviceTuya();             // obsługa bufora UART (wołane z loop co obieg)
+
   // --- Mostek dla sterowników modułowych (drv_*.cpp, kontrakt w drv_mod.h) ---
   // Moduły nie znają SensorManagera - zgłaszają tylko identyfikatory kanałów,
   // a te trzy metody robią z nich pełnoprawne kanały (obecność, wykrycie,
@@ -163,6 +167,7 @@ private:
 
   // BH1750 (I2C, surowy odczyt - opcjonalny)
   bool bhOk_ = false;
+  uint8_t bhAddr_ = 0x23;   // 0x23 domyślnie, 0x5C gdy ADDR podpięty do VCC
 
   // DS18B20 (OneWire, obsługa wielu czujników)
   void* oneWire_ = nullptr;
@@ -174,6 +179,13 @@ private:
   // PMS5003 (UART2, opcjonalny)
   bool pmsStarted_ = false;   // UART otwarty
   bool pmsOk_ = false;        // odebrano poprawną ramkę (czujnik naprawdę jest)
+
+  // Tuya temp./wilg. (SoftwareSerial, RX-only)
+  void* tuySerial_ = nullptr;  // SoftwareSerial* (void*, żeby nie ciągnąć nagłówka)
+  bool tuyStarted_ = false;    // odbiornik otwarty
+  bool tuyOk_ = false;         // odebrano poprawną linię
+  String tuyBuf_;              // akumulator linii
+  unsigned long tuyLastRxMs_ = 0;
 
   // Deszcz / wiatr
   static volatile unsigned long rainPulses_;

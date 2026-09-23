@@ -83,6 +83,63 @@ static void i2cWrite16(uint8_t addr, uint16_t cmd) {
   Wire.endTransmission();
 }
 
+// Uwalnia zablokowaną magistralę I2C: 9 impulsów SCL + warunek STOP.
+// Wywołujemy PRZED Wire.begin(...), póki piny nie są przejęte przez sterownik
+// I2C. Pomaga, gdy slave po poprzednim resecie trzyma SDA w stanie niskim
+// (magistrala "zakleszczona" i boot czekałby na długi timeout zamiast wstać).
+static void i2cBusRecover(int sda, int scl) {
+  if (sda < 0 || scl < 0) return;
+  pinMode(scl, OUTPUT_OPEN_DRAIN);
+  pinMode(sda, OUTPUT_OPEN_DRAIN);
+  digitalWrite(sda, HIGH);
+  digitalWrite(scl, HIGH);
+  delayMicroseconds(10);
+  for (int i = 0; i < 9; i++) {
+    digitalWrite(scl, LOW);
+    delayMicroseconds(10);
+    digitalWrite(scl, HIGH);
+    delayMicroseconds(10);
+  }
+  // Warunek STOP: SDA 0 -> 1 przy SCL = 1
+  digitalWrite(sda, LOW);
+  delayMicroseconds(10);
+  digitalWrite(scl, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(sda, HIGH);
+  delayMicroseconds(10);
+  pinMode(sda, INPUT);
+  pinMode(scl, INPUT);
+}
+
+// PCA9548A - 8-kanałowy multiplekser I2C (rozdzielacz magistrali), adres
+// 0x70..0x77 (piny A0-A2). Gdy czujniki siedzą za multiplekserem, włączamy
+// wszystkie kanały naraz (rejestr sterujący = 0xFF), dzięki czemu cała
+// magistrala wygląda jak jedna i zwykłe wykrywanie czujników działa bez zmian.
+static void enableI2cMux() {
+  const uint8_t CH_ALL = 0xFF;
+  for (uint8_t a = 0x70; a <= 0x77; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() != 0) continue;      // nic pod tym adresem
+
+    // Weryfikacja: tylko PCA9548A odczytuje rejestr sterujący - zapisujemy
+    // kanały i czytamy je z powrotem; zwykły czujnik tego nie zrobi.
+    Wire.beginTransmission(a);
+    Wire.write(CH_ALL);
+    if (Wire.endTransmission() != 0) continue;
+
+    if (Wire.requestFrom((int)a, 1) != 1) continue;
+    unsigned long t = millis();
+    while (!Wire.available() && millis() - t < 20) delay(1);
+    if (!Wire.available()) continue;
+    uint8_t got = (uint8_t)Wire.read();
+
+    if (got == CH_ALL) {
+      LOG_I("PCA9548A: multiplekser I2C pod adresem 0x%02X - wszystkie kanały włączone", a);
+      return;
+    }
+  }
+}
+
 void IRAM_ATTR SensorManager::rainIsr()  { rainPulses_++; }
 void IRAM_ATTR SensorManager::anemIsr()  { anemPulses_++; }
 
@@ -104,21 +161,30 @@ void SensorManager::setDetected(const String& id, bool detected) {
 bool SensorManager::begin() {
   mutex_ = xSemaphoreCreateMutex();
 
-  // Kanały wewnętrzne (BME280)
+  // Kanały główne. Na masterze: temp/hum = czujnik Tuya (UART), temp2/press =
+  // BME280. Na węźle: temp/hum/press = BME280 (czujnik Tuya tylko na masterze).
+  // Wszystkie czujniki tej stacji pracują na zewnątrz, stąd strefa "out".
   Channel t; t.id="temp"; t.name="Temperatura"; t.unit="°C"; t.decimals=1;
-  t.zone="in";
+  t.zone="out";
   t.haClass="temperature"; t.haUnit="°C"; t.haIcon="mdi:thermometer";
   channels_.push_back(t);
 
   Channel h; h.id="hum"; h.name="Wilgotność"; h.unit="%"; h.decimals=1;
-  h.zone="in";
+  h.zone="out";
   h.haClass="humidity"; h.haUnit="%"; h.haIcon="mdi:water-percent";
   channels_.push_back(h);
 
   Channel p; p.id="press"; p.name="Ciśnienie"; p.unit="hPa"; p.decimals=1;
-  p.zone="in";
+  p.zone="out";
   p.haClass="pressure"; p.haUnit="hPa"; p.haIcon="mdi:gauge";
   channels_.push_back(p);
+
+#if STACJA_ROLE_MASTER
+  Channel t2; t2.id="temp2"; t2.name="Temperatura 2"; t2.unit="°C"; t2.decimals=1;
+  t2.zone="out";
+  t2.haClass="temperature"; t2.haUnit="°C"; t2.haIcon="mdi:thermometer";
+  channels_.push_back(t2);
+#endif
 
   // Natężenie światła (BH1750)
   Channel l; l.id="light"; l.name="Natężenie światła"; l.unit="lx"; l.decimals=0;
@@ -195,32 +261,67 @@ bool SensorManager::begin() {
   const int sda = pinMap.pin("i2c_sda");
   const int scl = pinMap.pin("i2c_scl");
   if (sda >= 0 && scl >= 0) {
-    Wire.begin(sda, scl);
+    LOG_I("I2C: start (SDA=%d, SCL=%d)", sda, scl);
+    i2cBusRecover(sda, scl);                 // uwolnij ewentualnie zakleszczoną magistralę
+    LOG_I("I2C: recovery gotowe");
+    Wire.begin(sda, scl, 50000);             // 50 kHz - większa tolerancja na słabe podciąganie/długie przewody
+    Wire.setTimeOut(20);                     // krótki timeout - boot nie może wisieć na I2C
+    LOG_I("I2C: Wire.begin gotowe");
+    enableI2cMux();   // PCA9548A (rozdzielacz): ujawnij czujniki za multiplekserem
+    LOG_I("I2C: multiplekser gotowy");
     Adafruit_BME280* b = new Adafruit_BME280();
     if (b->begin(0x76, &Wire) || b->begin(0x77, &Wire)) {
       bme_ = b;
       bmeOk_ = true;
+#if STACJA_ROLE_MASTER
+      setPresent("temp2", true);
+      setPresent("press", true);
+      setDetected("temp2", true);
+      setDetected("press", true);
+#else
       setPresent("temp", true);
       setPresent("hum", true);
       setPresent("press", true);
       setDetected("temp", true);
       setDetected("hum", true);
       setDetected("press", true);
+#endif
     } else {
       delete b;
+#if STACJA_ROLE_MASTER
+      LOG_W("BME280 nie odpowiedział na I2C (0x76/0x77) - brak Temperatury 2 i ciśnienia");
+#else
       LOG_W("BME280 nie odpowiedział na I2C (0x76/0x77) - brak temperatury, wilgotności i ciśnienia");
+#endif
     }
   }
 
-  // BH1750 (surowy I2C, bo biblioteki bywają zawodne na S3)
-  Wire.beginTransmission(BH1750_ADDR);
-  if (Wire.endTransmission() == 0) {
-    Wire.beginTransmission(BH1750_ADDR);
-    Wire.write(0x10); // tryb ciągły, rozdzielczość 1 lx
-    Wire.endTransmission();
-    bhOk_ = true;
-    setPresent("light", true);
-    setDetected("light", true);
+  // BH1750 (surowy I2C, bo biblioteki bywają zawodne na S3).
+  // ADDR zwykle 0x23, ale moduły z pinem ADDR podpiętym do VCC mają 0x5C.
+  const uint8_t bhAddrs[] = { BH1750_ADDR, BH1750_ADDR_ALT };
+  for (uint8_t a : bhAddrs) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      Wire.beginTransmission(a);
+      Wire.write(0x42); // MTreg high: domyślny czas pomiaru (69 -> 0x45) - klony bywają wyzerowane
+      Wire.endTransmission();
+      Wire.beginTransmission(a);
+      Wire.write(0x65); // MTreg low
+      Wire.endTransmission();
+      Wire.beginTransmission(a);
+      Wire.write(0x01); // Power ON - po włączeniu zasilania BH1750 jest w Power Down
+      Wire.endTransmission();
+      delay(10);
+      Wire.beginTransmission(a);
+      Wire.write(0x10); // tryb ciągły, rozdzielczość 1 lx
+      Wire.endTransmission();
+      bhOk_ = true;
+      bhAddr_ = a;
+      setPresent("light", true);
+      setDetected("light", true);
+      LOG_I("BH1750: wykryty pod adresem 0x%02X", a);
+      break;
+    }
   }
 
   // DS18B20 na OneWire
@@ -530,9 +631,18 @@ void SensorManager::readBME280() {
   if (!bmeOk_ || !bme_) return;
   Adafruit_BME280* b = (Adafruit_BME280*)bme_;
   float t = b->readTemperature();
-  float h = b->readHumidity();
   float p = b->readPressure() / 100.0f;
 
+#if STACJA_ROLE_MASTER
+  ChannelConfig ct = config.channelCfg("temp2");
+  ChannelConfig cp = config.channelCfg("press");
+
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  putValue("temp2",  t + ct.offset, !isnan(t));
+  putValue("press", p + cp.offset,  !isnan(p));
+  if (mutex_) xSemaphoreGive(mutex_);
+#else
+  float h = b->readHumidity();
   ChannelConfig ct = config.channelCfg("temp");
   ChannelConfig chh = config.channelCfg("hum");
   ChannelConfig cp = config.channelCfg("press");
@@ -542,20 +652,55 @@ void SensorManager::readBME280() {
   putValue("hum",   h + chh.offset, !isnan(h));
   putValue("press", p + cp.offset,  !isnan(p));
   if (mutex_) xSemaphoreGive(mutex_);
+#endif
 }
 
 void SensorManager::readBH1750() {
   if (!bhOk_) return;
-  Wire.beginTransmission(BH1750_ADDR);
-  Wire.requestFrom((int)BH1750_ADDR, 2);
-  if (Wire.available() == 2) {
-    uint16_t raw = ((uint16_t)Wire.read() << 8) | Wire.read();
-    float lux = raw / 1.2f;
-    ChannelConfig c = config.channelCfg("light");
-    if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
-    putValue("light", lux + c.offset);
-    if (mutex_) xSemaphoreGive(mutex_);
+
+  // BH1750 w trybie ciągłym potrafi przeciągać SCL do ~180 ms (pomiar trwa
+  // 120-180 ms). Globalny timeout I2C 20 ms był za krótki i odczyt wracał
+  // z 0 bajtów, przez co lux nigdy nie trafiał do kanału.
+  const uint16_t oldTimeout = Wire.getTimeOut();
+  Wire.setTimeOut(250);
+
+  bool ok = false;
+  static bool firstLogged = false;
+  static unsigned zeroCount = 0;
+  for (int attempt = 0; attempt < 3 && !ok; attempt++) {
+    int n = Wire.requestFrom((int)bhAddr_, 2);
+    if (n == 2) {
+      uint16_t raw = ((uint16_t)Wire.read() << 8) | Wire.read();
+      float lux = raw / 1.2f;
+      if (!firstLogged) {
+        LOG_I("BH1750: pierwszy odczyt raw=%u -> %.1f lx", (unsigned)raw, (double)lux);
+        firstLogged = true;
+      } else if (raw == 0) {
+        zeroCount++;
+        if (zeroCount == 1 || zeroCount % 20 == 0)
+          LOG_W("BH1750: raw=0 mimo światła (odczyt #%u)", zeroCount);
+      }
+      ChannelConfig c = config.channelCfg("light");
+      if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+      putValue("light", lux + c.offset);
+      if (mutex_) xSemaphoreGive(mutex_);
+      ok = true;
+    } else {
+      LOG_W("BH1750: odczyt zwrócił %d bajtów (oczekiwano 2), próba %d", n, attempt + 1);
+      // Czujnik mógł wypaść z trybu ciągłego (np. zanik zasilania) -
+      // przywracamy Power ON + tryb ciągły H-res i próbujemy ponownie.
+      Wire.beginTransmission(bhAddr_);
+      Wire.write(0x01);
+      Wire.endTransmission();
+      delay(10);
+      Wire.beginTransmission(bhAddr_);
+      Wire.write(0x10);
+      Wire.endTransmission();
+      delay(20);
+    }
   }
+
+  Wire.setTimeOut(oldTimeout);
 }
 
 void SensorManager::serviceDiscovery() {

@@ -21,6 +21,10 @@
 // Hasło aktualizacji OTA kamery (ArduinoOTA, port 3232). Zmień je!
 #define CAM_OTA_PASS   "stacja-cam-ota"
 
+// Hasło punktu dostępowego (tryb AP, gdy kamera nie połączy się z Wi-Fi).
+// AP: SSID "StacjaKam", adres http://192.168.4.1 - pełna strona konfiguracji.
+#define CAM_AP_PASS    "stacja-cam"
+
 // Rozdzielczość zdjęć: FRAMESIZE_QVGA / _VGA / _SVGA / _XGA / _UXGA
 #define CAM_FRAME_SIZE FRAMESIZE_VGA
 #define CAM_JPEG_QUALITY 10       // 0..63, mniej = lepsza jakość

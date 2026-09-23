@@ -44,6 +44,13 @@ struct CamAnalysis {
   float    motion = 0;         // zmiana vs poprzednia klatka 0..100 %
   float    cloudCover = -1;    // szacunkowe zachmurzenie 0..100 % (-1 = brak danych)
   String   phase;              // "day" / "dawn/dusk" / "night"
+  // Szacunkowa klasyfikacja pogody z pojedynczego zdjęcia (wartości -1 = brak
+  // danych). To heurystyka z jasności/kolorów/kontrastu, a nie pomiar - przy
+  // jednym zdjęciu co 15 minut jest orientacyjna.
+  float    snowPct = -1;       // pokrywa / intensywność śniegu 0..100 %
+  float    rainPct = -1;       // intensywność opadu deszczu 0..100 %
+  float    fogPct  = -1;       // intensywność mgły 0..100 %
+  String   weather;            // "clear"/"cloudy"/"fog"/"rain"/"snow"/"night"
 };
 
 // Siatka próbkowania analizy - stała niezależnie od rozdzielczości zdjęcia,

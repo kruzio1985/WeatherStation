@@ -606,15 +606,35 @@ static bool bmp280Begin(uint8_t addr, uint8_t id) {
   if (!i2cuWriteReg(addr, THS_BMP_REG_RESET, 0xB6)) return false;   // reset - kalibracja z NVM
   delay(3);
   uint8_t c[24];
-  if (!i2cuReadReg(addr, THS_BMP_REG_CAL, c, sizeof(c))) return false;
   int32_t* d = s_dev.bmp280Dig;
-  d[0]  = (int32_t)(((uint16_t)c[1] << 8) | c[0]);                  // T1 (bez znaku)
-  d[1]  = (int32_t)beS16(c + 2);                                    // T2
-  d[2]  = (int32_t)beS16(c + 4);                                    // T3
-  d[3]  = (int32_t)(((uint16_t)c[7] << 8) | c[6]);                  // P1 (bez znaku)
-  for (uint8_t i = 0; i < 8; i++) d[4 + i] = (int32_t)beS16(c + 8 + i * 2);   // P2..P9
-  if (d[0] == 0 || d[0] == 0xFFFF) return false;                    // kalibracja nie do użycia
+  bool ok = false;
+
+  // Kalibracja bywa czytana z przekłamaniami przy słabym podciąganiu SDA/SCL.
+  // Czytamy do 3 razy i przyjmujemy pierwszy sensowny wynik Bosch:
+  // T1/P1 w dziesiątkach tysięcy, T2 dodatnie (typowo 20..30 tys.), T3 małe.
+  for (uint8_t attempt = 0; attempt < 3 && !ok; attempt++) {
+    if (attempt) delay(20);
+    if (!i2cuReadReg(addr, THS_BMP_REG_CAL, c, sizeof(c))) continue;
+    d[0]  = (int32_t)(((uint16_t)c[1] << 8) | c[0]);                  // T1 (bez znaku)
+    d[1]  = (int32_t)beS16(c + 2);                                    // T2
+    d[2]  = (int32_t)beS16(c + 4);                                    // T3
+    d[3]  = (int32_t)(((uint16_t)c[7] << 8) | c[6]);                  // P1 (bez znaku)
+    for (uint8_t i = 0; i < 8; i++) d[4 + i] = (int32_t)beS16(c + 8 + i * 2);   // P2..P9
+    if (d[0] >= 20000 && d[0] <= 40000 && d[3] >= 20000 && d[3] <= 60000 &&
+        d[1] > 0 && d[2] > 0 && d[2] < 1000) ok = true;
+  }
+
+  if (!ok) {
+    LOG_W("BMP280: kalibracja nieprawidłowa (T1=%d T2=%d T3=%d P1=%d) - "
+          "uszkodzony układ/klon albo brak podciągania SDA/SCL",
+          (int)d[0], (int)d[1], (int)d[2], (int)d[3]);
+    return false;
+  }
+
   s_dev.bmp280Bme = (id == 0x60);
+  LOG_I("BMP280: kalibracja T1=%d T2=%d T3=%d P1=%d P2=%d P3=%d P4=%d P5=%d P6=%d P7=%d P8=%d P9=%d",
+        (int)d[0], (int)d[1], (int)d[2], (int)d[3], (int)d[4], (int)d[5], (int)d[6],
+        (int)d[7], (int)d[8], (int)d[9], (int)d[10], (int)d[11]);
   // tryb forced: osrs_t = 1x (001), osrs_p = 4x (010), tryb 01
   if (!i2cuWriteReg(addr, THS_BMP_REG_CFG, 0x45)) return false;
   if (!i2cuWriteReg(addr, THS_BMP_REG_FILT, 0xA0)) return false;    // filtr IIR wyłączony
@@ -652,15 +672,23 @@ static void bmp280Clear() {
 }
 
 static void bmp280Read() {
+  static uint16_t dbgN = 0;
   uint8_t b[6];
-  if (!i2cuWriteReg(s_dev.bmp280Addr, THS_BMP_REG_CFG, 0x45)) { bmp280Clear(); return; }
+  if (!i2cuWriteReg(s_dev.bmp280Addr, THS_BMP_REG_CFG, 0x45)) {
+    if (dbgN < 3) { dbgN++; LOG_W("BMP280: blad zapisu 0xF4 (adr 0x%02X)", s_dev.bmp280Addr); }
+    bmp280Clear(); return;
+  }
   delay(15);                                    // pomiar w trybie forced
-  if (!i2cuReadReg(s_dev.bmp280Addr, THS_BMP_REG_DATA, b, sizeof(b))) { bmp280Clear(); return; }
+  if (!i2cuReadReg(s_dev.bmp280Addr, THS_BMP_REG_DATA, b, sizeof(b))) {
+    if (dbgN < 3) { dbgN++; LOG_W("BMP280: blad odczytu 0xF7 (adr 0x%02X)", s_dev.bmp280Addr); }
+    bmp280Clear(); return;
+  }
   int32_t adcP = ((int32_t)b[0] << 12) | ((int32_t)b[1] << 4) | (b[2] >> 4);
   int32_t adcT = ((int32_t)b[3] << 12) | ((int32_t)b[4] << 4) | (b[5] >> 4);
   int32_t tFine = 0;
   float t = bmp280CompT(adcT, &tFine);
   float p = bmp280CompP(adcP, tFine);
+  if (dbgN < 3) { dbgN++; LOG_I("BMP280: adcT=%d adcP=%d -> t=%.2f p=%.2f", (int)adcT, (int)adcP, (double)t, (double)p); }
   pubT(CH_BMP280_T, t);
   pubP(CH_BMP280_P, p);
 }

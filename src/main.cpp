@@ -395,6 +395,7 @@ void loop() {
 #endif
 
   sensors.serviceDiscovery();
+  sensors.serviceTuya();   // Tuya UART (T=...;RH=...) - bufor obsługiwany co obieg
   gps.loop();
   lightning.loop();
   rtc.loop();

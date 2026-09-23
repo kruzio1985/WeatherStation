@@ -491,20 +491,36 @@ bool Rs485Bus::readResponse(uint32_t timeoutMs, uint16_t wantSeq, Resp& out, Str
   uint32_t lastByte = t0;
   bool gotAny = false;
 
+  uint16_t drained = 0;   // licznik bajtów między oddaniem czasu innym zadaniom
   while (true) {
     while (Serial0.available()) {
       uint8_t b = (uint8_t)Serial0.read();
       gotAny = true;
       lastByte = millis();
       frameFeed(p, rxBuf_, b, r, stats);
-      if (!r.ok) continue;
-      if (r.type == 0x81 && r.seq == wantSeq && r.dst == cfgAddr_) {
-        out = r;
-        out.ok = true;
-        S.latencyMs = millis() - t0;
-        return true;
+      if (r.ok) {
+        if (r.type == 0x81 && r.seq == wantSeq && r.dst == cfgAddr_) {
+          out = r;
+          out.ok = true;
+          S.latencyMs = millis() - t0;
+          return true;
+        }
+        r.ok = false;   // ramka do kogoś innego - ignorujemy
       }
-      r.ok = false;   // ramka do kogoś innego - ignorujemy
+      // Ciągły zalew bajtów (np. zwarta/rozjechana magistrala RS485) nie może
+      // zagłodzić watchdoga: co 16 bajtów oddajemy czas innym zadaniom, a
+      // twardy limit przerywa pętlę niezależnie od ruchu na magistrali.
+      if (++drained >= 16) {
+        drained = 0;
+        delay(1);
+        if ((int32_t)(millis() - hardLimit) >= 0) {
+          err = "odpowiedź węzła za długa";
+          S.errTimeout++;
+          S.lastErrMs = millis();
+          S.lastError = err;
+          return false;
+        }
+      }
     }
 
     uint32_t now = millis();
