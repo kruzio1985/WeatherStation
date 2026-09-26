@@ -501,6 +501,58 @@ void SensorManager::drvClear(const char* id) {
 }
 
 // =============================================================
+//  Bramka BLE (ESP32-C3) - kanały btgw_<mac>_*
+//
+//  Każdy czujnik BT dostaje własny zestaw kanałów:
+//    btgw_<mac>_t     temperatura  (°C)
+//    btgw_<mac>_h     wilgotność  (%)
+//    btgw_<mac>_bat   bateria     (%)
+//    btgw_<mac>_rssi  sygnał      (dBm)
+//  Kanały są zwykłe (nie "remote"), więc pokazują się na pulpicie w strefie
+//  i trafiają do CSV/MQTT/Home Assistant jak każdy inny czujnik.
+// =============================================================
+void SensorManager::ingestBleSensor(const String& mac, const String& name,
+                                    float temp, float hum, int batt, int rssi) {
+  if (!mac.length()) return;
+  const String base = "btgw_" + mac;
+  const String label = name.length() ? name : String("BT ") + mac;
+
+  auto pub = [&](const char* suffix, const char* nm, const char* unit, uint8_t dec,
+                 const char* haClass, const char* haUnit, const char* icon,
+                 float v, bool have) {
+    const String id = base + suffix;
+    const ChannelConfig cc = config.channelCfg(id);
+    if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+    Channel* c = ch(id);
+    if (!c) {
+      Channel n; n.id = id;
+      channels_.push_back(n);
+      c = &channels_.back();
+    }
+    c->name = label + " " + nm;
+    c->unit = unit;
+    c->decimals = dec;
+    c->zone = "in";
+    c->haClass = haClass; c->haUnit = haUnit; c->haIcon = icon;
+    c->enabled = cc.enabled;
+    if (cc.name.length()) c->name = cc.name;
+    if (cc.zone == "in" || cc.zone == "out") c->zone = cc.zone;
+    c->present = true;
+    if (have) { c->detected = true; c->measured = true; c->value = v; }
+    if (mutex_) xSemaphoreGive(mutex_);
+  };
+
+  pub("_t",    "temperatura", "°C", 1, "temperature", "°C", "mdi:thermometer",
+      temp, !isnan(temp));
+  pub("_h",    "wilgotność",  "%",  1, "humidity",    "%",  "mdi:water-percent",
+      hum, !isnan(hum));
+  pub("_bat",  "bateria",     "%",  0, "battery",     "%",  "mdi:battery",
+      (float)batt, batt >= 0);
+  pub("_rssi", "sygnał",      "dBm", 0, "signal_strength", "dBm", "mdi:signal",
+      (float)rssi, true);
+}
+
+// =============================================================
 //  Kanały zdalne z innych ESP (magistrala RS485)
 //
 //  Węzeł o adresie N przysyła listę swoich kanałów, a my odbijamy je jako

@@ -34,7 +34,7 @@ bez ponownej kompilacji:
 2. **Monitor szeregowy (115200)** — wpisz komendę:
 
 ```
-SET SGC haslo http://192.168.1.143
+SET SSID haslo http://192.168.1.143
 ```
 
 Ustawienia zapisują się w NVS kamery i są używane po restarcie.

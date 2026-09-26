@@ -31,6 +31,7 @@
 #include "drv_rtc.h"
 #include "rs485.h"
 #include "recovery_ap.h"
+#include "extdev.h"
 #include "retention.h"
 #if !STACJA_HEADLESS
 // Firmware węzła bez sieci (STACJA_HEADLESS) nie zawiera Wi-Fi, serwera www,
@@ -47,6 +48,7 @@
 static WiFiClient wifiClient;
 #endif
 static unsigned long lastSensorRead = 0;
+static unsigned long lastLightRead = 0;
 static unsigned long lastLog = 0;
 static unsigned long lastLed = 0;
 static unsigned long lastAstro = 0;
@@ -334,6 +336,11 @@ void setup() {
   // Magistrala RS485 - po pinMap (piny RX/TX/DE) i config (rola, prędkość)
   rs485.begin();
 
+#if !STACJA_HEADLESS
+  // Urządzenia zewnętrzne odpytywane przez HTTP (sniffer VEVOR, bramka BLE...)
+  extdev.begin();
+#endif
+
 #if STACJA_HEADLESS
   // Awaryjny punkt dostępowy węzła bez sieci - uruchomi się tylko wtedy,
   // gdy węzeł nie zobaczy poprawnej ramki od mastera (patrz recovery_ap.cpp).
@@ -409,6 +416,13 @@ void loop() {
 #endif
   }
 
+  // Natężenie światła (BH1750) co 1,5 s - światło zmienia się szybko (chmury,
+  // ręka nad czujnikiem), więc kanał "light" odświeżamy częściej niż resztę.
+  if (now - lastLightRead >= 1500) {
+    lastLightRead = now;
+    sensors.readBH1750();
+  }
+
   // Astronomia (Słońce/Księżyc) co 60 s - pozycja z GPS, a bez fixa z ustawień
   if (now - lastAstro >= 60000UL) {
     lastAstro = now;
@@ -459,6 +473,9 @@ void loop() {
   // Pierścień LED RGB: kolor stanu pogody + animacja
   ledRing.loop();
   camera.loop();    // timelapse: zdjęcie co cam_interval_min (gdy kamera włączona)
+#if !STACJA_HEADLESS
+  extdev.loop();    // odpytywanie urządzeń zewnętrznych po HTTP
+#endif
   // Długie przytrzymanie przycisku BOOT (3 s) = przywrócenie fabrycznych
   if (buttonPin >= 0 && digitalRead(buttonPin) == LOW) {
     unsigned long press = millis();

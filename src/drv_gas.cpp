@@ -254,6 +254,24 @@ static void setupAdcPin(int8_t pin, int8_t adsCh) {
 #endif
 }
 
+// Wykrycie niepodłączonego wejścia analogowego na GPIO: na wolnym pinie
+// wewnętrzne podciąganie/podciąganie (~45 kΩ) wychyla odczyt prawie do
+// pełnej skali. Prawdziwy czujnik (dzielnik o impedancji rzędu kilku kΩ)
+// zmienia się tylko nieznacznie. Używane, by odpięty czujnik liścia nie
+// publikował fałszywego odsetka.
+static bool adcPinFloating(int8_t pin) {
+  if (pin < 0) return false;
+  pinMode(pin, INPUT_PULLDOWN);
+  delay(2);
+  const int lo = analogRead(pin);
+  pinMode(pin, INPUT_PULLUP);
+  delay(2);
+  const int hi = analogRead(pin);
+  pinMode(pin, INPUT);           // przywrócenie wysokiej impedancji
+  delay(2);
+  return (hi - lo) > 2000;       // ~połowa zakresu 12-bitowego ADC
+}
+
 // Jeden odczyt napięcia wejścia analogowego (ADC ESP32 albo ADS1115).
 // false = wejście nieprzypisane albo odczyt się nie udał.
 static bool readVolts(int8_t pin, int8_t adsCh, float& out) {
@@ -432,6 +450,13 @@ static void stepLeaf(void) {
   const char* onId  = iceMode ? "ice" : "leaf";
   const char* offId = iceMode ? "leaf" : "ice";
   s_sink.clear(offId);
+
+  // Odpięty czujnik na wolnym pinie GPIO "pływa" i dawałby fałszywy odsetek.
+  // Dotyczy tylko wejścia bezpośrednio na ADC ESP32 (nie ADS1115).
+  if (s_leafAds < 0 && adcPinFloating(s_leafPin)) {
+    s_sink.clear(onId);
+    return;
+  }
 
   float v = 0.0f;
   if (!readVolts(s_leafPin, s_leafAds, v)) {

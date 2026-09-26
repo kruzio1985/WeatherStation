@@ -90,6 +90,16 @@ public:
   void computeRain();
   void readAq();               // SCD40/41 (CO2) i SGP30 (eCO2 + TVOC)
 
+  // --- Stacja VEVOR (sniffer 868 MHz, dane przychodzą przez HTTP POST) ---
+  // Wypełnia osobny zestaw kanałów vev_* (do porównania z naszymi czujnikami).
+  void ingestVevor(float tempC, float humPct, float windMs, float gustMs,
+                   float dirDeg, float rainMm, float uv, float lux);
+
+  // --- Bramka BLE (ESP32-C3, dane przez HTTP POST /api/remote/ble) ---
+  // Tworzy kanały btgw_<mac>_t/_h/_bat/_rssi dla każdego czujnika BT.
+  void ingestBleSensor(const String& mac, const String& name,
+                       float temp, float hum, int batt, int rssi);
+
   // Kierunek wiatru jako strona świata ("N", "SW", ...) - pusta wartość,
   // gdy czujnik nie podał jeszcze realnego pomiaru
   String windCompass();
@@ -158,6 +168,10 @@ private:
   void publishExtra(const String& id, float v);
   void clearExtra(const String& id);
 
+  // Wypełnia główne kanały (np. press) z czujników sterownika T/H/P, gdy
+  // czujnik na płycie głównej nie jest zamontowany - pulpit pokazuje ciśnienie.
+  void bridgeMissing();
+
   std::vector<Channel> channels_;
   SemaphoreHandle_t mutex_ = nullptr;
 
@@ -168,6 +182,10 @@ private:
   // BH1750 (I2C, surowy odczyt - opcjonalny)
   bool bhOk_ = false;
   uint8_t bhAddr_ = 0x23;   // 0x23 domyślnie, 0x5C gdy ADDR podpięty do VCC
+
+  // VEVOR: ostatnia próbka deszczu (do liczenia intensywności "teraz" w mm/h)
+  float vevLastRainMm_ = NAN;
+  unsigned long vevLastRainMs_ = 0;
 
   // DS18B20 (OneWire, obsługa wielu czujników)
   void* oneWire_ = nullptr;

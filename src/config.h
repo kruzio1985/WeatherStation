@@ -158,6 +158,14 @@ struct StationState {
   unsigned long rainTipsTotal = 0;   // całkowita liczba impulsów deszczomierza
   unsigned long rainStartTips = 0;   // impulsy na początku bieżącej doby
   int rainDay = -1;                  // unikalny klucz doby (rok*1000 + dzień roku)
+
+  // Deszcz ze stacji VEVOR (sniffer 868 MHz): bazy rain_mm na początku okresu
+  float vevRainBaseDay = 0.0f;       // suma rain_mm na początku doby
+  int   vevRainDay = -1;             // klucz doby (rok*1000 + dzień roku)
+  float vevRainBaseWeek = 0.0f;      // suma rain_mm na początku tygodnia (ISO)
+  int   vevRainWeek = -1;            // rok*100 + numer tygodnia ISO
+  float vevRainBaseMonth = 0.0f;     // suma rain_mm na początku miesiąca
+  int   vevRainMonth = -1;           // rok*100 + miesiąc
 };
 
 // Kolory stanów pogody dla pierścienia LED RGB (0xRRGGBB).
