@@ -69,8 +69,8 @@ static const ChanDef CHANS[] = {
   { "ths_si70_h",   "Wilgotność (Si7021)",          "%",    1, "out", "humidity",    "%",  "mdi:water-percent" },
   { "ths_tmp117",   "Temperatura (TMP117)",         "°C",   2, "out", "temperature", "°C", "mdi:thermometer" },
   { "ths_mcp9808",  "Temperatura (MCP9808)",        "°C",   2, "out", "temperature", "°C", "mdi:thermometer" },
-  { "ths_bmp280_t", "Temperatura (BMP280)",         "°C",   1, "in",  "temperature", "°C", "mdi:thermometer" },
-  { "ths_bmp280_p", "Ciśnienie (BMP280)",           "hPa",  1, "in",  "pressure",    "hPa", "mdi:gauge" },
+  { "ths_bmp280_t", "Temperatura (BMP280)",         "°C",   1, "out", "temperature", "°C", "mdi:thermometer" },
+  { "ths_bmp280_p", "Ciśnienie (BMP280)",           "hPa",  1, "out", "pressure",    "hPa", "mdi:gauge" },
   { "ths_bmp390_t", "Temperatura (BMP388/390)",     "°C",   1, "in",  "temperature", "°C", "mdi:thermometer" },
   { "ths_bmp390_p", "Ciśnienie (BMP388/390)",       "hPa",  1, "in",  "pressure",    "hPa", "mdi:gauge" },
   { "ths_dps_t",    "Temperatura (DPS310)",         "°C",   1, "in",  "temperature", "°C", "mdi:thermometer" },
@@ -335,6 +335,10 @@ static inline uint16_t beU16(const uint8_t* b) {
 
 static inline uint16_t leU16(const uint8_t* b) {
   return (uint16_t)(((uint16_t)b[1] << 8) | b[0]);
+}
+
+static inline int16_t leS16(const uint8_t* b) {
+  return (int16_t)(((uint16_t)b[1] << 8) | b[0]);
 }
 
 // Zamiana na liczbę ze znakiem o zadanej liczbie bitów
@@ -615,11 +619,11 @@ static bool bmp280Begin(uint8_t addr, uint8_t id) {
   for (uint8_t attempt = 0; attempt < 3 && !ok; attempt++) {
     if (attempt) delay(20);
     if (!i2cuReadReg(addr, THS_BMP_REG_CAL, c, sizeof(c))) continue;
-    d[0]  = (int32_t)(((uint16_t)c[1] << 8) | c[0]);                  // T1 (bez znaku)
-    d[1]  = (int32_t)beS16(c + 2);                                    // T2
-    d[2]  = (int32_t)beS16(c + 4);                                    // T3
-    d[3]  = (int32_t)(((uint16_t)c[7] << 8) | c[6]);                  // P1 (bez znaku)
-    for (uint8_t i = 0; i < 8; i++) d[4 + i] = (int32_t)beS16(c + 8 + i * 2);   // P2..P9
+    d[0]  = (int32_t)(((uint16_t)c[1] << 8) | c[0]);                  // T1 (LE, bez znaku)
+    d[1]  = (int32_t)leS16(c + 2);                                    // T2 (LE)
+    d[2]  = (int32_t)leS16(c + 4);                                    // T3 (LE)
+    d[3]  = (int32_t)(((uint16_t)c[7] << 8) | c[6]);                  // P1 (LE, bez znaku)
+    for (uint8_t i = 0; i < 8; i++) d[4 + i] = (int32_t)leS16(c + 8 + i * 2);   // P2..P9 (LE)
     if (d[0] >= 20000 && d[0] <= 40000 && d[3] >= 20000 && d[3] <= 60000 &&
         d[1] > 0 && d[2] > 0 && d[2] < 1000) ok = true;
   }

@@ -9,7 +9,7 @@
  * wgraniu firmware - na stronie www samej kamery (http://<ip-kamery>/) lub
  * komendą szeregową (monitor 115200): SET ssid hasło url
  *
- * Przykład komendy:  SET <twoja-siec> mojehaslo http://192.168.1.143
+ * Przykład komendy:  SET SSID haslo http://192.168.1.143
  * (url bez "/capture" - endpoint jest doklejany automatycznie)
  */
 #pragma once

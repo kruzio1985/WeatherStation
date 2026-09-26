@@ -10,6 +10,7 @@
 #include "board.h"
 #include "pinmap.h"
 #include "sensors.h"
+#include "extdev.h"
 #include "mqtt_client.h"
 #include "weather_services.h"
 #include "sd_card.h"
@@ -311,6 +312,16 @@ void WebServerManager::registerRoutes() {
     r->send(200, "application/json", apiStatusJson());
   });
 
+  // --- Natężenie światła (lekki endpoint do szybkiego odświeżania na www) ---
+  server.on("/api/light", HTTP_GET, [](AsyncWebServerRequest* r) {
+    float lux = sensors.valueOf("light");
+    String s = "{\"light\":";
+    if (isnan(lux)) s += "null";
+    else s += String(lux, 1);
+    s += "}";
+    r->send(200, "application/json", s);
+  });
+
   // --- Konfiguracja ---
   server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* r) {
     r->send(200, "application/json", config.toJsonString());
@@ -391,6 +402,149 @@ void WebServerManager::registerRoutes() {
   server.on("/api/sensors/discover", HTTP_POST, [](AsyncWebServerRequest* r) {
     sensors.requestDsDiscovery();
     r->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  // --- Odbiór danych z bramki BLE (ESP32-C3) ---
+  // Bramka wysyła JSON (POST) z listą czujników BT:
+  //   {"sensors":[{"mac":"a4c138123456","name":"Pudełko PLA",
+  //                "temp":21.5,"hum":34,"batt":82,"rssi":-60}, ...]}
+  onPost("/api/remote/ble", [](AsyncWebServerRequest* r) {
+    String b = bodyOf(r);
+    JsonDocument doc;
+    if (deserializeJson(doc, b)) {
+      r->send(400, "application/json", jsonError("Błędny JSON"));
+      return;
+    }
+    int n = 0;
+    JsonVariant arr = doc["sensors"];
+    if (arr.is<JsonArray>()) {
+      for (JsonVariant v : arr.as<JsonArray>()) {
+        if (!v.is<JsonObject>()) continue;
+        JsonObjectConst o = v.as<JsonObjectConst>();
+        auto getf = [&](const char* key) -> float {
+          JsonVariantConst x = o[key];
+          if (x.is<float>()) return x.as<float>();
+          if (x.is<int>()) return (float)x.as<int>();
+          if (x.is<unsigned int>()) return (float)x.as<unsigned int>();
+          return NAN;
+        };
+        const String mac  = o["mac"] | "";
+        const String name = o["name"] | "";
+        float temp = getf("temp");
+        float hum  = getf("hum");
+        float batt = getf("batt");
+        int   rssi = (int)getf("rssi");
+        if (!mac.length()) continue;
+        sensors.ingestBleSensor(mac, name, temp, hum,
+                                (int)batt, rssi);
+        n++;
+      }
+    }
+    JsonDocument d;
+    d["ok"] = true;
+    d["n"] = n;
+    String s;
+    serializeJson(d, s);
+    r->send(200, "application/json", s);
+  });
+
+  // --- Urządzenia zewnętrzne (odpytywane przez HTTP) ---
+  server.on("/api/extdev", HTTP_GET, [](AsyncWebServerRequest* r) {
+    JsonDocument d;
+    JsonArray arr = d["devices"].to<JsonArray>();
+    for (int i = 0; i < extdev.count(); i++) {
+      const ExtDevice* e = extdev.at(i);
+      if (!e) continue;
+      JsonObject o = arr.add<JsonObject>();
+      o["index"] = i;
+      o["name"] = e->name;
+      o["url"] = e->url;
+      o["type"] = e->type;
+      o["interval"] = e->interval;
+      o["ok"] = e->ok;
+      o["last_sec"] = (unsigned long)((millis() - e->lastMs) / 1000UL);
+      o["last_err"] = e->lastErr;
+    }
+    String s;
+    serializeJson(d, s);
+    r->send(200, "application/json", s);
+  });
+
+  onPost("/api/extdev", [](AsyncWebServerRequest* r) {
+    String b = bodyOf(r);
+    JsonDocument doc;
+    if (deserializeJson(doc, b)) {
+      r->send(400, "application/json", jsonError("Błędny JSON"));
+      return;
+    }
+    String name = doc["name"] | "";
+    String url  = doc["url"] | "";
+    String type = doc["type"] | "vevor";
+    int interval = doc["interval"] | 20;
+    bool ok = extdev.add(name, url, type, interval);
+    String s;
+    JsonDocument d;
+    d["ok"] = ok;
+    serializeJson(d, s);
+    r->send(ok ? 200 : 400, "application/json", s);
+  });
+
+  onPost("/api/extdev/remove", [](AsyncWebServerRequest* r) {
+    String b = bodyOf(r);
+    JsonDocument doc;
+    if (deserializeJson(doc, b)) {
+      r->send(400, "application/json", jsonError("Błędny JSON"));
+      return;
+    }
+    int idx = doc["index"] | -1;
+    bool ok = extdev.remove(idx);
+    String s;
+    JsonDocument d;
+    d["ok"] = ok;
+    serializeJson(d, s);
+    r->send(ok ? 200 : 400, "application/json", s);
+  });
+
+  // --- Odbiór danych ze sniffera VEVOR (868 MHz) ---
+  // Sniffer wysyła JSON (POST) po każdej odebranej ramce. Akceptujemy zarówno
+  // cały obiekt z /json (z kluczem "weather"), jak i sam obiekt "weather".
+  onPost("/api/remote/weather", [](AsyncWebServerRequest* r) {
+    String b = bodyOf(r);
+    JsonDocument doc;
+    if (deserializeJson(doc, b)) {
+      r->send(400, "application/json", jsonError("Błędny JSON"));
+      return;
+    }
+    JsonVariant weather = doc["weather"];
+    JsonObjectConst w;
+    if (weather.is<JsonObject>()) w = weather.as<JsonObjectConst>();
+    else w = doc.as<JsonObjectConst>();
+
+    auto getf = [&](const char* key) -> float {
+      JsonVariantConst v = w[key];
+      if (v.is<float>()) return v.as<float>();
+      if (v.is<int>())   return (float)v.as<int>();
+      if (v.is<unsigned int>()) return (float)v.as<unsigned int>();
+      return NAN;
+    };
+
+    float tempC = getf("temperature_C");
+    float hum   = getf("humidity");
+    float wind  = getf("wind_avg_m_s");
+    float gust  = getf("wind_max_m_s");
+    float dir   = getf("wind_dir_deg");
+    float rain  = getf("rain_mm");
+    float uvi   = getf("uvi");
+    if (isnan(uvi)) uvi = getf("uv");
+    float lux   = getf("light_lux");
+
+    sensors.ingestVevor(tempC, hum, wind, gust, dir, rain, uvi, lux);
+
+    JsonDocument d;
+    d["ok"] = true;
+    String s;
+    serializeJson(d, s);
+    r->send(200, "application/json", s);
   });
 
   // --- GPS ---

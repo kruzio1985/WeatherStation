@@ -386,6 +386,33 @@ Polish section below).
   na pulpit, do wykresów, do CSV na karcie SD i do Home Assistant.
 - **PSRAM** — duże dokumenty JSON, listy plików i bufor logów trafiają do 8 MB PSRAM (płynne UI).
 
+## Sprzęt (urządzenia, na których działa stacja)
+
+> ⚠️ **Kupuj wyłącznie oryginalne moduły/czujniki** (Bosch, Sensirion, Adafruit, GY/„Fermion”).
+> Klony z Allegro/Ali (podrabiane BMP280, BH1750, DS18B20 itd.) mają złe adresy I²C,
+> błędną kalibrację albo w ogóle nie odpowiadają — firmware je odrzuca w logu, a pomiary
+> są wtedy bezwartościowe.
+
+| Element | Rola | Przykład / gdzie kupić |
+|---|---|---|
+| **ESP32-S3 WROOM-1 N16R8** | płyta główna (16 MB flash, 8 MB PSRAM octal) | [Allegro — „esp32-s3 wroom n16r8”](https://allegro.pl/listing?string=esp32-s3%20wroom%201%20n16r8) |
+| **BMP280 (Fermion)** | ciśnienie + temperatura (zewn.) | [Kamami — Fermion BMP280](https://kamami.pl/czujniki-cisnienia/1191970-fermion-bmp280-digital-pressure-sensor-modul-z-czujnikiem-cisnienia-bmp280-5906623495344.html) |
+| **BME280** | temperatura + wilgotność + ciśnienie (na płycie) | [Allegro — „bme280 oryginał”](https://allegro.pl/listing?string=bme280) |
+| **BH1750** | natężenie światła (lux) | [Allegro — „bh1750”](https://allegro.pl/listing?string=bh1750) |
+| **TCA9548A (PCA9548A)** | rozdzielacz I²C (8 kanałów) | [Allegro — „tca9548a”](https://allegro.pl/listing?string=tca9548a) |
+| **DS3231 (bateria 3,3 V)** | zegar RTC | [Allegro — „ds3231”](https://allegro.pl/listing?string=ds3231) |
+| **ESP32-CAM (AI-Thinker, OV2640)** | kamera (timelapse, analiza chmur/opadów) | [Allegro — „esp32-cam”](https://allegro.pl/listing?string=esp32-cam) |
+| **ESP32-C3 SuperMini** | węzeł RS485 / bramka BLE | [Allegro — „esp32-c3 supermini”](https://allegro.pl/listing?string=esp32-c3%20supermini) |
+| **CC1101 + ESP (sniffer 868 MHz)** | odbiór stacji VEVOR 7-in-1 (wiatr/deszcz) | [Allegro — „cc1101”](https://allegro.pl/listing?string=cc1101) |
+| **DS18B20 (×N)** | temperatura wielopunktowa (gleba/woda) | [Allegro — „ds18b20”](https://allegro.pl/listing?string=ds18b20) |
+| **PMS5003** | pyły PM1/PM2.5/PM10 (zewn.) | [Allegro — „pms5003”](https://allegro.pl/listing?string=pms5003) |
+| **AS3935** | detektor wyładowań (błyskawice) | [Allegro — „as3935”](https://allegro.pl/listing?string=as3935) |
+| **SHT3x / SHT4x** | dokładna temperatura + wilgotność | [Allegro — „sht31”](https://allegro.pl/listing?string=sht31) |
+| **Higrometry BLE do filamentu:** Xiaomi LYWSD03MMC · Govee H5074/H5075/H5102 | wilgotność w pudełkach (bramka C3) | [Allegro — „lywsd03mmc”](https://allegro.pl/listing?string=lywsd03mmc) · [Allegro — „govee h5074”](https://allegro.pl/listing?string=govee%20h5074) |
+
+Pełny katalog obsługiwanych czujników (z magistralami, adresami I²C i kalibracją) jest w
+[docs/CZUJNIKI.md](docs/CZUJNIKI.md) oraz w zakładce **Czujniki → legenda** na stronie www.
+
 ## Sterowniki i obsługiwane czujniki
 
 Pełna legenda (podłączenie, parametry, kalibracja, wykresy i logi dla **każdego** czujnika)

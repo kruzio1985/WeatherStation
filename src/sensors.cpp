@@ -218,6 +218,31 @@ bool SensorManager::begin() {
   v.haClass=""; v.haUnit="°"; v.haIcon="mdi:compass";
   channels_.push_back(v);
 
+  // Stacja VEVOR (sniffer 868 MHz) - drugi, niezależny zestaw do porównania
+  // z naszymi czujnikami. Kanały stają się "present" dopiero po pierwszej
+  // odebranej ramce (robi to ingestVevor()).
+  auto addVev = [&](const char* id, const char* name, const char* unit, uint8_t dec,
+                    const char* haClass, const char* haUnit, const char* icon,
+                    float factor = 1.0f) {
+    Channel c; c.id = id; c.name = name; c.unit = unit; c.decimals = dec;
+    c.zone = "out"; c.enabled = true;
+    c.haClass = haClass; c.haUnit = haUnit; c.haFactor = factor; c.haIcon = icon;
+    channels_.push_back(c);
+  };
+  addVev("vev_temp",       "Temperatura (VEVOR)", "°C",   1, "temperature", "°C", "mdi:thermometer");
+  addVev("vev_hum",        "Wilgotność (VEVOR)",  "%",    1, "humidity",    "%",  "mdi:water-percent");
+  addVev("vev_wind",       "Wiatr (VEVOR)",       "km/h", 1, "wind_speed",  "m/s", "mdi:weather-windy", 1.0f / 3.6f);
+  addVev("vev_wind_ms",    "Wiatr (VEVOR)",       "m/s",  1, "wind_speed",  "m/s", "mdi:weather-windy");
+  addVev("vev_gust",       "Poryw (VEVOR)",       "km/h", 1, "wind_speed",  "m/s", "mdi:weather-windy", 1.0f / 3.6f);
+  addVev("vev_vane",       "Kierunek (VEVOR)",    "°",    0, "",            "°",   "mdi:compass");
+  addVev("vev_rain_total", "Deszcz łącznie (VEVOR)", "mm", 1, "precipitation", "mm", "mdi:weather-rainy");
+  addVev("vev_rain_day",   "Deszcz dziś (VEVOR)", "mm",   1, "precipitation", "mm", "mdi:weather-rainy");
+  addVev("vev_rain_week",  "Deszcz tydzień (VEVOR)", "mm", 1, "precipitation", "mm", "mdi:weather-rainy");
+  addVev("vev_rain_month", "Deszcz miesiąc (VEVOR)", "mm", 1, "precipitation", "mm", "mdi:weather-rainy");
+  addVev("vev_rain_now",   "Deszcz teraz (VEVOR)", "mm/h", 1, "precipitation_intensity", "mm/h", "mdi:weather-pouring");
+  addVev("vev_uv",         "UV (VEVOR)",          "",     1, "", "", "mdi:weather-sunny-alert");
+  addVev("vev_light",      "Lux (VEVOR)",         "lx",   0, "illuminance", "lx", "mdi:white-balance-sunny");
+
   // Jakość powietrza na zewnątrz (PMS5003)
   Channel q1; q1.id="pm1"; q1.name="PM 1.0"; q1.unit="µg/m³"; q1.decimals=0;
   q1.zone="out";
@@ -522,6 +547,24 @@ void SensorManager::readAll() {
   readWind();
   readAq();
   readExtra();
+  bridgeMissing();
+}
+
+// Wypełnia główny kanał ciśnienia z BMP280/BMP390 sterownika T/H/P, gdy
+// na płycie nie ma BME280 (press bez pomiaru). Dzięki temu pulpit pokazuje
+// ciśnienie z zewnętrznego czujnika BMP280.
+void SensorManager::bridgeMissing() {
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  Channel* press = ch("press");
+  Channel* bp = ch("ths_bmp280_p");
+  if (press && bp && bp->measured && !isnan(bp->value) &&
+      (!press->measured || isnan(press->value))) {
+    press->value = bp->value;
+    press->measured = true;
+    press->present = true;
+    press->detected = true;
+  }
+  if (mutex_) xSemaphoreGive(mutex_);
 }
 
 // -------------------------------------------------------------
@@ -894,6 +937,91 @@ void SensorManager::computeRain() {
   if (mutex_) xSemaphoreGive(mutex_);
 
   config.saveState();
+}
+
+// =============================================================
+//  Stacja VEVOR (sniffer 868 MHz) - dane przychodzą przez HTTP POST.
+//  Wypełniamy osobny zestaw kanałów vev_* (do porównania z naszymi
+//  czujnikami). rainMm to suma od włączenia stacji VEVOR - agregaty
+//  doby/tygodnia/miesiąca liczymy względem baz zapisanych w NVS.
+// =============================================================
+void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float gustMs,
+                                float dirDeg, float rainMm, float uv, float lux) {
+  time_t now = time(nullptr);
+  struct tm tmv;
+  localtime_r(&now, &tmv);
+
+  int dayKey   = (tmv.tm_year + 1900) * 1000 + tmv.tm_yday;
+  int daysSinceMon = (tmv.tm_wday + 6) % 7;                       // 0 = poniedziałek
+  int weekKey  = (tmv.tm_year + 1900) * 100 + ((tmv.tm_yday - daysSinceMon) / 7);
+  int monthKey = (tmv.tm_year + 1900) * 100 + (tmv.tm_mon + 1);
+
+  bool changed = false;
+  if (config.state.vevRainDay != dayKey) {
+    config.state.vevRainDay = dayKey;
+    config.state.vevRainBaseDay = rainMm;
+    changed = true;
+  } else if (rainMm < config.state.vevRainBaseDay) {
+    config.state.vevRainBaseDay = rainMm;    // licznik VEVOR się zresetował
+    changed = true;
+  }
+  if (config.state.vevRainWeek != weekKey) {
+    config.state.vevRainWeek = weekKey;
+    config.state.vevRainBaseWeek = rainMm;
+    changed = true;
+  } else if (rainMm < config.state.vevRainBaseWeek) {
+    config.state.vevRainBaseWeek = rainMm;
+    changed = true;
+  }
+  if (config.state.vevRainMonth != monthKey) {
+    config.state.vevRainMonth = monthKey;
+    config.state.vevRainBaseMonth = rainMm;
+    changed = true;
+  } else if (rainMm < config.state.vevRainBaseMonth) {
+    config.state.vevRainBaseMonth = rainMm;
+    changed = true;
+  }
+  if (changed) config.saveState();
+
+  float rainDay   = fmaxf(0.0f, rainMm - config.state.vevRainBaseDay);
+  float rainWeek  = fmaxf(0.0f, rainMm - config.state.vevRainBaseWeek);
+  float rainMonth = fmaxf(0.0f, rainMm - config.state.vevRainBaseMonth);
+
+  // Intensywność "teraz" (mm/h) z różnicy dwóch ostatnich próbek
+  float rainNow = 0.0f;
+  unsigned long ms = millis();
+  if (!isnan(vevLastRainMm_) && ms > vevLastRainMs_ && rainMm >= vevLastRainMm_) {
+    float dtH = (float)(ms - vevLastRainMs_) / 3600000.0f;
+    if (dtH > 0.0f) rainNow = (rainMm - vevLastRainMm_) / dtH;
+  }
+  vevLastRainMm_ = rainMm;
+  vevLastRainMs_ = ms;
+
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  auto pub = [&](const char* id, float val, bool have) {
+    if (!have || isnan(val)) return;
+    setPresent(id, true);
+    setDetected(id, true);
+    putValue(id, val, true);
+  };
+  pub("vev_temp",       tempC,          !isnan(tempC));
+  pub("vev_hum",        humPct,         !isnan(humPct));
+  pub("vev_wind",       windMs * 3.6f,  !isnan(windMs));
+  pub("vev_wind_ms",    windMs,         !isnan(windMs));
+  pub("vev_gust",       gustMs * 3.6f,  !isnan(gustMs));
+  pub("vev_vane",       dirDeg,         !isnan(dirDeg));
+  pub("vev_rain_total", rainMm,         !isnan(rainMm));
+  pub("vev_rain_day",   rainDay,        !isnan(rainMm));
+  pub("vev_rain_week",  rainWeek,       !isnan(rainMm));
+  pub("vev_rain_month", rainMonth,      !isnan(rainMm));
+  pub("vev_rain_now",   rainNow,        !isnan(rainMm));
+  pub("vev_uv",         uv,             !isnan(uv));
+  pub("vev_light",      lux,            !isnan(lux));
+  if (mutex_) xSemaphoreGive(mutex_);
+
+  LOG_I("VEVOR: %.1f°C %.0f%% wiatr %.1f km/h (poryw %.1f) kier %.0f° deszcz %.1f mm (dziś %.1f, teraz %.1f mm/h)",
+        (double)tempC, (double)humPct, (double)(windMs * 3.6f), (double)(gustMs * 3.6f),
+        (double)dirDeg, (double)rainMm, (double)rainDay, (double)rainNow);
 }
 
 void SensorManager::readWind() {

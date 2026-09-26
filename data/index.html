@@ -486,6 +486,25 @@
     <table id="sensorTable"><thead><tr><th>ID</th><th>Nazwa</th><th>Strefa</th><th>Stan</th><th>Jednostka</th></tr></thead><tbody></tbody></table>
   </section>
 
+  <section id="tab-extdev">
+    <h2>Urządzenia zewnętrzne</h2>
+    <p class="muted">Dodajesz inne urządzenia po adresie IP (sniffer VEVOR 868 MHz, bramkę BLE, dodatkową stację). Stacja sama odpytuje je co podany interwał i wpuszcza dane do kanałów.</p>
+    <div class="box">
+      <h3>Dodaj urządzenie</h3>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <input type="text" id="evName" placeholder="Nazwa (np. VEVOR 868)" style="max-width:220px">
+        <input type="text" id="evUrl" placeholder="http://192.168.1.130/json" style="max-width:300px">
+        <select id="evType">
+          <option value="vevor">VEVOR (wiatr/deszcz/UV/lux)</option>
+          <option value="ble">Bramka BLE (czujniki T/H)</option>
+        </select>
+        <label class="muted">co <input type="number" id="evInterval" value="20" min="5" step="5" style="width:70px"> s</label>
+        <button class="btn" onclick="addExtDev()">Dodaj</button>
+      </div>
+    </div>
+    <table id="evTable"><thead><tr><th>Nazwa</th><th>Adres</th><th>Typ</th><th>Interwał</th><th>Ostatni odczyt</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
   <section id="tab-pins">
     <h2>Piny (GPIO)</h2>
     <p class="muted">Tutaj przypisujesz, co jest podłączone do którego pinu - przy każdym pinie wybierasz funkcję z listy, a <b>— wolny —</b> zwalnia pin.
@@ -1459,7 +1478,8 @@ const MENU = [
   { grupa:'Czujniki', ikona:'🌡️', pozycje:[
     ['sensors', 'Czujniki', '🧪'],
     ['gps', 'GPS', '📍'],
-    ['camera', 'Kamera', '📷'] ] },
+    ['camera', 'Kamera', '📷'],
+    ['extdev', 'Urządzenia zewnętrzne', '📡'] ] },
   { grupa:'Ustawienia', ikona:'⚙️', pozycje:[
     ['config', 'Konfiguracja', '📝'],
     ['calibration', 'Kalibracja', '🎚️'],
@@ -1546,6 +1566,7 @@ function showTab(id) {
   if (id === 'calibration') loadCalibration();
   if (id === 'alerts') loadAlerts();
   if (id === 'sensors') loadSensors();
+  if (id === 'extdev') loadExtDev();
   if (id === 'pins') loadPins();
   if (id === 'ring') { loadRing(); ringPollStart(); }
   if (id === 'rtc') { loadRtc(); rtcPollStart(); }
@@ -1594,6 +1615,7 @@ async function loadStatus() {
   const addCard = c => {
     const d = document.createElement('div');
     d.className = 'card';
+    if (c.id === 'light') d.id = 'card-light';   // szybkie odświeżanie luksomierza
     const val = (c.value === null || c.value === undefined) ? '—' : Number(c.value).toFixed(c.decimals);
     d.innerHTML = `<div class="label">${escapeHtml(c.name)}</div>
       <div class="value">${val} <span class="unit">${c.unit}</span></div>`;
@@ -3267,6 +3289,48 @@ async function loadSensors() {
 async function discoverDs() {
   await post('/api/sensors/discover');
   setTimeout(loadSensors, 1500);
+}
+
+// ---------------- Urządzenia zewnętrzne ----------------
+async function loadExtDev() {
+  const d = await api('/api/extdev');
+  const tbody = document.querySelector('#evTable tbody');
+  tbody.innerHTML = '';
+  const devs = d.devices || [];
+  for (const e of devs) {
+    const tr = document.createElement('tr');
+    const status = e.ok
+      ? `<span style="color:#6bcb77">OK (${e.last_sec}s temu)</span>`
+      : `<span style="color:#ff8c8c">${escapeHtml(e.last_err || 'błąd')}</span>`;
+    tr.innerHTML = `<td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.url)}</td>
+      <td>${e.type === 'ble' ? 'BLE' : 'VEVOR'}</td><td>${e.interval} s</td>
+      <td>${status}</td>
+      <td><button class="btn danger" onclick="removeExtDev(${e.index})">Usuń</button></td>`;
+    tbody.appendChild(tr);
+  }
+  if (!devs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">Brak urządzeń — dodaj pierwsze powyżej.</td></tr>';
+  }
+}
+
+async function addExtDev() {
+  const name = document.getElementById('evName').value.trim();
+  const url = document.getElementById('evUrl').value.trim();
+  const type = document.getElementById('evType').value;
+  const interval = parseInt(document.getElementById('evInterval').value || '60', 10);
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    alert('Podaj adres zaczynający się od http:// lub https://');
+    return;
+  }
+  await post('/api/extdev', { name, url, type, interval });
+  document.getElementById('evName').value = '';
+  document.getElementById('evUrl').value = '';
+  loadExtDev();
+}
+
+async function removeExtDev(index) {
+  await post('/api/extdev/remove', { index });
+  loadExtDev();
 }
 
 // ---------------- Piny ----------------
@@ -5880,6 +5944,21 @@ populateComparisonMetrics();
 r2LoadNodes();          // pozycje "ESP #n" w menu zanim otworzysz zakładkę magistrali
 loadStatus();
 setInterval(loadStatus, 10000);
+
+// Szybkie odświeżanie karty luksomierza (BH1750) co 1,5 s - niezależnie od
+// pełnego /api/status (10 s), żeby zmiany światła były widoczne od ręki.
+setInterval(async () => {
+  const el = document.getElementById('card-light');
+  if (document.hidden || !el) return;
+  try {
+    const j = await api('/api/light');
+    if (j && j.light !== null && j.light !== undefined) {
+      const v = el.querySelector('.value');
+      if (v) v.innerHTML = Number(j.light).toFixed(0) + ' <span class="unit">lx</span>';
+    }
+  } catch (e) { /* chwilowy brak połączenia - następna próba za 1,5 s */ }
+}, 1500);
+
 startDiagPoll();
 showTab('dashboard');
 </script>
