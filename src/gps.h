@@ -18,6 +18,14 @@
 //  korekty zegara, gdy w sieci nie ma NTP (np. brak internetu).
 // =============================================================
 
+struct GpsSat {
+  uint8_t prn = 0;      // numer satelity
+  uint8_t elev = 0;     // elewacja 0..90°
+  int16_t azim = 0;     // azymut 0..359°
+  uint8_t snr = 0;      // siła sygnału (C/N0) 0..99 dB-Hz
+  bool used = false;    // użyty w rozwiązaniu (GSA)
+};
+
 struct GpsFix {
   bool valid = false;         // ostatnia poprawna ramka zawierała pozycję
   double lat = 0.0;           // stopnie (ujemne = S)
@@ -37,6 +45,10 @@ struct GpsFix {
   unsigned long lastSentenceMs = 0;    // millis() dowolnej poprawnej ramki
   unsigned long sentences = 0;         // liczba poprawnych ramek
   unsigned long errors = 0;            // liczba ramek z błędną sumą kontrolną
+
+  // Siła sygnału poszczególnych satelitów (GSV/GSA) - do ustawiania anteny
+  GpsSat sat[64];
+  int satN = 0;
 };
 
 class GpsService {

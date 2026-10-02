@@ -14,8 +14,8 @@
  */
 #pragma once
 
-#define CAM_WIFI_SSID  ""
-#define CAM_WIFI_PASS  ""
+#define CAM_WIFI_SSID  "SGC"
+#define CAM_WIFI_PASS  "KruziO2023?"
 #define CAM_MASTER_URL "http://192.168.1.143"
 
 // Hasło aktualizacji OTA kamery (ArduinoOTA, port 3232). Zmień je!

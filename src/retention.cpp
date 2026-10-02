@@ -52,18 +52,20 @@ void SdRetention::runOnce() {
 
   // Zdjęcia w /photos/RRRR-MM/RRRR-MM-DD_HHMMSS.jpg
   if (photoDays > 0) {
-    std::vector<SdFileInfo> base;
-    sdCard.listDir("/photos", base);
-    for (auto& e : base) {
-      if (e.path.endsWith(".jpg") || e.path.endsWith(".jpeg")) {
-        if (olderThan(e.mtime, photoDays)) deletePhotoWithMeta(e.path, deleted);
+    // Bez pobierania metadanych każdego wpisu (patrz listDirNames): katalog ze
+    // setkami zdjęć zajmowałby dziesiątki sekund i blokował pętlę główną.
+    // Czas zapisu zdjęcia jest w jego nazwie.
+    std::vector<String> base;
+    sdCard.listDirNames("/photos", base);
+    for (auto& p : base) {
+      if (p.endsWith(".jpg") || p.endsWith(".jpeg")) {
+        if (olderThan(sdFileNameTime(p), photoDays)) deletePhotoWithMeta(p, deleted);
       } else {
         // Katalog miesięczny
-        std::vector<SdFileInfo> sub;
-        sdCard.listDir(e.path, sub);
+        std::vector<String> sub;
+        sdCard.listDirNames(p, sub, 0, false, ".jpg");
         for (auto& f : sub) {
-          if (!(f.path.endsWith(".jpg") || f.path.endsWith(".jpeg"))) continue;
-          if (olderThan(f.mtime, photoDays)) deletePhotoWithMeta(f.path, deleted);
+          if (olderThan(sdFileNameTime(f), photoDays)) deletePhotoWithMeta(f, deleted);
         }
       }
     }

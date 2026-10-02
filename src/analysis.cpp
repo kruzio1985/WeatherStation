@@ -12,6 +12,8 @@
 #include "syslog.h"
 #include <time.h>
 #include <math.h>
+#include <string.h>
+#include <stdlib.h>
 #include <esp_task_wdt.h>
 
 Analysis analysis;
@@ -101,26 +103,32 @@ static void metricLabel(const String& id, String& name, String& unit) {
 // ------------------------------------------------------------
 typedef void (*WideCb)(long ts, int colIdx, const String& col, float v, void* ctx);
 
-static void parseWideLine(const String& line, bool header, WideCb cb, void* ctx) {
+static void parseWideLine(const char* line, bool header, WideCb cb, void* ctx) {
   if (header) return;
-  int c1 = line.indexOf(',');
-  if (c1 < 0) return;
-  long ts = atol(line.substring(0, c1).c_str());
+  const char* c1 = strchr(line, ',');
+  if (!c1) return;
+  long ts = atol(line);
 
-  int f = 0, start = 0, idx = c1 + 1;
-  while (idx <= (int)line.length()) {
-    if (idx == (int)line.length() || line[idx] == ',') {
-      if (f >= 2) {
-        String v = line.substring(start, idx);
-        if (v.length() > 0) {
-          float fv = atof(v.c_str());
-          if (!isnan(fv)) cb(ts, f - 2, DataLogger::columnName(f - 2), fv, ctx);
-        }
+  // pomijamy datetime (pole 1); od pola 2 zaczynają się kolumny szerokiego CSV
+  const char* p = strchr(c1 + 1, ',');
+  if (!p) return;
+  p++;
+
+  int col = 0;
+  while (*p) {
+    const char* comma = strchr(p, ',');
+    if (comma) {
+      if (comma > p) {
+        float fv = atof(p);
+        if (!isnan(fv)) cb(ts, col, DataLogger::columnName(col), fv, ctx);
       }
-      f++;
-      start = idx + 1;
+      col++;
+      p = comma + 1;
+    } else {
+      float fv = atof(p);
+      if (!isnan(fv)) cb(ts, col, DataLogger::columnName(col), fv, ctx);
+      break;
     }
-    idx++;
   }
 }
 
@@ -132,8 +140,11 @@ static void scanWideFile(const String& path, WideCb cb, void* ctx, size_t maxByt
   if (!f) return;
 
   char buf[512];
-  String line;
-  line.reserve(256);
+  // Stały bufor wiersza zamiast String::operator+= (dla szerokiego CSV linia
+  // ma kilkaset bajtów, a doklejanie znak po znaku powodowało realokacje O(n²)
+  // i potrafiło wydłużyć skan miesięcznego pliku do kilkunastu sekund).
+  char line[2048];
+  size_t lineLen = 0;
   bool header = true;
   size_t total = 0;
   int lines = 0;
@@ -144,21 +155,27 @@ static void scanWideFile(const String& path, WideCb cb, void* ctx, size_t maxByt
     for (int i = 0; i < n; i++) {
       char c = buf[i];
       if (c == '\n') {
-        if (line.length() && line[line.length() - 1] == '\r') line.remove(line.length() - 1);
-        line.trim();
-        if (line.length()) parseWideLine(line, header, cb, ctx);
-        line = "";
+        if (lineLen && line[lineLen - 1] == '\r') lineLen--;
+        while (lineLen && (line[lineLen - 1] == ' ' || line[lineLen - 1] == '\t')) lineLen--;
+        if (lineLen) {
+          line[lineLen] = 0;
+          parseWideLine(line, header, cb, ctx);
+        }
+        lineLen = 0;
         header = false;
         if ((++lines & 0x3F) == 0) { yield(); esp_task_wdt_reset(); }
-      } else {
-        line += c;
+      } else if (lineLen < sizeof(line) - 1) {
+        line[lineLen++] = c;
       }
     }
   }
-  if (line.length()) {
-    if (line[line.length() - 1] == '\r') line.remove(line.length() - 1);
-    line.trim();
-    if (line.length()) parseWideLine(line, header, cb, ctx);
+  if (lineLen) {
+    if (line[lineLen - 1] == '\r') lineLen--;
+    while (lineLen && (line[lineLen - 1] == ' ' || line[lineLen - 1] == '\t')) lineLen--;
+    if (lineLen) {
+      line[lineLen] = 0;
+      parseWideLine(line, header, cb, ctx);
+    }
   }
   f.close();
 }
