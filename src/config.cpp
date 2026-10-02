@@ -113,6 +113,9 @@ void ConfigManager::ensureDefaults() {
   // Adres zewnętrznej kamery (ESP32-CAM). Puste = kamera lokalna na pinach.
   // Po ustawieniu master tylko odbiera zdjęcia (HTTP POST /api/camera/upload).
   if (!o["cam_remote_url"].is<const char*>()) o["cam_remote_url"] = "";
+  // Obrót obrazu 0/90/180/270 (90 = w prawo). Stosowany przy podglądzie na
+  // stronie i przy analizie zdjęcia (region nieba musi być na górze kadru).
+  if (!o["cam_rotate"].is<uint16_t>()) o["cam_rotate"] = 0;
 
   // Serwisy zewnętrzne (udostępnianie pomiarów poza MQTT/Home Assistant)
   {
@@ -709,6 +712,16 @@ String ConfigManager::camRemoteUrl() {
   return getString("cam_remote_url");
 }
 
+uint16_t ConfigManager::camRotate() {
+  lock();
+  int v = doc_["cam_rotate"] | 0;
+  unlock();
+  // Tylko wielokrotności 90 stopni - inna wartość (np. z ręcznie wpisanego
+  // JSON-a) traktowana jest jak brak obrotu.
+  if (v != 90 && v != 180 && v != 270) return 0;
+  return (uint16_t)v;
+}
+
 // --- Położenie geograficzne i GPS ---
 double ConfigManager::latitude() {
   lock();
@@ -932,6 +945,23 @@ bool ConfigManager::hasExtra(const char* key) {
   bool out = !doc_["extra"][key].isNull();
   unlock();
   return out;
+}
+
+String ConfigManager::extraS(const char* key, const String& def) {
+  if (!key || !*key) return def;
+  lock();
+  JsonVariant v = doc_["extra"][key];
+  String out = v.is<const char*>() ? String(v.as<const char*>()) : def;
+  unlock();
+  return out;
+}
+
+void ConfigManager::setExtraS(const char* key, const String& value) {
+  if (!key || !*key) return;
+  lock();
+  JsonObject ex = objIn(doc_["extra"]);
+  ex[key] = value;
+  unlock();
 }
 
 // --- Serwisy zewnętrzne ---
