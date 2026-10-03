@@ -159,12 +159,18 @@ struct StationState {
   unsigned long rainStartTips = 0;   // impulsy na początku bieżącej doby
   int rainDay = -1;                  // unikalny klucz doby (rok*1000 + dzień roku)
 
-  // Deszcz ze stacji VEVOR (sniffer 868 MHz): bazy rain_mm na początku okresu
-  float vevRainBaseDay = 0.0f;       // suma rain_mm na początku doby
+  // Deszcz ze stacji VEVOR (sniffer 868 MHz): sumy narastające, zapisywane
+  // w NVS przy każdej zmianie, więc przetrwają restart stacji. Przyrost
+  // liczymy względem najwyższej dotąd wartości licznika (vevRainMax), a
+  // cofnięcie licznika (reset stacji VEVOR, nowa doba albo restart sniffera)
+  // NIE kasuje historii - inaczej "deszcz w tym miesiącu" znikałby po każdym
+  // restarcie.
+  float vevRainMax = -1.0f;          // najwyższa dotychczasowa wartość rain_mm
+  float vevRainDayAcc = 0.0f;        // suma doby (mm)
   int   vevRainDay = -1;             // klucz doby (rok*1000 + dzień roku)
-  float vevRainBaseWeek = 0.0f;      // suma rain_mm na początku tygodnia (ISO)
+  float vevRainWeekAcc = 0.0f;       // suma tygodnia ISO (mm)
   int   vevRainWeek = -1;            // rok*100 + numer tygodnia ISO
-  float vevRainBaseMonth = 0.0f;     // suma rain_mm na początku miesiąca
+  float vevRainMonthAcc = 0.0f;      // suma miesiąca (mm)
   int   vevRainMonth = -1;           // rok*100 + miesiąc
 };
 

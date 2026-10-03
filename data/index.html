@@ -119,6 +119,27 @@
   .aq-note { color:var(--muted); font-size:.74rem; line-height:1.45; margin-top:10px;
              border-top:1px solid #334155; padding-top:8px; }
   .aq-state { font-weight:600; }
+  /* --- Wskaźniki pogody (styl Weather Underground) ---
+     Karta ze wskaźnikiem SVG (termometr, barometr, kropla, zlewka deszczu,
+     wiatrowskaz, pasek) - wskazanie animuje się po każdej aktualizacji. */
+  .wx-panel { background:var(--panel); border-radius:12px; padding:14px 16px;
+              grid-column:span 2; }
+  .wx-panel h4 { margin:0 0 10px; font-size:.95rem; font-weight:600; color:var(--text); }
+  .wx-grid { display:flex; flex-wrap:wrap; gap:12px; align-items:stretch; }
+  .wx-card { background:var(--panel2); border:1px solid #273449; border-radius:10px;
+             padding:10px 12px; width:156px; text-align:center; display:flex;
+             flex-direction:column; align-items:center; justify-content:flex-start; }
+  .wx-card .lbl { color:var(--muted); font-size:.8rem; }
+  .wx-card svg { display:block; margin:6px auto 4px; }
+  .wx-card .val { font-size:1.3rem; font-weight:700; line-height:1.15;
+                  font-variant-numeric:tabular-nums; }
+  .wx-card .unit { font-size:.72rem; color:var(--muted); font-weight:400; }
+  .wx-card .sub { color:var(--muted); font-size:.72rem; margin-top:2px; }
+  .wx-card .bigico { font-size:2.6rem; line-height:1.2; }
+  .wx-fill   { transition: y .9s cubic-bezier(.25,.9,.35,1), height .9s cubic-bezier(.25,.9,.35,1); }
+  .wx-fillw  { transition: width .9s cubic-bezier(.25,.9,.35,1); }
+  .wx-needle { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
+  .wx-arrow  { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
   .card.off { opacity:.45; }
   .zone-head { grid-column:1/-1; color:var(--muted); font-size:.78rem; text-transform:uppercase;
                letter-spacing:.06em; margin:6px 0 -2px; display:flex; align-items:center; gap:8px;
