@@ -3553,7 +3553,8 @@ function renderCameraAnalysis(a) {
                          fog: t(CAM_WEATHER_LABEL[5]), rain: t(CAM_WEATHER_LABEL[3]),
                          snow: t(CAM_WEATHER_LABEL[4]), night: t(CAM_WEATHER_LABEL[0]) };
   add(t('Faza dnia'), phaseLabel[a.phase] || a.phase, '', t('jasność') + ': ' + fmtNum(a.brightness, 0) + '/255');
-  if (a.weather) add(t('Warunki'), weatherLabel[a.weather] || a.weather, '', t('szacunkowe z jednego zdjęcia'));
+  if (a.weather) add(t('Warunki'), weatherLabel[a.weather] || a.weather, '',
+                     t('szacunkowe z jednego zdjęcia; śnieg tylko przy temperaturze zewnętrznej ≤ 2 °C'));
   add(t('Natężenie światła'), fmtNum(a.lux, 0), 'lx', a.lux < 1 ? t('ciemno') : (a.lux > 30000 ? t('pełne słońce') : ''));
   add(t('Składowe RGB'), 'R ' + fmtNum(a.mean_r, 0) + ' G ' + fmtNum(a.mean_g, 0) + ' B ' + fmtNum(a.mean_b, 0), '', '');
   add(t('Ruch'), fmtNum(a.motion_pct, 1), '%', t('zmiana względem poprzedniego zdjęcia'));

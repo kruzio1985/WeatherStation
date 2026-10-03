@@ -113,6 +113,9 @@ public:
 
   // Bieżąca wartość pojedynczego kanału (NAN = brak danych / kanał wyłączony)
   float valueOf(const String& id);
+  // Najniższa potwierdzona temperatura ze strefy zewnętrznej (NAN, gdy brak).
+  // Kamera używa jej, żeby nie ogłosić śniegu przy dodatniej temperaturze.
+  float coldestOutdoorTemp();
 
   // Wartość pierwszego kanału danego typu (klasa HA, np. "temperature") w danej
   // strefie ("in"/"out"). Odczyt idzie wprost po liście kanałów, bez jej

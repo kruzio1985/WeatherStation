@@ -25,6 +25,10 @@
 
 CameraManager camera;
 
+// Poniżej tej temperatury otoczenia biały kadr może być śniegiem. Powyżej -
+// to chmury, mgła albo prześwietlone niebo (śnieg nie pada przy +25 °C).
+static const float CAM_SNOW_MAX_TEMP = 2.0f;
+
 // Piny kamery w sekcji "pins" ustawień. Wartość -1 = nieużywane / nieustawione.
 static const char* const CAM_PIN_KEYS[] = {
   "cam_xclk", "cam_pclk", "cam_vsync", "cam_href",
@@ -686,7 +690,11 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
       int mx = r > g ? r : g; if (b > mx) mx = b;
       int mn = r < g ? r : g; if (b < mn) mn = b;
       int sat = mx - mn;
-      if (lum > 160 && sat < 45) whiteCnt++;   // biel śniegu / gęstych chmur
+      // Biel śniegu i gęstych chmur jest neutralna (r ≈ g ≈ b). Sam warunek
+      // "jasne i mało nasycone" łapał też blade, błękitne niebo (np. RGB
+      // 157,172,201 ma nasycenie 44, czyli tuż pod progiem), więc przy słońcu
+      // wychodził z tego śnieg. Dlatego biel nie może być wyraźnie niebieska.
+      if (lum > 160 && sat < 45 && (b - r) <= 18) whiteCnt++;
       if (sat < 30) grayCnt++;                 // niskie nasycenie (mgła / deszcz)
 
       if (havePrevLum_) {
@@ -729,10 +737,18 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   // Orientacyjna klasyfikacja pogody z pojedynczego zdjęcia. To heurystyka
   // (jasność + nasycenie + kontrast + zachmurzenie), nie pomiar - traktować
   // jako wskaźnik do porównywania kolejnych zdjęć, nie jako dokładny opad.
+  //
+  // Śnieg wymaga dodatkowo mrozu: biały kadr przy +25 stopniach to jasne, grube
+  // chmury albo mgła, a nie śnieg. Bierzemy najniższą temperaturę z czujników
+  // zewnętrznych (płytka stacji stoi w obudowie i potrafi pokazywać ciepło, gdy
+  // na dworze jest mróz), a brak jakiegokolwiek pomiaru nie blokuje wykrycia.
+  const float ambient = sensors.coldestOutdoorTemp();
+  const bool snowPossible = isnan(ambient) || ambient <= CAM_SNOW_MAX_TEMP;
+
   a.snowPct = a.rainPct = a.fogPct = -1;
   if (a.brightness < 40) {
     a.weather = "night";
-  } else if (whitePct >= 30.0f && a.brightness >= 110.0f) {
+  } else if (whitePct >= 30.0f && a.brightness >= 110.0f && snowPossible) {
     a.weather = "snow";
     a.snowPct = constrain(whitePct * 1.6f - 16.0f, 10.0f, 100.0f);
   } else if (contrast < 26.0f && a.brightness >= 55.0f &&
@@ -742,6 +758,17 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   } else if (a.cloudCover >= 40.0f && grayPct >= 45.0f && a.brightness < 125.0f) {
     a.weather = "rain";
     a.rainPct = constrain((a.cloudCover - 35.0f) * 1.8f, 5.0f, 100.0f);
+  } else if (whitePct >= 30.0f && a.brightness >= 110.0f) {
+    // Ta sama biała scena, ale bez mrozu - jasne, zlane chmury.
+    a.weather = "cloudy";
+    if (!isnan(ambient) && ambient > CAM_SNOW_MAX_TEMP) {
+      static uint32_t lastSnowReject = 0;
+      uint32_t now = millis();
+      if (now - lastSnowReject > 60000UL) {
+        lastSnowReject = now;
+        LOG_I("Kamera: biały kadr, ale %.1f °C - chmury, nie śnieg", ambient);
+      }
+    }
   } else if (a.cloudCover > 55.0f) {
     a.weather = "cloudy";
   } else {

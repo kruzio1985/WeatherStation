@@ -1865,6 +1865,10 @@
     'Zapisano zdjęcie': ['Photo saved', 'Foto gespeichert'],
     'Zewnętrzna': ['External', 'Extern'],
     'zmiana względem poprzedniego zdjęcia': ['change compared to the previous photo', 'Änderung gegenüber dem vorherigen Foto'],
+    'szacunkowe z jednego zdjęcia': ['estimated from a single photo', 'aus einem einzelnen Foto geschätzt'],
+    'szacunkowe z jednego zdjęcia; śnieg tylko przy temperaturze zewnętrznej ≤ 2 °C':
+      ['estimated from a single photo; snow only when the outdoor temperature is ≤ 2 °C',
+       'aus einem einzelnen Foto geschätzt; Schnee nur bei Außentemperatur ≤ 2 °C'],
     'Znaleziono DS18B20:': ['DS18B20 found:', 'DS18B20 gefunden:'],
     'Zrób zdjęcie, aby zobaczyć wynik analizy': ['Take a photo to see the analysis result', 'Machen Sie ein Foto, um das Analyseergebnis zu sehen'],
     'ESP32-S3 z PSRAM': ['ESP32-S3 with PSRAM', 'ESP32-S3 mit PSRAM'],
