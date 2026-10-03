@@ -131,6 +131,9 @@ bool CameraManager::begin() {
     // przez /api/camera/upload. Lokalny sterownik nie jest uruchamiany, więc
     // piny magistrali równoległej nie są wymagane.
     lastError_ = "";
+    // Pierwsza pogoda z kamery ma pojawić się szybko po starcie, a nie po
+    // pełnym interwale (inaczej po każdym restarcie kafelek długo jest pusty).
+    lastCaptureMs_ = millis() - (uint32_t)intervalMin_ * 60000UL + 45000UL;
     LOG_I("Kamera: tryb zewnętrzny (%s)", remoteUrl.c_str());
     return true;
   }
@@ -202,7 +205,8 @@ bool CameraManager::start() {
     if (info && info->name) modelName_ = info->name;
   }
   lastError_ = "";
-  lastCaptureMs_ = millis();   // pierwsze zdjęcie timelapse po pełnym interwale
+  // Pierwsze zdjęcie ~45 s po starcie, potem co pełny interwał.
+  lastCaptureMs_ = millis() - (uint32_t)intervalMin_ * 60000UL + 45000UL;
   LOG_I("Kamera: gotowa (%s), rozdzielczość %d, jakość %d",
         modelName_.length() ? modelName_.c_str() : "nieznana",
         (int)config.camResolution(), (int)config.camQuality());

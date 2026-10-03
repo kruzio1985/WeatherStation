@@ -2530,10 +2530,14 @@ let wxFirstPaint = true;
 
 async function loadStatus() {
   const seq = ++statusSeq;
-  const s = await api('/api/status');
+  // Pobieramy status i prognozę razem, a pulpit budujemy w oderwanym
+  // fragmencie i podmieniamy jednym ruchem (replaceChildren). Dzięki temu
+  // dane zmieniają się "w miejscu" - strona nie miga ani nie pokazuje
+  // pustego pulpitu przy odświeżaniu co 10 s.
+  const [s, fc] = await Promise.all([api('/api/status'), api('/api/forecast')]);
   if (seq !== statusSeq) return;
   const grid = document.getElementById('dashboard');
-  grid.innerHTML = '';
+  const frag = document.createDocumentFragment();
   // Kanały będące tylko źródłem dla kanału głównego (np. ciśnienie z BMP280,
   // gdy stacja pokazuje je jako "Ciśnienie") pomijamy - inaczej ta sama
   // wartość pojawia się na pulpicie dwa razy.
@@ -2558,7 +2562,7 @@ async function loadStatus() {
     d.innerHTML = `<div class="label">${escapeHtml(c.name)}</div>
       <div class="value">${val} <span class="unit">${fmtChannelUnit(c)}</span></div>` +
       (note ? `<div class="note">${escapeHtml(note)}</div>` : '');
-    grid.appendChild(d);
+    frag.appendChild(d);
   };
   const addZone = (label, list, tone, icon) => {
     if (!list.length) return;
@@ -2566,7 +2570,7 @@ async function loadStatus() {
     h.className = 'zone-head';
     if (tone) h.dataset.tone = tone;
     h.textContent = (icon ? icon + ' ' : '') + label;
-    grid.appendChild(h);
+    frag.appendChild(h);
     list.forEach(c => addCard(c, tone));
   };
 
@@ -2588,7 +2592,7 @@ async function loadStatus() {
     const h = document.createElement('div');
     h.className = 'sub-head';
     h.textContent = (icon ? icon + ' ' : '') + t(label);
-    grid.appendChild(h);
+    frag.appendChild(h);
   };
 
   if (inList.length) {
@@ -2596,9 +2600,9 @@ async function loadStatus() {
     zh.className = 'zone-head';
     zh.dataset.tone = 'in';
     zh.textContent = '🏠 ' + t('Wewnątrz');
-    grid.appendChild(zh);
+    frag.appendChild(zh);
 
-    const used = renderAirPanels(grid, inList);
+    const used = renderAirPanels(frag, inList);
     const rest = inList.filter(c => !used.has(c.id));
     if (rest.length) {
       addSubHead('📦', 'Pozostałe czujniki wewnętrzne');
@@ -2614,9 +2618,9 @@ async function loadStatus() {
     zh.className = 'zone-head';
     zh.dataset.tone = 'out';
     zh.textContent = '🌤️ ' + t('Na zewnątrz');
-    grid.appendChild(zh);
+    frag.appendChild(zh);
     const byId = new Map(chans.map(c => [c.id, c]));
-    const used = renderWxGauges(grid, WX_OUT_GAUGES, byId);
+    const used = renderWxGauges(frag, WX_OUT_GAUGES, byId);
     const rest = outList.filter(c => !used.has(c.id));
     if (rest.length) {
       addSubHead('📦', 'Pozostałe na zewnątrz');
@@ -2648,9 +2652,9 @@ async function loadStatus() {
     zh.className = 'zone-head';
     zh.dataset.tone = 'vev';
     zh.textContent = '📻 ' + t('VEVOR 868 MHz');
-    grid.appendChild(zh);
+    frag.appendChild(zh);
     const byId = new Map(chans.map(c => [c.id, c]));
-    const used = renderWxGauges(grid, WX_VEV_GAUGES, byId);
+    const used = renderWxGauges(frag, WX_VEV_GAUGES, byId);
     const rest = vevList.filter(c => !used.has(c.id));
     if (rest.length) {
       addSubHead('📻', 'Pozostałe (VEVOR)');
@@ -2676,15 +2680,13 @@ async function loadStatus() {
     const e = document.createElement('div');
     e.className = 'muted';
     e.textContent = t('Nie wykryto żadnego czujnika - podłącz czujnik i zajrzyj do zakładki Czujniki.');
-    grid.appendChild(e);
+    frag.appendChild(e);
   }
 
   // Skrót prognozy lokalnej - najważniejsze informacje bez wchodzenia w zakładkę.
-  const fc = await api('/api/forecast');
-  if (seq !== statusSeq) return;
   if (fc && fc.valid !== undefined) {
     const tr = fc.trend || {}, rn = fc.rain || {};
-    grid.appendChild(infoCard(
+    frag.appendChild(infoCard(
       t('Prognoza lokalna'),
       t(FC_OUTLOOK[fc.outlook_key] || fc.outlook_key), '',
       t('Pewność prognozy') + ': ' + fmtNum(fc.confidence, 0) + ' % • ' +
@@ -2708,7 +2710,7 @@ async function loadStatus() {
         <span style="color:${col}">${escapeHtml(aqi.category || '')}</span>
       </div>
       <div class="unit">${pmParts.join(' • ') || 'brak danych PM'}</div>`;
-    grid.appendChild(d);
+    frag.appendChild(d);
   }
 
   // Róża wiatrów - tylko gdy wiatrowskaz już coś zmierzył.
@@ -2728,7 +2730,7 @@ async function loadStatus() {
           <div class="unit">${deg === null ? 'brak danych' : deg.toFixed(0) + '°'}</div>
         </div>
       </div>`;
-    grid.appendChild(d);
+    frag.appendChild(d);
   }
   document.getElementById('clock').textContent = s.datetime || '--';
   const w = s.wifi||{}; const m = s.mqtt||{}; const sd = s.sd||{};
@@ -2746,11 +2748,15 @@ async function loadStatus() {
         <span style="width:14px;height:14px;border-radius:50%;flex:0 0 auto;background:${col};box-shadow:0 0 8px ${col}"></span>
         ${escapeHtml(rg.state_name || '')}</div>
       <div class="unit">${rg.power_ma || 0} mA • jasność ${rg.brightness || 0}%</div>`;
-    grid.appendChild(d);
+    frag.appendChild(d);
     setBadge('ringBadge', 'Led: ' + (rg.state_name || '?'), true);
   } else {
     setBadge('ringBadge', 'Led wyłączony', false);
   }
+
+  // Jedna atomowa podmiana zawartości pulpitu - dane zmieniają się w miejscu,
+  // bez migania i bez widocznego "restartu" strony.
+  grid.replaceChildren(frag);
 
   // Po pierwszym kompletnym rysunku pulpitu wskaźniki pogody aktualizują się
   // już bez animacji "od zera" (patrz renderWxGauges / wxFirstPaint).
