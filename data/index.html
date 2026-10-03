@@ -2498,7 +2498,15 @@ function renderWxGauges(grid, specs, byId) {
   box.appendChild(row);
   grid.appendChild(box);
 
-  requestAnimationFrame(() => requestAnimationFrame(() => settlers.forEach(s => s())));
+  if (wxFirstPaint) {
+    // Pierwsze wyświetlenie: wskaźniki "dopełniają się" od zera (efekt przy
+    // wejściu na pulpit). Przy każdym kolejnym odświeżeniu ustawiamy wartość
+    // od razu, bez animacji - inaczej co 10 s wskaźniki wizualnie "startują"
+    // od zera i pulpit wygląda, jakby się restartował.
+    requestAnimationFrame(() => requestAnimationFrame(() => settlers.forEach(s => s())));
+  } else {
+    settlers.forEach(s => s());
+  }
   return used;
 }
 
@@ -2517,6 +2525,8 @@ function fmtChannelValue(c) {
 // wywołaniu dopisać karty po nowszym - na pulpicie dublowały się wtedy
 // róża wiatrów i pierścień LED.
 let statusSeq = 0;
+// Wskaźniki pogody animują się tylko przy pierwszym rysowaniu pulpitu.
+let wxFirstPaint = true;
 
 async function loadStatus() {
   const seq = ++statusSeq;
@@ -2741,6 +2751,10 @@ async function loadStatus() {
   } else {
     setBadge('ringBadge', 'Led wyłączony', false);
   }
+
+  // Po pierwszym kompletnym rysunku pulpitu wskaźniki pogody aktualizują się
+  // już bez animacji "od zera" (patrz renderWxGauges / wxFirstPaint).
+  wxFirstPaint = false;
 }
 
 function setBadge(id, text, ok) {

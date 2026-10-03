@@ -662,9 +662,10 @@ void SensorManager::bridgeMissing() {
       hum->present = true;
       hum->detected = true;
     }
-    // Gdy główna wilgotność JEST odczytem VEVOR-a, kafel VEVOR-a pokazywałby
-    // dokładnie tę samą liczbę - chowamy go, dopóki to ustawienie jest włączone.
-    if (vh) vh->alias = useVev;
+    // Wilgotność VEVOR-a zostaje osobnym kanałem w sekcji "VEVOR 868 MHz".
+    // Główna wilgotność może z niego korzystać (ustawienie "wilgotność z
+    // VEVOR"), ale kafel VEVOR-a i tak pokazuje swoją wartość, a nie "—".
+    if (vh) vh->alias = false;
   } else if (Channel* vh = ch("vev_hum")) {
     vh->alias = false;   // własny czujnik wilgotności -> VEVOR jest osobnym odczytem
   }
