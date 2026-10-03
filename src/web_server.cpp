@@ -742,18 +742,21 @@ void WebServerManager::registerRoutes() {
   });
 
   onPost("/api/camera/capture", [](AsyncWebServerRequest* r) {
-    // Przy zewnętrznej kamerze (cam_remote_url) "zrób zdjęcie" to żądanie
-    // HTTP GET do modułu - zdjęcie wróci samo przez /api/camera/upload.
+    // Przy kamerze zewnętrznej (cam_remote_url) pobranie zdjęcia trwa kilka
+    // sekund, więc zlecenie tylko odkładamy - wykona je pętla główna. Blokada
+    // wątku serwera www przekraczała limit watchdoga zadania i restartowała
+    // stację. Zdjęcie lokalne (na pinach) robimy od razu.
     String url = camera.remoteUrl();
     url.trim();
     bool remote = (url.length() > 0);
-    bool ok = remote ? camera.triggerRemote() : camera.capture();
+    bool ok = remote ? camera.requestCapture() : camera.capture();
     PsramAllocator alloc;
     JsonDocument d(&alloc);
     d["ok"] = ok;
     d["remote"] = remote;
-    if (ok) d["path"] = camera.lastFile();
-    else    d["error"] = camera.error();
+    d["pending"] = remote && ok;
+    if (ok && !remote) d["path"] = camera.lastFile();
+    else if (!ok)      d["error"] = camera.error();
     String s;
     serializeJson(d, s);
     r->send(ok ? 200 : 500, "application/json", s);
@@ -815,23 +818,29 @@ void WebServerManager::registerRoutes() {
     std::vector<PhotoItem> items;
 
     if (sdCard.mounted()) {
+      // Zdjęcia leżą w katalogach miesięcznych - przeglądamy kilka najnowszych
+      // (lista jest pokazywana od najnowszych). Odczyt katalogu idzie przez
+      // FatFS (sd_card), więc setki zdjęć nie blokują już serwera www.
+      const size_t PHOTO_MAX_MONTHS = 3;
+      const size_t PHOTO_MAX        = 600;
+      std::vector<String> months;
       std::vector<SdFileInfo> base;
       sdCard.listDir("/photos", base);
       for (auto& e : base) {
-        if (e.path.endsWith(".jpg") || e.path.endsWith(".jpeg")) {
+        if (e.isDir) months.push_back(e.path);
+        else if (e.path.endsWith(".jpg") || e.path.endsWith(".jpeg"))
           items.push_back({e.path, e.size, e.mtime});
-        } else {
-          // Katalog miesięczny: /photos/RRRR-MM/
-          std::vector<SdFileInfo> sub;
-          sdCard.listDir(e.path, sub);
-          for (auto& f : sub) {
-            if (f.path.endsWith(".jpg") || f.path.endsWith(".jpeg"))
-              items.push_back({f.path, f.size, f.mtime});
-          }
-        }
+      }
+      std::sort(months.begin(), months.end());       // "RRRR-MM" rosnąco
+      std::reverse(months.begin(), months.end());    // najnowsze najpierw
+      for (size_t i = 0; i < months.size() && i < PHOTO_MAX_MONTHS; i++) {
+        std::vector<SdFileInfo> sub;
+        sdCard.listDir(months[i], sub, 0, false, ".jpg");
+        for (auto& f : sub) items.push_back({f.path, f.size, f.mtime});
       }
       std::sort(items.begin(), items.end(),
                 [](const PhotoItem& a, const PhotoItem& b) { return a.mtime > b.mtime; });
+      if (items.size() > PHOTO_MAX) items.resize(PHOTO_MAX);
     }
 
     for (auto& it : items) {

@@ -433,13 +433,32 @@ static bool otaActivate(const esp_partition_t* part, uint8_t source, String* det
 // partycję startową), więc wynik zapisujemy osobno - dzięki temu diagnostyka pokazuje stan po
 // każdej próbie, także po tej udanej.
 static void otaRecSaveSuccess(uint8_t source) {
-  const esp_partition_t* part = esp_ota_get_next_update_partition(nullptr);
-  if (!part) return;
+  // Po udanym Update.end(true) partycją "next" jest już stara (działająca)
+  // partycja, a nie ta, którą właśnie zapisaliśmy. Pobieramy partycję startową -
+  // Update.end(true) ustawił ją na świeżo zapisany obraz.
+  const esp_partition_t* part = esp_ota_get_boot_partition();
+  if (!part || part == esp_ota_get_running_partition()) return;
 
   OtaSlotReport rep;
   otaSlotReport(part, rep);
-  otaRecSave(0, 0, rep.span, rep.shaMatch, rep.hashAppended, false, source);
-  LOG_I("Aktualizacja: obraz w %s zapisany i sprawdzony (%u B)", part->label, (unsigned)rep.span);
+
+  bool patched = false;
+  // Na tej płytce surowy odczyt flasha zwraca śmieci, gdy skrót SHA-256 leży pod
+  // adresem nie wyrównanym do 32 B (długość obrazu 16 mod 32). Loader przy starcie
+  // używa surowego odczytu, więc taki obraz odrzuci i wróci do starej wersji.
+  // Update.end(true) kończy się powodzeniem, więc musimy poprawić nagłówek sami.
+  if (rep.headerOk && rep.hashAppended && (rep.span % 32) != 0 && rep.shaMatch) {
+    patched = otaPatchWithoutHash(part);
+    if (patched) {
+      LOG_W("Aktualizacja: skrót obrazu (%u B) pod adresem 16 mod 32 - wyłączam "
+            "dopisany SHA-256, żeby loader nie zrobił rollbacku przy starcie",
+            (unsigned)rep.span);
+    }
+  }
+
+  otaRecSave(0, 0, rep.span, rep.shaMatch, rep.hashAppended, patched, source);
+  LOG_I("Aktualizacja: obraz w %s zapisany i sprawdzony (%u B)%s", part->label,
+        (unsigned)rep.span, patched ? " (bez dopisanego SHA-256)" : "");
 }
 
 // ------------------------------------------------------------

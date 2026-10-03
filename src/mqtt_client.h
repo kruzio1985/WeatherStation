@@ -40,6 +40,14 @@ private:
   unsigned long lastReconnect_ = 0;
   unsigned long lastAnnounce_ = 0;
   bool configured_ = false;
+
+  // PubSubClient::setServer() zapamiętuje WYŁĄCZNIE wskaźnik do nazwy hosta.
+  // config.mqttHost() zwraca tymczasowy obiekt String, więc .c_str() z niego
+  // staje się wiszącym wskaźnikiem zaraz po zakończeniu instrukcji - domenę
+  // trzeba trzymać w trwałym polu przez cały czas życia połączenia.
+  String host_;
+  String user_;
+  String pass_;
 };
 
 extern MqttManager mqtt;

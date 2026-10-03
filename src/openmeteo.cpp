@@ -7,6 +7,7 @@
  */
 #include "openmeteo.h"
 #include "config.h"
+#include "sensors.h"
 #include "syslog.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -232,6 +233,14 @@ bool OpenMeteoService::fetch() {
   fetchedAtMs_ = millis();
   error_ = "";
   if (mutex_) xSemaphoreGive(mutex_);
+
+  // Opublikuj aktualną pogodę do kanałów net_* (porównanie na pulpicie).
+  // wind jest w m/s z API, kanał net_wind oczekuje km/h.
+  if (cur.valid) {
+    sensors.publishNetWeather(cur.temp, cur.hum,
+                              isnan(cur.wind) ? NAN : cur.wind * 3.6f,
+                              cur.app);
+  }
 
   LOG_I("Open-Meteo: pobrano prognozę na %d dni (%.2f, %.2f)", n, lat, lon);
   return true;

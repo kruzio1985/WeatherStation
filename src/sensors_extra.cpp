@@ -63,6 +63,85 @@ static Channel mkChan(const char* id, const char* name, const char* unit, int de
   return c;
 }
 
+// -------------------------------------------------------------
+//  Import ze stacji jakości powietrza (urządzenie zewnętrzne typu "aq")
+//
+//  Pozycje stacji powietrza (identyfikatory z jej /api/status) mapujemy na
+//  własne kanały strefy "wewnątrz". To jedyne miejsce, w którym trzeba coś
+//  dopisać, gdy stacja powietrza doda kolejny czujnik.
+//
+//  scale - mnożnik jednostek (stacja podaje TVOC w ppm, nasz kanał jest w ppb)
+//  owner - własny czujnik tej stacji, który ma pierwszeństwo nad importem:
+//          'p' pyłomierz (PMS/SEN5x), 'c' SCD4x, 'v' SGP30/SGP40; 0 = zawsze
+//  name  - nullptr = kanał jest już zarejestrowany wyżej, tylko importujemy
+// -------------------------------------------------------------
+struct AirImportRow {
+  const char* src;
+  const char* chan;
+  float       scale;
+  char        owner;
+  const char* name;      // nullptr = nie rejestrujemy (kanał już istnieje)
+  const char* unit;
+  uint8_t     dec;
+  const char* haClass;
+  const char* haUnit;
+  const char* haIcon;
+};
+
+static const AirImportRow AIR_IMPORT[] = {
+  // --- kanały już zarejestrowane w tej stacji (tylko uzupełniamy odczytem) ---
+  {"pm1",     "in_pm1",       1.0f, 'p'},
+  {"pm25",    "in_pm25",      1.0f, 'p'},
+  {"pm10",    "in_pm10",      1.0f, 'p'},
+  {"co2",     "co2",          1.0f, 'c'},
+  {"tvoc",    "tvoc",      1000.0f, 'v'},   // stacja podaje ppm, kanał jest w ppb
+  {"ch2o",    "ch2o",         1.0f,  0 },
+  // --- cząsteczki: średnie kroczące stacji powietrza ---
+  {"pm25_1m",  "in_pm25_1m",  1.0f, 'p', "PM 2.5 · 1 min (wewnątrz)", "µg/m³", 0,
+               "pm25", "µg/m³", "mdi:air-filter"},
+  {"pm25_5m",  "in_pm25_5m",  1.0f, 'p', "PM 2.5 · 5 min (wewnątrz)", "µg/m³", 0,
+               "pm25", "µg/m³", "mdi:air-filter"},
+  {"pm25_24h", "in_pm25_24h", 1.0f, 'p', "PM 2.5 · 24 h (wewnątrz)", "µg/m³", 0,
+               "pm25", "µg/m³", "mdi:air-filter"},
+  // --- indeks jakości powietrza liczony przez stację powietrza ---
+  {"aqi",     "in_iaq",       1.0f,  0,  "IAQ (stacja powietrza)", "", 0,
+               "aqi", "", "mdi:air-filter"},
+  {"tvoclvl", "in_tvoc_lvl",  1.0f,  0,  "Poziom TVOC (wewnątrz)", "", 0,
+               "", "", "mdi:chemical-weapon"},
+  // --- gazy: MiCS5524 i MQ-7 (przez ADS1115 na stacji powietrza) ---
+  {"mics_v",  "in_mics_v",    1.0f,  0,  "Napięcie (MiCS5524)", "V", 3,
+               "voltage", "V", "mdi:sine-wave"},
+  {"mics_rs", "in_mics_rs",   1.0f,  0,  "Rs/R0 (MiCS5524)", "", 2,
+               "", "", "mdi:scale-balance"},
+  {"mics_co", "in_mics_co",   1.0f,  0,  "CO ekwiwalent (MiCS5524)", "ppm", 1,
+               "carbon_monoxide", "ppm", "mdi:molecule-co"},
+  {"mics_wu", "in_mics_wu",   1.0f,  0,  "Wygrzewanie (MiCS5524)", "", 0,
+               "", "", "mdi:timer-sand"},
+  {"mq7_v",   "in_mq7_v",     1.0f,  0,  "Napięcie (MQ-7)", "V", 3,
+               "voltage", "V", "mdi:sine-wave"},
+  {"mq7_rs",  "in_mq7_rs",    1.0f,  0,  "Rs/R0 (MQ-7)", "", 2,
+               "", "", "mdi:scale-balance"},
+  {"mq7_co",  "in_mq7_co",    1.0f,  0,  "CO (MQ-7)", "ppm", 1,
+               "carbon_monoxide", "ppm", "mdi:molecule-co"},
+  // --- temperatura, wilgotność i ruch mierzone przez stację powietrza ---
+  {"temp",    "in_air_t",     1.0f,  0,  "Temperatura (stacja powietrza)", "°C", 1,
+               "temperature", "°C", "mdi:thermometer"},
+  {"hum",     "in_air_h",     1.0f,  0,  "Wilgotność (stacja powietrza)", "%", 1,
+               "humidity", "%", "mdi:water-percent"},
+  {"temp_24h","in_air_t24",   1.0f,  0,  "Temperatura · 24 h (stacja powietrza)", "°C", 1,
+               "temperature", "°C", "mdi:thermometer"},
+  {"hum_24h", "in_air_h24",   1.0f,  0,  "Wilgotność · 24 h (stacja powietrza)", "%", 1,
+               "humidity", "%", "mdi:water-percent"},
+  {"tempext", "in_air_t_ext", 1.0f,  0,  "Temperatura zewn. (stacja powietrza)", "°C", 1,
+               "temperature", "°C", "mdi:thermometer"},
+  {"humext",  "in_air_h_ext", 1.0f,  0,  "Wilgotność zewn. (stacja powietrza)", "%", 1,
+               "humidity", "%", "mdi:water-percent"},
+  {"rhcorr",  "in_rh_corr",   1.0f,  0,  "Korekcja RH (stacja powietrza)", "%", 1,
+               "humidity", "%", "mdi:water-percent"},
+  {"motion",  "in_motion",    1.0f,  0,  "Ruch (stacja powietrza)", "", 0,
+               "", "", "mdi:motion-sensor"},
+};
+
 // Czy na pinie wisi wolny przewód? Pin bez podłączonego czujnika "pływa",
 // więc podciągnięcie do masy i do VCC daje skrajnie różne odczyty.
 static bool analogPinFloating(int pin) {
@@ -128,6 +207,44 @@ void SensorManager::registerExtraChannels() {
                              "", "", "mdi:chemical-weapon"));
   channels_.push_back(mkChan("sen_nox", "NOx (wewnątrz)", "", 0, "in",
                              "", "", "mdi:chemical-weapon"));
+
+  // Formaldehyd - na tej stacji nie ma własnego czujnika, więc kanał wypełnia
+  // zewnętrzna stacja jakości powietrza (patrz ingestAirStation).
+  channels_.push_back(mkChan("ch2o", "Formaldehyd (wewnątrz)", "ppb", 0, "in",
+                             "volatile_organic_compounds_parts", "ppb",
+                             "mdi:chemical-weapon"));
+
+  // Pozostałe kanały przejmowane ze stacji jakości powietrza: średnie PM,
+  // indeks IAQ, gazy MiCS5524 i MQ-7 oraz temperatura/wilgotność/ruch z tej
+  // stacji. Definicje siedzą w tabeli AIR_IMPORT - dopisanie kolejnego
+  // czujnika to jedna linijka tam, bez zmian w tym miejscu.
+  for (const auto& row : AIR_IMPORT) {
+    if (!row.name) continue;
+    channels_.push_back(mkChan(row.chan, row.name, row.unit, row.dec, "in",
+                               row.haClass ? row.haClass : "",
+                               row.haUnit ? row.haUnit : "",
+                               row.haIcon ? row.haIcon : ""));
+  }
+
+  // Analiza zdjęcia z kamery (camera.cpp, publishAnalysis). Kanały powstają
+  // dopiero po pierwszym zdjęciu - do tego czasu są niewidoczne (bez
+  // potwierdzonego odczytu nie ma ich na pulpicie ani w Home Assistant).
+  // Kod pogody: 0 = noc, 1 = bezchmurnie, 2 = pochmurno, 3 = deszcz,
+  // 4 = śnieg, 5 = mgła. Faza dnia: 0 = noc, 1 = świt/zmierzch, 2 = dzień.
+  channels_.push_back(mkChan("cam_weather", "Pogoda z kamery", "", 0, "out",
+                             "", "", "mdi:image-filter-drama"));
+  channels_.push_back(mkChan("cam_phase", "Faza dnia (kamera)", "", 0, "out",
+                             "", "", "mdi:theme-light-dark"));
+  channels_.push_back(mkChan("cam_cloud", "Zachmurzenie (kamera)", "%", 0, "out",
+                             "", "%", "mdi:cloud"));
+  channels_.push_back(mkChan("cam_rain", "Deszcz (kamera)", "%", 0, "out",
+                             "precipitation_intensity", "%", "mdi:weather-rainy"));
+  channels_.push_back(mkChan("cam_snow", "Śnieg (kamera)", "%", 0, "out",
+                             "precipitation_intensity", "%", "mdi:weather-snowy"));
+  channels_.push_back(mkChan("cam_fog", "Mgła (kamera)", "%", 0, "out",
+                             "", "%", "mdi:weather-fog"));
+  channels_.push_back(mkChan("cam_lux", "Światło (kamera)", "lx", 0, "out",
+                             "illuminance", "lx", "mdi:brightness-6"));
 
   // Cztery wejścia analogowe ADS1115 - domyślnie wyłączone (patrz
   // ConfigManager::channelCfg), bo zwykle wykorzystuje się tylko jedno.
@@ -282,6 +399,16 @@ void SensorManager::readExtra() {
       float mv = analogVolts(uvPin) * 1000.0f;
       float uvi = mv / mvPerUvi;
       if (uvi < 0.0f) uvi = 0.0f;
+
+      // Diagnostyka: surowy odczyt ADC pozwala odróżnić przesterowanie
+      // przetwornika (raw 4095) od realnego napięcia z modułu.
+      static unsigned long uvDiagMs = 0;
+      if (millis() - uvDiagMs > 300000UL) {
+        uvDiagMs = millis();
+        int raw = analogRead(uvPin);
+        LOG_I("UV analogowy: raw=%d/4095, %.0f mV, kalibracja %.0f mV/UVI",
+              raw, (double)mv, (double)mvPerUvi);
+      }
       publishExtra("uv", uvi);
     }
   }
@@ -406,15 +533,24 @@ void SensorManager::beginTuya() {
     return;
   }
 
+  // Na ESP32-S3 sprzętowy UART2 jest wolny (PMS5003 niepodłączony) - jest
+  // znacznie pewniejszy niż SoftwareSerial przy 115200 z włączonym Wi-Fi.
+#if SOC_UART_NUM > 2
+  Serial2.begin(115200, SERIAL_8N1, rx, -1);
+  tuyHwUart_ = true;
+  tuyStarted_ = true;
+#else
   SoftwareSerial* ss = new SoftwareSerial(rx, -1, false);
   ss->begin(115200);
   tuySerial_ = ss;
   tuyStarted_ = true;
+#endif
   tuyLastRxMs_ = millis();
 
   setPresent("temp", true);
   setPresent("hum", true);
-  LOG_I("Tuya UART: RX na GPIO %d, 115200 8N1 (linia T=xx.xx;RH=yy.yy)", rx);
+  LOG_I("Tuya UART: RX na GPIO %d, 115200 8N1 (%s)", rx,
+        tuyHwUart_ ? "UART2 sprzętowy" : "SoftwareSerial");
 #else
   // Na węźle głównym czujnikiem temp./wilg. jest BME280; Tuya jest tylko na
   // masterze, więc niczego nie nadpisujemy i nie oznaczamy kanałów temp/hum.
@@ -423,30 +559,75 @@ void SensorManager::beginTuya() {
 }
 
 void SensorManager::serviceTuya() {
-  if (!tuyStarted_ || !tuySerial_) return;
-  SoftwareSerial* ss = (SoftwareSerial*)tuySerial_;
+  if (!tuyStarted_) return;
 
-  while (ss->available()) {
-    char c = (char)ss->read();
-    tuyLastRxMs_ = millis();
-    if (c == '\n') {
-      String line = tuyBuf_;
-      tuyBuf_ = "";
-      line.trim();
-      float t = NAN, h = NAN;
-      if (parseTuyaLine(line, t, h)) {
-        publishExtra("temp", t);
-        publishExtra("hum", h);
-        if (!tuyOk_) {
-          tuyOk_ = true;
-          LOG_I("Tuya UART: odebrano poprawną linię - czujnik działa");
+  // Jedno wspólne czytanie dla UART2 sprzętowego i SoftwareSerial.
+  int c;
+#if SOC_UART_NUM > 2
+  if (tuyHwUart_) {
+    while (Serial2.available()) {
+      c = Serial2.read();
+      tuyRawBytes_++;
+      tuyLastByte_ = c;
+      tuyLastRxMs_ = millis();
+      if (c == '\n') {
+        String line = tuyBuf_;
+        tuyBuf_ = "";
+        line.trim();
+        if (line.length()) tuyLastLine_ = line;   // diagnostyka: co naprawdę przyszło
+        float t = NAN, h = NAN;
+        if (parseTuyaLine(line, t, h)) {
+          publishExtra("temp", t);
+          publishExtra("hum", h);
+          if (!tuyOk_) {
+            tuyOk_ = true;
+            LOG_I("Tuya UART: odebrano poprawną linię - czujnik działa");
+          }
         }
+      } else if (c != '\r') {
+        tuyBuf_ += (char)c;
+        if (tuyBuf_.length() > 64) tuyBuf_ = tuyBuf_.substring(tuyBuf_.length() - 64);
       }
-    } else if (c != '\r') {
-      tuyBuf_ += c;
-      // Zepsuta/za długa linia - trzymaj tylko jej końcówkę
-      if (tuyBuf_.length() > 64) tuyBuf_ = tuyBuf_.substring(tuyBuf_.length() - 64);
     }
+  } else
+#endif
+  {
+    SoftwareSerial* ss = (SoftwareSerial*)tuySerial_;
+    if (!ss) return;
+    while (ss->available()) {
+      c = ss->read();
+      tuyRawBytes_++;
+      tuyLastByte_ = c;
+      tuyLastRxMs_ = millis();
+      if (c == '\n') {
+        String line = tuyBuf_;
+        tuyBuf_ = "";
+        line.trim();
+        if (line.length()) tuyLastLine_ = line;   // diagnostyka: co naprawdę przyszło
+        float t = NAN, h = NAN;
+        if (parseTuyaLine(line, t, h)) {
+          publishExtra("temp", t);
+          publishExtra("hum", h);
+          if (!tuyOk_) {
+            tuyOk_ = true;
+            LOG_I("Tuya UART: odebrano poprawną linię - czujnik działa");
+          }
+        }
+      } else if (c != '\r') {
+        tuyBuf_ += (char)c;
+        if (tuyBuf_.length() > 64) tuyBuf_ = tuyBuf_.substring(tuyBuf_.length() - 64);
+      }
+    }
+  }
+
+  // Diagnostyka: sygnał na pinie jest (licznik rośnie), ale linia nie pasuje
+  // do "T=xx.xx;RH=yy.yy" - to zwykle zła prędkość UART, złe podłączenie albo
+  // inny nadajnik na tej linii. W logu pokazujemy ostatnią pełną linię, bo
+  // sam licznik bajtów nie mówi, co właściwie przychodzi.
+  if (!tuyOk_ && tuyRawBytes_ > 0 && millis() - tuyLastDiagMs_ > 15000UL) {
+    tuyLastDiagMs_ = millis();
+    LOG_W("Tuya UART: odebrano %lu bajtów (ostatni 0x%02X), brak poprawnej linii (ostatnia: '%s')",
+          (unsigned long)tuyRawBytes_, (unsigned)(tuyLastByte_ & 0xFF), tuyLastLine_.c_str());
   }
 
   // Czujnik odłączony / przestał nadawać - nie pokazuj nieaktualnych wartości
@@ -461,9 +642,199 @@ void SensorManager::serviceTuya() {
 // Nazwa dodatkowego czujnika jakości powietrza do diagnostyki ("" gdy brak)
 String SensorManager::extraAqName() { return String(s_pm.kindName()); }
 
+// -------------------------------------------------------------
+//  Kompensacja nasłonecznienia czujników temperatury na płytce
+//
+//  Czujniki na płytce (BMP280, BME280, BMP581, SHT4x...) siedzą w tej samej
+//  obudowie co ESP32 i pierścień LED, więc w słońcu mierzą temperaturę
+//  obudowy, a nie powietrza - potrafi być o kilkanaście, a nawet o 30 °C
+//  wyższa. Nadwyżkę liczymy z natężenia światła (nasłonecznienie), a wiatr
+//  ją zmniejsza, bo przewiew chłodzi obudowę:
+//
+//      nadwyzka = btc_sun * sqrt(lux / 1000) - btc_wind * wiatr [m/s]
+//      T_poprawiona = T_pomiar - nadwyzka
+//
+//  Pierwiastek, a nie proporcja wprost, bo nagrzewanie obudowy nasyca się
+//  przy pełnym słońcu (rośnie szybciej na starcie dnia niż w południe).
+//
+//  Część stałą błędu (ciepło własne elektroniki, brak przewiewu nocą)
+//  koryguje zwykły offset kanału w zakładce Kalibracja - oba mechanizmy
+//  się uzupełniają, a nie dublują.
+//
+//  Ustawienia (config.extra): btc_on (1/0), btc_sun [°C na √klx] wspólny dla
+//  wszystkich kanałów, btc_wind [°C na m/s] oraz btc_ids - lista kanałów po
+//  przecinku. Przy identyfikatorze można podać własny współczynnik po
+//  dwukropku ("ths_bmp280_t:4.3,temp:2.75"), bo czujniki w tej samej
+//  obudowie grzeją się różnie.
+// -------------------------------------------------------------
+#define KEY_BTC_ON    "btc_on"
+#define KEY_BTC_SUN   "btc_sun"
+#define KEY_BTC_WIND  "btc_wind"
+#define KEY_BTC_IDS   "btc_ids"
+#define KEY_BTC_POW   "btc_pow"
+
+#define BTC_DEFAULT_IDS  "ths_bmp280_t"
+#define BTC_DEFAULT_SUN  0.97f    // dobrane na tej stacji z pomiarów (BMP280 w obudowie)
+#define BTC_DEFAULT_WIND 1.5f
+#define BTC_DEFAULT_POW  0.65f    // zmierzony kształt: nadwyżka ~ klx^0,65
+
+// Domyślnie korekta jest wyłączona - korekta zależy od obudowy konkretnej
+// stacji, więc włącza się ją świadomie (zakładka Kalibracja, przełącznik
+// "Kompensacja włączona"). Pozostałe węzły magistrali nie zmienią przez
+// przypadek swoich odczytów.
+#define BTC_DEFAULT_ON   0.0f
+
+// Współczynnik i wykładnik nasłonecznienia dla kanału. Na liście można podać
+// sam identyfikator (wtedy obowiązują wspólne ustawienia), identyfikator
+// z własnym współczynnikiem ("temp:0.97") albo z współczynnikiem
+// i wykładnikiem ("ths_bmp280_t:0.333:1.0"). Oba parametry są potrzebne:
+// zmierzone nadwyżki grzejącego się układu rosną z nasłonecznieniem w innej
+// potędze niż nadwyżka powietrza w obudowie (czujnik na płytce ma własne
+// ciepło, które rośnie prawie liniowo z promieniowaniem).
+// sun = NAN oznacza, że kanału nie ma na liście.
+struct BtcCoeff {
+  float sun = NAN;
+  float pw  = 0.65f;
+};
+
+static BtcCoeff btcCoeffFor(const String& list, const String& id,
+                            float globalSun, float globalPw) {
+  BtcCoeff out;
+  out.pw = globalPw;
+  const int len = (int)list.length();
+  int start = 0;
+  while (start < len) {
+    int comma = list.indexOf(',', start);
+    String token = comma < 0 ? list.substring(start) : list.substring(start, comma);
+    token.trim();
+    if (token.length()) {
+      const int c1 = token.indexOf(':');
+      String one = c1 < 0 ? token : token.substring(0, c1);
+      one.trim();
+      if (one.equalsIgnoreCase(id)) {
+        if (c1 < 0) { out.sun = globalSun; return out; }
+        const String rest = token.substring(c1 + 1);
+        const int c2 = rest.indexOf(':');
+        const float own = (c2 < 0 ? rest : rest.substring(0, c2)).toFloat();
+        out.sun = own > 0.0f ? own : globalSun;
+        if (c2 >= 0) {
+          const float pw = rest.substring(c2 + 1).toFloat();
+          if (pw > 0.05f && pw < 3.0f) out.pw = pw;
+        }
+        return out;
+      }
+    }
+    if (comma < 0) break;
+    start = comma + 1;
+  }
+  return out;
+}
+
+// Wiatr do kompensacji w m/s. Kanały trzymają km/h, a na tej stacji wiatr
+// mierzy tylko VEVOR - własny anemometr jest zapasem, gdyby był podłączony.
+float SensorManager::boardWindMs() {
+  float w = valueOf("wind");
+  if (isnan(w)) w = valueOf("vev_wind");
+  return isnan(w) ? NAN : w / 3.6f;
+}
+
+float SensorManager::sunCompensate(const String& id, float v) {
+  if (isnan(v)) return v;
+  if (config.extraF(KEY_BTC_ON, BTC_DEFAULT_ON) < 0.5f) return v;
+
+  const BtcCoeff bc = btcCoeffFor(config.extraS(KEY_BTC_IDS, BTC_DEFAULT_IDS), id,
+                                  config.extraF(KEY_BTC_SUN, BTC_DEFAULT_SUN),
+                                  config.extraF(KEY_BTC_POW, BTC_DEFAULT_POW));
+  if (isnan(bc.sun) || bc.sun <= 0.0f) return v;   // kanał nie jest kompensowany
+
+  // Nasłonecznienie: czujnik na płytce (BH1750) nasyca się w pełnym słońcu na
+  // 54,6 klx, więc w środku dnia przestaje cokolwiek mówić o słońcu i korekta
+  // "nie widzi", że po południu promieniowanie spada. Czujnik stacji VEVOR ma
+  // szerszy zakres, dlatego jego używamy, gdy jest dostępny.
+  float lux = valueOf("vev_light");
+  if (isnan(lux) || lux <= 0.0f) lux = valueOf("light");
+  if (isnan(lux) || lux <= 0.0f) return v;      // nocą nie ma czego korygować
+
+  float excess = bc.sun * powf(lux / 1000.0f, bc.pw);
+  const float windK = config.extraF(KEY_BTC_WIND, BTC_DEFAULT_WIND);
+  if (windK > 0.0f) {
+    const float wind = boardWindMs();
+    if (!isnan(wind)) excess -= windK * wind;
+  }
+  if (excess <= 0.0f) return v;
+
+  static unsigned long lastLog = 0;
+  const unsigned long now = millis();
+  if (now - lastLog >= 60000UL) {
+    lastLog = now;
+    LOG_I("Kompensacja słońca: %s %.1f -> %.1f °C (%.1f klx, nadwyżka %.1f °C)",
+          id.c_str(), (double)v, (double)(v - excess), (double)(lux / 1000.0f),
+          (double)excess);
+  }
+  return v - excess;
+}
+
+// -------------------------------------------------------------
+//  Stacja jakości powietrza (osobne ESP32, odpytywane po HTTP)
+//
+//  Dane wchodzą do kanałów WEWNĘTRZNYCH, ale tylko tam, gdzie ta stacja nie
+//  ma własnego czujnika. Gdy na płytce pojawi się SEN5x albo SCD40, jego
+//  odczyt ma pierwszeństwo, a import sam się wyłączy dla tego kanału.
+//
+//  Jednostki: stacja powietrza podaje TVOC w ppm, a kanał "tvoc" tej stacji
+//  jest w ppb (tak jak SGP30), więc przeliczamy (1 ppm = 1000 ppb).
+// -------------------------------------------------------------
+void SensorManager::ingestAirStation(const AirStationData& d) {
+  const bool localPm   = (s_pm.kind() != PM_NONE);
+  const bool localCo2  = scdOk_;
+  const bool localTvoc = sgpOk_;
+
+  // Import tabelaryczny: jeden przebieg po AIR_IMPORT załatwia wszystkie
+  // kanały (PM i średnie, IAQ, gazy MiCS/MQ-7, temperatura, wilgotność, ruch).
+  // Kanał, dla którego ta stacja ma własny czujnik, nie jest nadpisywany.
+  int imported = 0;
+  for (const auto& row : AIR_IMPORT) {
+    const float v = d.get(row.src);
+    if (isnan(v)) continue;
+    const bool haveLocal = (row.owner == 'p') ? localPm
+                         : (row.owner == 'c') ? localCo2
+                         : (row.owner == 'v') ? localTvoc
+                                              : false;
+    if (haveLocal) continue;
+    publishExtra(row.chan, v * row.scale);
+    imported++;
+  }
+
+  static unsigned long lastLog = 0;
+  if (millis() - lastLog >= 300000UL) {
+    lastLog = millis();
+    LOG_I("Stacja powietrza: %d odczytów w pomiarach wewnętrznych "
+          "(PM1 %.0f, PM2.5 %.0f, PM10 %.0f, CO2 %.0f ppm, TVOC %.0f ppb, "
+          "IAQ %.0f, CO MiCS %.1f ppm)",
+          imported,
+          (double)d.get("pm1"), (double)d.get("pm25"), (double)d.get("pm10"),
+          (double)d.get("co2"),
+          (double)(isnan(d.get("tvoc")) ? NAN : d.get("tvoc") * 1000.0f),
+          (double)d.get("aqi"), (double)d.get("mics_co"));
+  }
+}
+
 // Zapis kanału z potwierdzeniem sprzętowym (present + detected + wartość)
 void SensorManager::publishExtra(const String& id, float v) {
   ChannelConfig c = config.channelCfg(id);
+  // Korekta przed zajęciem mutexu - sunCompensate() czyta inne kanały (light,
+  // wind), a valueOf() sam bierze ten sam mutex.
+  v = sunCompensate(id, v);
+
+  // Główna wilgotność z czujnika zewnętrznego: czujnik w ogrzanej obudowie
+  // zapisuje tu swoje zaniżone RH co ~2 s (serviceTuya), więc podmiana robiona
+  // raz na 5 s w bridgeMissing() nie utrzymałaby się. Podstawiamy przy samym
+  // zapisie, żeby wartość VEVOR była tą obowiązującą.
+  if (id == "hum" && config.extraF(KEY_HUM_FROM_VEV, 0.0f) >= 0.5f) {
+    const float ext = valueOf("vev_hum");
+    if (!isnan(ext)) v = ext;
+  }
+
   if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
   setPresent(id, true);
   setDetected(id, true);

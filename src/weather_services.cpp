@@ -28,7 +28,8 @@ enum { SVC_WU = 0, SVC_PWS, SVC_WINDY, SVC_OWM, SVC_TS, SVC_CUSTOM,
 // -------------------------------------------------------------
 struct WxData {
   float temp = NAN, hum = NAN, press = NAN, wind = NAN, winddir = NAN, gust = NAN;
-  float rain = NAN, light = NAN, pm1 = NAN, pm25 = NAN, pm10 = NAN;
+  float rain = NAN, rainRate = NAN, light = NAN, solar = NAN, uv = NAN;
+  float pm1 = NAN, pm25 = NAN, pm10 = NAN;
   float co2 = NAN, eco2 = NAN, tvoc = NAN;
   String compass;
   String tempSource;   // ID czujnika temperatury użytego jako temperatura zewnętrzna
@@ -72,14 +73,40 @@ static float pickTemp(const std::vector<Channel>& ch, bool externalOnly, String&
 static WxData collect(const std::vector<Channel>& ch) {
   const bool ext = config.svcExternalOnly();
   WxData d;
-  d.temp    = pickTemp(ch, ext, d.tempSource);
-  d.hum     = findVal(ch, "hum", ext);
-  d.press   = findVal(ch, "press", ext);
-  d.wind    = findVal(ch, "wind", ext);
-  d.gust    = d.wind;                  // brak osobnego czujnika porywów
-  d.winddir = findVal(ch, "vane", ext);
-  d.rain    = findVal(ch, "rain", ext);
+
+  // Temperatura i ciśnienie z własnego BMP280 (ths_bmp280_*). Gdy go nie ma,
+  // schodzimy na BME280 na płycie (temp2/press), a temperaturę na końcu
+  // dobieramy automatycznie (DS18B20 / czujnik główny).
+  d.temp    = findVal(ch, "ths_bmp280_t", ext);
+  if (isnan(d.temp)) d.temp = findVal(ch, "temp2", ext);
+  if (isnan(d.temp)) d.temp = pickTemp(ch, ext, d.tempSource);
+  d.press   = findVal(ch, "ths_bmp280_p", ext);
+  if (isnan(d.press)) d.press = findVal(ch, "press", ext);
+
+  // Wilgotność: VEVOR okazuje się bliższy warunkom rzeczywistym niż Tuya,
+  // więc jego używamy jako pierwszy. Tuya zostaje jako zapas.
+  d.hum     = findVal(ch, "vev_hum", ext);
+  if (isnan(d.hum)) d.hum = findVal(ch, "hum", ext);
+
+  // Wiatr, porywy, kierunek i opad - tylko z VEVOR (stacja ma tylko ten
+  // czujnik wiatru/deszczu). Tuya i BMP280 ich nie mierzą.
+  d.wind    = findVal(ch, "vev_wind", ext);
+  d.gust    = findVal(ch, "vev_gust", ext);
+  if (isnan(d.gust)) d.gust = d.wind;
+  d.winddir = findVal(ch, "vev_vane", ext);
+  d.rain    = findVal(ch, "vev_rain_day", ext);
+  d.rainRate = findVal(ch, "vev_rain_now", ext);
+
+  // Natężenie światła i UV z WŁASNYCH czujników (BH1750 + UV), nie z VEVOR.
   d.light   = findVal(ch, "light", ext);
+  d.uv      = findVal(ch, "uv", ext);
+
+  // Serwisy oczekują natężenia promieniowania w W/m², a BH1750 mierzy luksy.
+  // Gdy nie ma pyranometru, przeliczamy luksy przybliżonym współczynnikiem
+  // dla światła słonecznego (światłość ~120 lm/W).
+  d.solar   = findVal(ch, "solar_wm2", ext);
+  if (isnan(d.solar) && !isnan(d.light)) d.solar = d.light / 120.0f;
+
   d.pm1     = findVal(ch, "pm1", ext);
   d.pm25    = findVal(ch, "pm25", ext);
   d.pm10    = findVal(ch, "pm10", ext);
@@ -107,12 +134,15 @@ static float dewPointC(float t, float rh) {
   return (b * g) / (a - g);
 }
 
-// Liczba jako tekst z podaną liczbą miejsc po przecinku. Rzutowanie na
-// (double, unsigned int) jest konieczne, bo String ma kilka przeciążonych
-// konstruktorów liczbowych i wywołanie String(float, uint8_t) jest niejednoznaczne.
+// Liczba jako tekst z podaną liczbą miejsc po przecinku. Używamy snprintf,
+// bo konstruktor String(double, N) woła dtostrf z szerokością N+2, która dla
+// jednocyfrowych wartości dopełnia wynik spacją (np. " 0" zamiast "0") -
+// taka spacja w adresie URL powodowała HTTP 400 od Weather Underground.
 static String fmtVal(float v, uint8_t dec) {
   if (isnan(v)) return String("");
-  return String((double)v, (unsigned int)dec);
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%.*f", (int)dec, (double)v);
+  return String(buf);
 }
 
 static void addF(String& s, const char* name, float v, uint8_t dec = 2) {
@@ -209,7 +239,7 @@ struct Request {
 static void buildWuLike(WxData& d, const String& id, const String& key,
                         bool pws, Request& r) {
   r.url = pws ? "https://www.pwsweather.com/pwsupdate/pwsupdate.php"
-              : "http://rtupdate.wunderground.com/weatherstation/updateweatherstation.php";
+              : "https://rtupdate.wunderground.com/weatherstation/updateweatherstation.php";
   r.url += "?ID=" + urlEncode(id);
   r.url += "&PASSWORD=" + urlEncode(key);
   r.url += "&dateutc=now&action=updateraw&softwaretype=StacjaPogody-" FW_VERSION;
@@ -222,8 +252,14 @@ static void buildWuLike(WxData& d, const String& id, const String& key,
   addF(r.url, "windspeedmph", isnan(d.wind) ? NAN : kmhToMph(d.wind), 1);
   addF(r.url, "windgustmph", isnan(d.gust) ? NAN : kmhToMph(d.gust), 1);
   addF(r.url, "dailyrainin", isnan(d.rain) ? NAN : mmToIn(d.rain), 2);
+  addF(r.url, "rainin", isnan(d.rainRate) ? NAN : mmToIn(d.rainRate), 2);
   addF(r.url, "baromin", isnan(d.press) ? NAN : hpaToInHg(d.press), 3);
-  addF(r.url, "solarradiation", d.light, 0);
+  addF(r.url, "solarradiation", d.solar, 0);
+
+  // Indeks UV wysyłamy tylko w sensownym zakresie (0..16). Niezkalibrowany albo
+  // odłączony czujnik potrafi podać kilkadziesiąt i taki wynik zafałszowałby
+  // profil stacji w serwisie.
+  if (!isnan(d.uv) && d.uv >= 0.0f && d.uv <= 16.0f) addF(r.url, "uv", d.uv, 1);
 }
 
 // Windy PWS API v2 (jednostki metryczne: °C, m/s, Pa, mm)
@@ -522,9 +558,27 @@ void WeatherServices::sendAll(bool forced) {
   const std::vector<Channel> ch = sensors.snapshot();
   WxData data = collect(ch);
 
+  // Bez żadnego potwierdzonego pomiaru nie ma czego wysyłać. Wcześniej szedł
+  // pusty odczyt (np. tuż po restarcie, zanim czujniki się zgłosiły) i serwis
+  // zapisywał samą ramkę bez danych, zaśmiecając historię stacji.
   if (isnan(data.temp) && isnan(data.hum) && isnan(data.press) && isnan(data.wind) &&
       isnan(data.rain) && isnan(data.pm25)) {
     LOG_W("Serwisy pogodowe: brak jakichkolwiek potwierdzonych pomiarów - pomijam wysyłkę");
+    for (uint8_t i = 0; i < SVC_COUNT; i++) {
+      Result res;
+      res.code = 0;
+      res.ok = false;
+      res.skipped = true;
+      res.info = "brak potwierdzonych pomiarów";
+      if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+      results_[i] = res;
+      if (mutex_) xSemaphoreGive(mutex_);
+    }
+    // Bez aktualizacji znacznika pętla próbowałaby co sekundę - czekamy
+    // pełny interwał, aż czujniki dadzą pierwszy odczyt.
+    lastSend_ = millis();
+    mqtt.publishTopic(config.mqttPrefix() + "/services/state", statusJson());
+    return;
   }
 
   const bool master = config.svcSectionEnabled() || forced;

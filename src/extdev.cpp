@@ -18,12 +18,12 @@ static const char* EV_KEY = "list";
 
 ExtDevManager extdev;
 
-// Prosty HTTP GET zwracający treść (max 8 KB). HTTPClient z timeoutem -
-// nie może zablokować pętli głównej na czas nieokreślony.
+// Prosty HTTP GET zwracający treść (max 8 KB). Krótkie timeouty, żeby
+// NIE przekroczyć limitu 5 s watchdoga zadania (connect + read < 5 s).
 static bool httpGetJson(const String& url, String& body) {
   HTTPClient h;
-  h.setConnectTimeout(3000);
-  h.setTimeout(4000);
+  h.setConnectTimeout(1500);   // max 1,5 s na połączenie
+  h.setTimeout(2000);          // max 2 s na odpowiedź
   if (!h.begin(url)) return false;
   const int code = h.GET();
   if (code != HTTP_CODE_OK) {
@@ -76,7 +76,7 @@ void ExtDevManager::save() {
 bool ExtDevManager::add(const String& name, const String& url, const String& type, int interval) {
   String u = url; u.trim();
   if (!u.startsWith("http://") && !u.startsWith("https://")) return false;
-  String t = (type == "ble") ? "ble" : "vevor";
+  String t = (type == "ble") ? "ble" : ((type == "aq") ? "aq" : "vevor");
   int iv = interval;
   if (iv < 5) iv = 20;
   for (auto& d : devs_) {
@@ -146,6 +146,40 @@ void ExtDevManager::pollOne(ExtDevice& d) {
     return;
   }
 
+  if (d.type == "aq") {
+    // Stacja jakości powietrza: {"channels":[{"id":"pm25","value":22,"valid":true}, ...]}
+    // Bierzemy WSZYSTKIE kanały liczbowe, jakie stacja poda - które z nich
+    // trafią do pomiarów wewnętrznych, decyduje tabela AIR_IMPORT
+    // (sensors_extra.cpp). Dzięki temu nowy czujnik po stronie stacji
+    // powietrza nie wymaga zmian w tym miejscu.
+    // Wartości bez flagi "valid" traktujemy jako poprawne (format bywa różny).
+    AirStationData aq;
+    int n = 0;
+    JsonVariant chs = doc["channels"];
+    if (chs.is<JsonArray>()) {
+      for (JsonVariant v : chs.as<JsonArray>()) {
+        if (!v.is<JsonObject>()) continue;
+        JsonObjectConst o = v.as<JsonObjectConst>();
+        const String id = o["id"] | "";
+        JsonVariantConst okv = o["valid"];
+        if (okv.is<bool>() && !okv.as<bool>()) continue;
+        JsonVariantConst x = o["value"];
+        float val = NAN;
+        if (x.is<float>()) val = x.as<float>();
+        else if (x.is<int>()) val = (float)x.as<int>();
+        else if (x.is<unsigned int>()) val = (float)x.as<unsigned int>();
+        if (isnan(val)) continue;
+
+        aq.add(id.c_str(), val);
+        n++;
+      }
+    }
+    if (n) sensors.ingestAirStation(aq);
+    d.ok = n > 0;
+    d.lastErr = n ? String(n) + " odczytów" : "brak rozpoznanych kanałów";
+    return;
+  }
+
   // domyślnie "vevor"
   JsonVariant weather = doc["weather"];
   JsonObjectConst w;
@@ -171,10 +205,15 @@ void ExtDevManager::loop() {
   if (!devs_.size()) return;
   const unsigned long now = millis();
   for (auto& d : devs_) {
-    if (now - d.lastMs < (unsigned long)d.interval * 1000UL) continue;
+    // Backoff: po 3 kolejnych błędach odpytuj martwe urządzenie co 5 min,
+    // żeby nie wisieć w pętli i nie męczyć watchdoga zadania.
+    unsigned long gap = (d.failCount >= 3) ? 300000UL : (unsigned long)d.interval * 1000UL;
+    if (now - d.lastMs < gap) continue;
     LOG_I("ExtDev: poll %s", d.url.c_str());
     d.lastMs = now;
     pollOne(d);
+    if (d.ok) d.failCount = 0;
+    else if (d.failCount < 10) d.failCount++;
     LOG_I("Urządzenie %s (%s): %s", d.name.c_str(), d.url.c_str(),
           d.ok ? "OK" : d.lastErr.c_str());
   }

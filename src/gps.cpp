@@ -188,11 +188,40 @@ void GpsService::parseSentence(char* s) {
   } else if (strcmp(kind, "GSA") == 0 && n >= 3) {
     if (!fieldEmpty(f[2])) fix_.fixType = atoi(f[2]);
     if (n >= 17 && !fieldEmpty(f[16])) fix_.hdop = atof(f[16]);
+    // Oznacz satelity użyte w rozwiązaniu (PRN w polach 4..15)
+    for (int k = 0; k < fix_.satN; k++) fix_.sat[k].used = false;
+    for (int i = 4; i < n && i < 16; i++) {
+      if (fieldEmpty(f[i])) continue;
+      int prn = atoi(f[i]);
+      for (int k = 0; k < fix_.satN; k++)
+        if (fix_.sat[k].prn == prn) { fix_.sat[k].used = true; break; }
+    }
   } else if (strcmp(kind, "GSV") == 0 && n >= 4) {
     // pole 3 = liczba satelitów w zasięgu
     if (!fieldEmpty(f[3])) {
       int v = atoi(f[3]);
       if (v >= 0 && v <= 64) fix_.satsView = v;
+    }
+    // Grupy po 4 pola: PRN, elewacja, azymut, SNR (do 4 satelitów na zdanie)
+    for (int i = 4; i + 3 < n; i += 4) {
+      if (fieldEmpty(f[i])) continue;
+      int prn = atoi(f[i]);
+      int elev = fieldEmpty(f[i + 1]) ? 0 : atoi(f[i + 1]);
+      int azim = fieldEmpty(f[i + 2]) ? 0 : atoi(f[i + 2]);
+      int snr  = fieldEmpty(f[i + 3]) ? 0 : atoi(f[i + 3]);
+      if (prn < 1 || prn > 64) continue;
+      int idx = -1;
+      for (int k = 0; k < fix_.satN; k++)
+        if (fix_.sat[k].prn == prn) { idx = k; break; }
+      if (idx < 0) {
+        if (fix_.satN >= 64) continue;
+        idx = fix_.satN++;
+        fix_.sat[idx] = GpsSat();
+      }
+      fix_.sat[idx].prn = (uint8_t)prn;
+      fix_.sat[idx].elev = (uint8_t)(elev < 0 ? 0 : (elev > 90 ? 90 : elev));
+      fix_.sat[idx].azim = (int16_t)(azim % 360);
+      fix_.sat[idx].snr = (uint8_t)(snr < 0 ? 0 : (snr > 99 ? 99 : snr));
     }
   } else if (strcmp(kind, "ZDA") == 0 && n >= 5) {
     parseTimeUtc(f[1]);
@@ -270,6 +299,17 @@ String GpsService::json() const {
   j += ",\"errors\":" + String(fix_.errors);
   j += ",\"sats\":" + String(fix_.sats);
   j += ",\"sats_view\":" + String(fix_.satsView);
+  j += ",\"sats_list\":[";
+  for (int k = 0; k < fix_.satN; k++) {
+    if (k) j += ",";
+    j += "{\"prn\":" + String(fix_.sat[k].prn);
+    j += ",\"elev\":" + String(fix_.sat[k].elev);
+    j += ",\"azim\":" + String(fix_.sat[k].azim);
+    j += ",\"snr\":" + String(fix_.sat[k].snr);
+    j += ",\"used\":" + String(fix_.sat[k].used ? "true" : "false");
+    j += "}";
+  }
+  j += "]";
   j += ",\"fix_quality\":" + String(fix_.fixQuality);
   j += ",\"fix_type\":" + String(fix_.fixType);
   if (hasFix()) {

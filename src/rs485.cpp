@@ -763,7 +763,10 @@ void Rs485Bus::syncNode(int idx) {
   PsramAllocator alloc;
   JsonDocument d(&alloc);
   String err;
-  bool ok = request("sync", "", d, err, RS485_BIG_TIMEOUT_MS);
+  // Gdy węzeł był offline, nie czekamy pełnych 3 s na odpowiedź - to blokuje
+  // pętlę główną i sumuje się z innymi wywołaniami do limitu watchdoga.
+  uint32_t syncTimeout = wasOnline ? RS485_BIG_TIMEOUT_MS : (uint32_t)cfgTimeoutMs_;
+  bool ok = request("sync", "", d, err, syncTimeout);
 
   if (ok && d["data"].is<JsonObject>()) {
     JsonObject data = d["data"].as<JsonObject>();

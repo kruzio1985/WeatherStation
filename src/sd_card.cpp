@@ -9,6 +9,7 @@
 #include "pins.h"
 #include "pinmap.h"
 #include "syslog.h"
+#include <esp_task_wdt.h>
 
 #if defined(SOC_SDMMC_HOST_SUPPORTED) || defined(CONFIG_SOC_SDMMC_HOST_SUPPORTED)
 #include "driver/sdmmc_host.h"
@@ -25,7 +26,11 @@
 SdCardManager sdCard;
 
 bool SdCardManager::begin() {
-  mutex_ = xSemaphoreCreateMutex();
+  // Mutex MUSI być rekurencyjny: listDir() bywa wołane zagnieżdżone (np.
+  // przeglądanie /photos wpisuje się w listę katalogów miesięcznych), a zwykły
+  // mutex FreeRTOS zajęty drugi raz przez to samo zadanie blokuje je na zawsze.
+  // Skutkiem była zawieszona obsługa /api/photos i reset "watchdog zadania".
+  mutex_ = xSemaphoreCreateRecursiveMutex();
   return remount();
 }
 
@@ -70,10 +75,11 @@ bool SdCardManager::remount() {
     sdmmc_ = false;
     err_ = "";
     info_ = "SPI (CS " + String(cs) + ", SCK " + String(pinMap.pin("sd_sck")) + ", MOSI " +
-            String(pinMap.pin("sd_mosi")) + ", MISO " + String(pinMap.pin("sd_miso")) + ")";
-    LOG_I("Karta SD wykryta (SPI): CS %d, SCK %d, MOSI %d, MISO %d - %.1f GB",
+            String(pinMap.pin("sd_mosi")) + ", MISO " + String(pinMap.pin("sd_miso")) +
+            ", " + String(spiFreq_ / 1000000u) + " MHz)";
+    LOG_I("Karta SD wykryta (SPI): CS %d, SCK %d, MOSI %d, MISO %d, %u MHz - %.1f GB",
           cs, pinMap.pin("sd_sck"), pinMap.pin("sd_mosi"), pinMap.pin("sd_miso"),
-          totalBytes() / 1073741824.0);
+          (unsigned)(spiFreq_ / 1000000u), totalBytes() / 1073741824.0);
     return true;
   }
 
@@ -114,17 +120,102 @@ bool SdCardManager::mountSpi() {
   const int mosi = pinMap.pin("sd_mosi");
   const int miso = pinMap.pin("sd_miso");
   if (sck >= 0 && mosi >= 0 && miso >= 0) SPI.begin(sck, miso, mosi, cs);
-  if (!SD.begin(cs, SPI, SD_SPI_FREQ)) return false;
-  return true;
+
+  // Od najszybszego do najwolniejszego. Karta na dłuższych przewodach może nie
+  // wystartować przy 20 MHz - wtedy próbujemy 10 MHz, a na końcu historyczne
+  // 4 MHz, więc montaż nie zawiedzie tam, gdzie działał wcześniej.
+  static const uint32_t kFreqs[] = { SD_SPI_FREQ_FAST, 10000000u, SD_SPI_FREQ };
+  for (size_t i = 0; i < sizeof(kFreqs) / sizeof(kFreqs[0]); i++) {
+    if (SD.begin(cs, SPI, kFreqs[i])) {
+      spiFreq_ = kFreqs[i];
+      if (i > 0) {
+        LOG_W("Karta SD: %u MHz nie wystartowało - zamontowano na %u MHz",
+              (unsigned)(kFreqs[0] / 1000000u), (unsigned)(kFreqs[i] / 1000000u));
+      }
+      return true;
+    }
+    // Nieudana próba zostawia sterownik częściowo zainicjalizowany - zwalniamy
+    // go, zanim spróbujemy z niższym taktowaniem.
+    SD.end();
+  }
+  return false;
 }
 
 bool SdCardManager::mounted() {
   return mounted_;
 }
 
+// Data i godzina w formacie FAT -> time_t (0, gdy brak).
+static time_t fatTimeToEpoch(uint16_t fdate, uint16_t ftime) {
+  if (fdate == 0) return 0;
+  struct tm t = {};
+  t.tm_year = ((fdate >> 9) & 0x7F) + 80;
+  t.tm_mon  = ((fdate >> 5) & 0x0F) - 1;
+  t.tm_mday = fdate & 0x1F;
+  t.tm_hour = (ftime >> 11) & 0x1F;
+  t.tm_min  = (ftime >> 5) & 0x3F;
+  t.tm_sec  = (ftime & 0x1F) * 2;
+  if (t.tm_mon < 0 || t.tm_mon > 11 || t.tm_mday < 1 || t.tm_mday > 31) return 0;
+  t.tm_isdst = -1;
+  return mktime(&t);
+}
+
+// Odczyt katalogu przez niskopoziomowe FatFS (f_opendir/f_readdir). Warstwa
+// Arduino (File::openNextFile) na tym sprzęcie kosztuje ~50 ms na wpis i przy
+// katalogu ze 300 zdjęciami blokuje stację na 17 s - tyle trwał wpis w galerii
+// i tyle wystarczyło, żeby watchdog zadania zrestartował stację. f_readdir
+// zwraca nazwę, rozmiar i czas z wpisu katalogu, bez dodatkowych odwołań do
+// karty. Zwraca false, gdy nie da się tej drogi użyć - wtedy wołający korzysta
+// ze zwykłego File API.
+bool SdCardManager::listDirFat(const String& dir, std::vector<SdFileInfo>& out,
+                               size_t maxEntries, bool keepLast, const char* ext) {
+  if (!mounted_ || sdmmc_) return false;
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+
+  const String base = dir.isEmpty() ? String("/") : dir;
+  const String full = String(SD_FATFS_DRIVE) + base;   // np. "0:/photos"
+  FF_DIR d;
+  bool ok = false;
+  if (f_opendir(&d, full.c_str()) == FR_OK) {
+    ok = true;
+    if (keepLast && maxEntries > 0) out.reserve(maxEntries + 1);
+    FILINFO fi;
+    fi.fname[0] = 0;
+    unsigned entries = 0;
+    while (f_readdir(&d, &fi) == FR_OK && fi.fname[0]) {
+      String path = base.endsWith("/") ? base + fi.fname : base + "/" + fi.fname;
+      if (!ext || !*ext || path.endsWith(ext)) {
+        SdFileInfo info;
+        info.path = path;
+        info.size = (size_t)fi.fsize;
+        info.mtime = fatTimeToEpoch(fi.fdate, fi.ftime);
+        info.isDir = (fi.fattrib & AM_DIR) != 0;
+        if (keepLast && maxEntries > 0 && out.size() >= maxEntries) out.erase(out.begin());
+        out.push_back(info);
+      }
+      // Przy setkach wpisów oddajemy procesor i karmimy watchdoga, żeby długi
+      // skan nie kończył się resetem stacji.
+      if (((++entries) & 0x3Fu) == 0) {
+        esp_task_wdt_reset();
+        vTaskDelay(1);
+      }
+    }
+    f_closedir(&d);
+  }
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
+  return ok;
+}
+
 bool SdCardManager::listDir(const String& dir, std::vector<SdFileInfo>& out) {
+  return listDir(dir, out, 0, false, nullptr);
+}
+
+bool SdCardManager::listDir(const String& dir, std::vector<SdFileInfo>& out,
+                            size_t maxEntries, bool keepLast, const char* ext) {
+  if (listDirFat(dir, out, maxEntries, keepLast, ext)) return true;
+
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
 
   const String base = dir.isEmpty() ? "/" : dir;
   File root;
@@ -136,6 +227,8 @@ bool SdCardManager::listDir(const String& dir, std::vector<SdFileInfo>& out) {
 
   bool ok = (bool)root;
   if (ok) {
+    if (keepLast && maxEntries > 0) out.reserve(maxEntries + 1);
+    unsigned entries = 0;
     File f = root.openNextFile();
     while (f) {
       SdFileInfo info;
@@ -144,23 +237,66 @@ bool SdCardManager::listDir(const String& dir, std::vector<SdFileInfo>& out) {
       // z www dostają pełną ścieżkę - dlatego sklejamy ją tutaj.
       info.path = name.startsWith("/") ? name
                                        : (base.endsWith("/") ? base + name : base + "/" + name);
-      info.size = f.size();
-      info.mtime = f.getLastWrite();
-      info.isDir = f.isDirectory();
-      out.push_back(info);
+      const bool want = (!ext || !*ext || info.path.endsWith(ext));
+      if (want) {
+        info.size = f.size();
+        info.mtime = f.getLastWrite();
+        info.isDir = f.isDirectory();
+        if (keepLast && maxEntries > 0 && out.size() >= maxEntries) out.erase(out.begin());
+        out.push_back(info);
+      }
+      // Skan katalogu ze setkami wpisów trwa sekundy. Podkarmiamy watchdog
+      // zadania (inaczej kończy się to resetem "watchdog zadania") i oddajemy
+      // procesor na jedną taktę, żeby nie zagłodzić Wi-Fi ani serwera www.
+      if (((++entries) & 0x1Fu) == 0) {
+        esp_task_wdt_reset();
+        vTaskDelay(1);
+      }
       f = root.openNextFile();
     }
   }
   root.close();
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return ok;
+}
+
+bool SdCardManager::listDirNames(const String& dir, std::vector<String>& names,
+                                 size_t maxEntries, bool keepLast, const char* ext) {
+  std::vector<SdFileInfo> tmp;
+  if (!listDir(dir, tmp, maxEntries, keepLast, ext)) return false;
+  names.reserve(names.size() + tmp.size());
+  for (auto& e : tmp) names.push_back(e.path);
+  return true;
+}
+
+// "RRRR-MM-DD_GGMMSS" w nazwie pliku -> time_t (czas lokalny), 0 gdy brak wzorca.
+time_t sdFileNameTime(const String& path) {
+  int slash = path.lastIndexOf('/');
+  String n = (slash >= 0) ? path.substring(slash + 1) : path;
+  // Układ: RRRR-MM-DD_GGMMSS (17 znaków), np. "2026-10-03_002208.jpg".
+  if (n.length() < 17) return 0;
+  for (int i = 0; i < 17; i++) {
+    const char c = n[i];
+    const bool sep = (i == 4 || i == 7 || i == 10);
+    if (sep ? (c != '-' && c != '_') : (c < '0' || c > '9')) return 0;
+  }
+  struct tm t = {};
+  t.tm_year = n.substring(0, 4).toInt() - 1900;
+  t.tm_mon  = n.substring(5, 7).toInt() - 1;
+  t.tm_mday = n.substring(8, 10).toInt();
+  t.tm_hour = n.substring(11, 13).toInt();
+  t.tm_min  = n.substring(13, 15).toInt();
+  t.tm_sec  = n.substring(15, 17).toInt();
+  if (t.tm_mon < 0 || t.tm_mon > 11 || t.tm_mday < 1 || t.tm_mday > 31) return 0;
+  t.tm_isdst = -1;
+  return mktime(&t);
 }
 
 bool SdCardManager::readFile(const String& path, String& out, size_t maxLen) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
   File f = openRead(path);
-  if (!f) { if (mutex_) xSemaphoreGive(mutex_); return false; }
+  if (!f) { if (mutex_) xSemaphoreGiveRecursive(mutex_); return false; }
 
   out = "";
   out.reserve(min((size_t)f.size(), maxLen));
@@ -168,13 +304,13 @@ bool SdCardManager::readFile(const String& path, String& out, size_t maxLen) {
     out += (char)f.read();
   }
   f.close();
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return true;
 }
 
 bool SdCardManager::appendFile(const String& path, const String& line) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
   // SD.open() nie tworzy katalogów, więc pierwszy zapis do /logs na świeżej
   // (albo sformatowanej) karcie kończył się cicho błędem.
   const int slash = path.lastIndexOf('/');
@@ -185,36 +321,36 @@ bool SdCardManager::appendFile(const String& path, const String& line) {
   else
 #endif
   f = SD.open(path, FILE_APPEND);
-  if (!f) { if (mutex_) xSemaphoreGive(mutex_); return false; }
+  if (!f) { if (mutex_) xSemaphoreGiveRecursive(mutex_); return false; }
   bool ok = f.print(line);
   f.close();
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return ok;
 }
 
 bool SdCardManager::deleteFile(const String& path) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
   bool ok;
 #if SD_MMC_AVAILABLE
   if (sdmmc_) ok = SD_MMC.remove(path);
   else
 #endif
   ok = SD.remove(path);
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return ok;
 }
 
 bool SdCardManager::exists(const String& path) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
   bool ok;
 #if SD_MMC_AVAILABLE
   if (sdmmc_) ok = SD_MMC.exists(path);
   else
 #endif
   ok = SD.exists(path);
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return ok;
 }
 
@@ -252,15 +388,15 @@ bool SdCardManager::mkdirsRaw(const String& dir) {
 
 bool SdCardManager::mkdirs(const String& dir) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
   const bool ok = mkdirsRaw(dir);
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return ok;
 }
 
 bool SdCardManager::format() {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
 
   LOG_W("Formatowanie karty SD (%s) - wszystkie dane zostaną usunięte",
         sdmmc_ ? "SDMMC" : "SPI");
@@ -268,7 +404,7 @@ bool SdCardManager::format() {
   if (ok) LOG_I("Karta SD sformatowana (FAT32), wolne %.1f GB", totalBytes() / 1073741824.0);
   else    LOG_E("Formatowanie karty SD nieudane");
 
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return ok;
 }
 
@@ -366,7 +502,7 @@ bool SdCardManager::formatSpi() {
   if (sck >= 0 && mosi >= 0 && miso >= 0) SPI.begin(sck, miso, mosi, cs);
   else SPI.begin();
 
-  uint8_t pdrv = sdcard_init(cs, &SPI, SD_SPI_FREQ);
+  uint8_t pdrv = sdcard_init(cs, &SPI, spiFreq_);
   if (pdrv == 0xFF) {
     err_ = "Nie udało się zainicjować karty SD (SPI) do formatowania";
     return false;
@@ -406,25 +542,25 @@ bool SdCardManager::formatSpi() {
 
 uint64_t SdCardManager::totalBytes() {
   if (!mounted_) return 0;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
 #if SD_MMC_AVAILABLE
   uint64_t v = sdmmc_ ? SD_MMC.totalBytes() : SD.totalBytes();
 #else
   uint64_t v = SD.totalBytes();
 #endif
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return v;
 }
 
 uint64_t SdCardManager::usedBytes() {
   if (!mounted_) return 0;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
 #if SD_MMC_AVAILABLE
   uint64_t v = sdmmc_ ? SD_MMC.usedBytes() : SD.usedBytes();
 #else
   uint64_t v = SD.usedBytes();
 #endif
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return v;
 }
 
@@ -437,7 +573,7 @@ File SdCardManager::openRead(const String& path) {
 
 bool SdCardManager::writeBlock(const String& path, const uint8_t* data, size_t len) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
   const int slash = path.lastIndexOf('/');
   if (slash > 0) mkdirsRaw(path.substring(0, slash));
   File f;
@@ -446,9 +582,9 @@ bool SdCardManager::writeBlock(const String& path, const uint8_t* data, size_t l
   else
 #endif
   f = SD.open(path, FILE_APPEND);
-  if (!f) { if (mutex_) xSemaphoreGive(mutex_); return false; }
+  if (!f) { if (mutex_) xSemaphoreGiveRecursive(mutex_); return false; }
   size_t w = f.write(data, len);
   f.close();
-  if (mutex_) xSemaphoreGive(mutex_);
+  if (mutex_) xSemaphoreGiveRecursive(mutex_);
   return w == len;
 }

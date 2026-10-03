@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 #include <time.h>
 
 #include "pins.h"
@@ -410,7 +411,9 @@ void loop() {
   // Odczyt czujników co 5 s
   if (now - lastSensorRead >= 5000) {
     lastSensorRead = now;
+    esp_task_wdt_reset();   // odczyt I2C/ADC potrafi zająć dłużej - niech watchdog liczy od nowa
     sensors.readAll();
+    esp_task_wdt_reset();
 #if !STACJA_HEADLESS
     if (!asNode) mqtt.publishReadings(sensors.snapshot());
 #endif
@@ -449,8 +452,10 @@ void loop() {
   // Zapis logu na SD co log_interval_s
   if (now - lastLog >= (unsigned long)config.logIntervalS() * 1000UL) {
     lastLog = now;
+    esp_task_wdt_reset();   // zapis na karcie SD (SPI) bywa najwolniejszy w obiegu
     std::vector<Channel> snap = sensors.snapshot();
     logger.logNow(snap);
+    esp_task_wdt_reset();
 #if !STACJA_HEADLESS
     if (!asNode) analysis.noteSamples(snap);
 #endif
@@ -464,7 +469,9 @@ void loop() {
 
   // Magistrala RS485: master odpytuje węzeł, węzeł odpowiada.
   // Przed pierścieniem LED - żeby kolory pogody brały też dane z drugiego ESP.
+  esp_task_wdt_reset();   // RS485 potrafi blokować do ~3 s (brak węzła)
   rs485.loop();
+  esp_task_wdt_reset();
 
 #if STACJA_HEADLESS
   recoveryAp.loop();
@@ -472,9 +479,13 @@ void loop() {
 
   // Pierścień LED RGB: kolor stanu pogody + animacja
   ledRing.loop();
-  camera.loop();    // timelapse: zdjęcie co cam_interval_min (gdy kamera włączona)
+  esp_task_wdt_reset();   // zdjęcie z kamery: pobranie po HTTP (limit 4 s) + analiza JPEG
+  camera.loop();          // timelapse i zdjęcia zlecone z www (gdy kamera włączona)
+  esp_task_wdt_reset();
 #if !STACJA_HEADLESS
+  esp_task_wdt_reset();   // HTTP do urządzeń zewnętrznych (timeout 1,5+2 s)
   extdev.loop();    // odpytywanie urządzeń zewnętrznych po HTTP
+  esp_task_wdt_reset();
 #endif
   // Długie przytrzymanie przycisku BOOT (3 s) = przywrócenie fabrycznych
   if (buttonPin >= 0 && digitalRead(buttonPin) == LOW) {
@@ -498,6 +509,13 @@ void loop() {
     LOG_I("Restart na żądanie ze strony www");
     delay(200);
     ESP.restart();
+  }
+
+  // Diagnostyka: pojedynczy obieg pętli nie powinien trwać dłużej niż ~1 s.
+  // Dłuższe czasy sumują się z innymi blokującymi wywołaniami i wyzwalają
+  // watchdog zadania - logujemy je, żeby widzieć winowajcę w syslogu.
+  if ((long)(millis() - now) > 2000) {
+    LOG_W("Pętla główna: obieg trwał %lu ms", (unsigned long)(millis() - now));
   }
 
   delay(10);

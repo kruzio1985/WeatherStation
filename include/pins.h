@@ -157,9 +157,9 @@
 
 // --- Czujnik Tuya temp./wilg. (TLSR8258, firmware UART) ---
 //     TX czujnika -> RX ESP32. Linia ASCII "T=xx.xx;RH=yy.yy" co ~2 s,
-//     115200 8N1. Odczyt bit-bang (SoftwareSerial), bo wszystkie 3 sprzętowe
-//     UART-y są zajęte (RS485 / GPS / PMS5003). GPIO 41 = wolny pin grupy JTAG.
-#define PIN_TUY_RX          41
+//     115200 8N1. Odbiór po sprzętowym UART2 (Serial2). GPIO 40 = wolny pin
+//     grupy JTAG (obok 41 - do przełożenia przewodu, gdyby 41 był uszkodzony).
+#define PIN_TUY_RX          40
 
 // --- Waga / tensjometr / siła na HX711 (2 przewody: DT i SCK) ---
 #define PIN_HX711_DT        -1

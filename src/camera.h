@@ -13,8 +13,10 @@
 //  Kamera (opcjonalna) - dwa tryby:
 //
 //  1) ZEWNĘTRZNA (domyślny kierunek): osobny moduł ESP32-CAM robi
-//     zdjęcia i wysyła je HTTP POST na /api/camera/upload. Master
-//     tylko odbiera JPEG-a, analizuje go i zapisuje na karcie SD.
+//     zdjęcia. Master pobiera gotowy JPEG z adresu cam_remote_url
+//     (np. http://192.168.1.142/capture) i sam go analizuje oraz
+//     zapisuje na karcie SD; jeśli adres tylko wyzwala ujęcie, zdjęcie
+//     wraca przez HTTP POST na /api/camera/upload.
 //
 //  2) LOKALNA: kamera podłączona do pinów magistrali równoległej
 //     ESP32-S3 z PSRAM (np. OV2640 / OV3660 / OV5640 / GC0308).
@@ -25,6 +27,15 @@
 //  jest mały plik .json z wynikiem analizy (jasność, luksy, dzień/
 //  noc, RGB, ruch, zachmurzenie). Limity cam_max_photos/cam_max_mb
 //  kasują najstarsze zdjęcia razem z ich plikami analizy.
+//
+//  Wynik analizy jest też wystawiany jako kanały stacji (cam_weather,
+//  cam_phase, cam_cloud, cam_rain, cam_snow, cam_fog, cam_lux), więc
+//  "co widać na niebie" trafia na pulpit, do dziennika i do Home
+//  Assistant razem z pozostałymi pomiarami.
+//
+//  Ustawienie cam_rotate (0/90/180/270, 90 = w prawo) obraca obraz przy
+//  podglądzie na stronie i przy analizie - dzięki temu region nieba jest
+//  zawsze na górze kadru, niezależnie od tego, jak wisi kamera.
 //
 //  Warianty ESP32-C3 (STACJA_HAS_CAMERA=0) kompilują się poprawnie,
 //  ale manager zgłasza "brak wsparcia sprzętowego" - żaden kod kamery
@@ -66,7 +77,11 @@ public:
 
   bool capture();            // zdjęcie lokalne (kamera podłączona do pinów)
   bool ingestJpeg(const uint8_t* data, size_t len);  // odbiór zdjęcia z ESP32-CAM
-  bool triggerRemote();      // żądanie natychmiastowego zdjęcia (HTTP GET do kamery)
+  bool triggerRemote();      // zdjęcie z kamery zewnętrznej: pobierz JPEG albo wyzwól ujęcie
+  // Zlecenie zdjęcia z kamery zewnętrznej do wykonania w pętli głównej.
+  // Pobieranie zdjęcia trwa kilka sekund, więc nie może się odbywać w wątku
+  // serwera www (przekroczenie watchdoga zadania restartowało stację).
+  bool requestCapture();
   bool start();              // próba (re)inicjalizacji sterownika kamery
   void stop();               // zwolnij sterownik (gdy wyłączono kamerę)
 
@@ -84,6 +99,7 @@ public:
   uint16_t maxPhotos() const { return config.camMaxPhotos(); }
   uint16_t maxMb() const { return config.camMaxMb(); }
   String remoteUrl() const { return config.camRemoteUrl(); }
+  uint16_t rotate() const { return config.camRotate(); }
 
   String toJson() const;                        // status dla /api/camera
 
@@ -93,6 +109,12 @@ private:
   // Dekoduje miniaturę JPEG (RGB565, skala 1/8) i liczy analizę.
   bool analyzeJpeg(const uint8_t* jpg, size_t len);
   bool analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h);
+  // Pobiera gotowy JPEG z adresu kamery zewnętrznej (http://.../capture).
+  // Zwraca: 1 = odebrano zdjęcie, 0 = połączenie działa, ale to nie JPEG
+  // (kamera w trybie wyzwalania), -1 = błąd.
+  int  fetchRemoteJpeg();
+  // Wystawia wynik analizy jako kanały stacji (pulpit, dziennik, MQTT/HA).
+  void publishAnalysis();
   void writeAnalysisJson(const String& jpgPath);
   void enforceQuota();                          // kasowanie najstarszych zdjęć ponad limit
   void deletePhotoWithMeta(const String& jpgPath);
@@ -100,10 +122,19 @@ private:
   bool        enabled_ = false;
   bool        present_ = false;
   bool        capturing_ = false;
+  bool        pendingCapture_ = false;   // zdjęcie zlecone z www - do wykonania w pętli głównej
   uint16_t    intervalMin_ = 15;
   unsigned long lastCaptureMs_ = 0;
   String      lastFile_;
   String      lastError_;
+
+  // Odcisk ostatnio zapisanego zdjęcia. Ten sam JPEG potrafi dotrzeć dwiema
+  // drogami naraz (kamera wysyła go POST-em na /api/camera/upload i zwraca w
+  // odpowiedzi na GET /capture), a wtedy na karcie powstawały dwa identyczne
+  // pliki. Duplikat w krótkim odstępie jest pomijany.
+  uint32_t    lastJpegHash_ = 0;
+  uint32_t    lastJpegLen_ = 0;
+  unsigned long lastJpegMs_ = 0;
   String      modelName_;
 
   // Wynik analizy ostatniego zdjęcia + siatka luminancji poprzedniej klatki
