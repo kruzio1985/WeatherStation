@@ -92,50 +92,87 @@
      progi takie same, jakich używa strona stacji jakości powietrza. */
   .card .note { color:var(--muted); font-size:.72rem; margin-top:2px; }
 
-  /* --- Panele jakości powietrza (sekcja "Wewnątrz") ---
-     Układ jak na stronie stacji jakości powietrza: panel na grupę, w środku
-     wiersze "nazwa ... wartość", wartości kolorowane wg progów i legenda
-     kolorów z zakresami pod spodem. */
-  .aq-panel { background:var(--panel); border-radius:12px; padding:14px 16px;
-              display:flex; flex-direction:column; gap:2px; grid-column:span 2; }
-  /* Na wąskim ekranie panel zajmuje jedną kolumnę, żeby nie rozpychał siatki. */
-  @media (max-width: 760px) { .aq-panel { grid-column:span 1; } }
-  .aq-panel h4 { margin:0 0 8px; font-size:.95rem; font-weight:600; color:var(--text); }
-  .aq-row { display:flex; align-items:baseline; gap:10px; padding:3px 0; }
-  .aq-row .k { color:var(--muted); font-size:.86rem; flex:1 1 auto; }
-  .aq-row .v { font-weight:600; font-size:1rem; font-variant-numeric:tabular-nums;
-               white-space:nowrap; }
-  .aq-row .v i { font-style:normal; font-weight:400; font-size:.78rem; color:var(--muted); }
-  .aq-big { text-align:center; margin:6px 0 2px; }
-  .aq-big .n { font-size:3rem; font-weight:700; line-height:1; }
-  .aq-big .w { font-size:1rem; margin-top:4px; }
-  .aq-sub { text-align:center; color:var(--muted); font-size:.8rem; margin:8px 0 0; }
-  .aq-bar { display:flex; height:10px; border-radius:5px; overflow:hidden; margin:10px 0 3px; }
-  .aq-bar span { display:block; }
-  .aq-ticks { display:flex; justify-content:space-between; color:var(--muted); font-size:.68rem; }
-  .aq-legend { display:flex; flex-direction:column; gap:3px; margin-top:10px; }
-  .aq-lrow { display:flex; align-items:center; gap:7px; font-size:.76rem; color:var(--muted); }
-  .aq-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
-  .aq-note { color:var(--muted); font-size:.74rem; line-height:1.45; margin-top:10px;
-             border-top:1px solid #334155; padding-top:8px; }
-  .aq-state { font-weight:600; }
+  /* --- Panele jakości powietrza (wygląd jak stacja powietrza 192.168.1.141) ---
+     Karty w siatce (min. 280 px), wiersze "nazwa ... wartość jednostka",
+     poziome legendy progów i karta IAQ ze skalą gradientową. */
+  .aqp-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+              gap:16px; grid-column:1 / -1; }
+  .aqp { background:var(--panel); border:1px solid #2a3342; border-radius:12px;
+         padding:16px 18px; }
+  .aqp h4 { margin:0 0 12px; font-size:15px; font-weight:600; color:var(--text); }
+  .aqp .m { display:grid; grid-template-columns:1fr auto auto; align-items:baseline; gap:8px;
+            padding:7px 0; border-bottom:1px solid #222a36; }
+  .aqp .m:last-child { border-bottom:none; }
+  .aqp .m span { color:var(--muted); font-size:13px; }
+  .aqp .m b { font-size:20px; font-weight:600; }
+  .aqp .m em { color:var(--muted); font-style:normal; font-size:12px; }
+  /* Legenda progów: poziome wiersze "nazwa [kolor]zakres [kolor]zakres..." */
+  .aqp .lgd { margin-top:12px; border-top:1px solid #222a36; padding-top:10px;
+              display:flex; flex-direction:column; gap:5px; }
+  .aqp .lgd-row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px;
+                  font-size:11px; color:var(--muted); }
+  .aqp .lgd-row .nm { min-width:46px; color:var(--text); font-weight:600; font-size:12px; }
+  .aqp .lgd-i { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+  .aqp .lgd-i .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  /* Legenda zdań (MiCS / MQ-7): kolor + zdanie */
+  .aqp .sent { margin-top:12px; border-top:1px solid #222a36; padding-top:10px;
+               display:flex; flex-wrap:wrap; gap:14px; }
+  .aqp .sent-i { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+  .aqp .sent-i .sw { width:16px; height:16px; border-radius:4px; display:inline-block; flex:0 0 auto; }
+  .aqp .hint { color:var(--muted); font-size:12px; line-height:1.5; margin:12px 0 0; }
+  .aqp .hint b { color:var(--text); }
+  /* Karta IAQ */
+  .aqp.aqi { text-align:center; }
+  .aqp .aqi-big { font-size:64px; font-weight:700; line-height:1; margin:8px 0 2px; }
+  .aqp .aqi-label { color:var(--muted); margin-bottom:12px; }
+  .aqp .aqi-cause { margin-top:8px; font-size:13px; color:var(--muted); }
+  .aqp .aqi-scale { margin-top:14px; }
+  .aqp .aqi-track { position:relative; height:22px; border-radius:11px;
+    background:linear-gradient(to right,
+      #00C853 0%, #00C853 10%,
+      #FFD600 10%, #FFD600 20%,
+      #FF9100 20%, #FF9100 30%,
+      #E53935 30%, #E53935 40%,
+      #8E24AA 40%, #8E24AA 60%,
+      #7B1F1F 60%, #7B1F1F 100%); }
+  .aqp .aqi-marker { position:absolute; top:-4px; bottom:-4px; width:4px; margin-left:-2px;
+                     border-radius:2px; background:#fff;
+                     box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 8px rgba(0,0,0,.9);
+                     transition:left .4s; }
+  .aqp .aqi-ticks { position:relative; height:20px; margin-top:6px; font-size:11px; color:var(--muted); }
+  .aqp .aqi-ticks span { position:absolute; transform:translateX(-50%); }
+  .aqp .aqi-ticks span:first-child { transform:none; }
+  .aqp .aqi-ticks span:last-child { transform:translateX(-100%); }
+  .aqp .aqi-legend { display:grid; grid-template-columns:repeat(auto-fit, minmax(105px, 1fr));
+                     gap:6px 8px; margin-top:12px; text-align:left; }
+  .aqp .aqi-lg { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
+  .aqp .aqi-lg .sw { flex:0 0 11px; height:11px; border-radius:3px; display:inline-block; }
+  .aqp .aqi-lg em { font-style:normal; margin-left:auto; color:#66707d; }
+  .aqp .motion { margin-top:12px; font-size:13px; color:var(--muted); }
+  .aqp .motion.on { color:var(--accent); }
   /* --- Wskaźniki pogody (styl Weather Underground) ---
      Karta ze wskaźnikiem SVG (termometr, barometr, kropla, zlewka deszczu,
      wiatrowskaz, pasek) - wskazanie animuje się po każdej aktualizacji. */
-  .wx-panel { background:var(--panel); border-radius:12px; padding:14px 16px;
-              grid-column:span 2; }
+  .wx-panel { background:var(--panel); border-radius:12px; padding:12px 14px;
+              grid-column:1 / -1; }
   .wx-panel h4 { margin:0 0 10px; font-size:.95rem; font-weight:600; color:var(--text); }
-  .wx-grid { display:flex; flex-wrap:wrap; gap:12px; align-items:stretch; }
+  .wx-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px; }
+  /* Na wąskim ekranie wskaźniki zawijają się, zamiast ściskać w jedną linię
+     (inline grid-template-columns z renderWxGauges wymusza jedną linię). */
+  @media (max-width: 760px) {
+    .wx-grid { grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)) !important; }
+  }
   .wx-card { background:var(--panel2); border:1px solid #273449; border-radius:10px;
-             padding:10px 12px; width:156px; text-align:center; display:flex;
-             flex-direction:column; align-items:center; justify-content:flex-start; }
-  .wx-card .lbl { color:var(--muted); font-size:.8rem; }
-  .wx-card svg { display:block; margin:6px auto 4px; }
-  .wx-card .val { font-size:1.3rem; font-weight:700; line-height:1.15;
-                  font-variant-numeric:tabular-nums; }
+             padding:8px 8px 10px; text-align:center; display:flex; flex-direction:column;
+             align-items:center; height:166px; }
+  .wx-card .lbl { color:var(--muted); font-size:.78rem; }
+  .wx-card svg { display:block; margin:4px auto; flex:0 0 auto; }
+  .wx-card .val { font-size:1.22rem; font-weight:700; line-height:1.15;
+                  font-variant-numeric:tabular-nums; margin-top:auto; }
   .wx-card .unit { font-size:.72rem; color:var(--muted); font-weight:400; }
   .wx-card .sub { color:var(--muted); font-size:.72rem; margin-top:2px; }
-  .wx-card .bigico { font-size:2.6rem; line-height:1.2; }
+  .wx-card .bigico { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
+                     font-size:2.4rem; line-height:1.2; }
   .wx-fill   { transition: y .9s cubic-bezier(.25,.9,.35,1), height .9s cubic-bezier(.25,.9,.35,1); }
   .wx-fillw  { transition: width .9s cubic-bezier(.25,.9,.35,1); }
   .wx-needle { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
@@ -1859,60 +1896,60 @@ function fmtChannelHint(c) {
 // ---------------------------------------------------------------
 const AQ_BANDS = {
   iaq: [
-    { max: 50,  c: '#4ade80', t: '0–50',   w: 'Dobra' },
-    { max: 100, c: '#facc15', t: '51–100', w: 'Umiarkowana' },
-    { max: 150, c: '#fb923c', t: '101–150', w: 'Zła (wrażliwe grupy)' },
-    { max: 200, c: '#ef4444', t: '151–200', w: 'Zła' },
-    { max: 300, c: '#a855f7', t: '201–300', w: 'Bardzo zła' },
-    { max: Infinity, c: '#991b1b', t: '301–500', w: 'Niebezpieczna' },
+    { max: 50,  c: '#00C853', t: '0–50',   w: 'Dobra' },
+    { max: 100, c: '#FFD600', t: '51–100', w: 'Umiarkowana' },
+    { max: 150, c: '#FF9100', t: '101–150', w: 'Zła (wrażliwe grupy)' },
+    { max: 200, c: '#E53935', t: '151–200', w: 'Zła' },
+    { max: 300, c: '#8E24AA', t: '201–300', w: 'Bardzo zła' },
+    { max: Infinity, c: '#7B1F1F', t: '301–500', w: 'Niebezpieczna' },
   ],
   pm25: [
-    { max: 10,   c: '#4ade80', t: '0–10' },
-    { max: 15,   c: '#a3e635', t: '10–15' },
-    { max: 25,   c: '#facc15', t: '15–25' },
-    { max: 37.5, c: '#fb923c', t: '25–37,5' },
-    { max: Infinity, c: '#ef4444', t: '37,5+' },
+    { max: 10,   c: '#00C853', t: '0–10' },
+    { max: 15,   c: '#76FF03', t: '10–15' },
+    { max: 25,   c: '#FFD600', t: '15–25' },
+    { max: 37.5, c: '#FF9100', t: '25–37,5' },
+    { max: Infinity, c: '#E53935', t: '37,5+' },
   ],
   pm10: [
-    { max: 20, c: '#4ade80', t: '0–20' },
-    { max: 45, c: '#facc15', t: '20–45' },
-    { max: 75, c: '#fb923c', t: '45–75' },
-    { max: Infinity, c: '#ef4444', t: '75+' },
+    { max: 20, c: '#00C853', t: '0–20' },
+    { max: 45, c: '#FFD600', t: '20–45' },
+    { max: 75, c: '#FF9100', t: '45–75' },
+    { max: Infinity, c: '#E53935', t: '75+' },
   ],
   co2: [
-    { max: 600,  c: '#4ade80', t: '0–600' },
-    { max: 1000, c: '#facc15', t: '600–1000' },
-    { max: 1500, c: '#fb923c', t: '1000–1500' },
-    { max: Infinity, c: '#ef4444', t: '1500+' },
+    { max: 600,  c: '#00C853', t: '0–600' },
+    { max: 1000, c: '#FFD600', t: '600–1000' },
+    { max: 1500, c: '#FF9100', t: '1000–1500' },
+    { max: Infinity, c: '#E53935', t: '1500+' },
   ],
   tvoc: [   // kanał tej stacji jest w ppb (stacja powietrza podaje ppm)
-    { max: 300,  c: '#4ade80', t: '0–300' },
-    { max: 500,  c: '#facc15', t: '300–500' },
-    { max: 1000, c: '#fb923c', t: '500–1000' },
-    { max: Infinity, c: '#ef4444', t: '1000+' },
+    { max: 300,  c: '#00C853', t: '0–300' },
+    { max: 500,  c: '#FFD600', t: '300–500' },
+    { max: 1000, c: '#FF9100', t: '500–1000' },
+    { max: Infinity, c: '#E53935', t: '1000+' },
   ],
   ch2o: [
-    { max: 20, c: '#4ade80', t: '0–20' },
-    { max: 40, c: '#facc15', t: '20–40' },
-    { max: 80, c: '#fb923c', t: '40–80' },
-    { max: Infinity, c: '#ef4444', t: '80+' },
+    { max: 20, c: '#00C853', t: '0–20' },
+    { max: 40, c: '#FFD600', t: '20–40' },
+    { max: 80, c: '#FF9100', t: '40–80' },
+    { max: Infinity, c: '#E53935', t: '80+' },
   ],
   co: [
-    { max: 9,   c: '#4ade80', t: '0–9 ppm',   w: 'czyste' },
-    { max: 35,  c: '#facc15', t: '10–35 ppm', w: 'podwyższone' },
-    { max: 100, c: '#fb923c', t: '36–100 ppm', w: 'wysokie' },
-    { max: Infinity, c: '#ef4444', t: '>100 ppm', w: 'niebezpieczne' },
+    { max: 9,   c: '#00C853', t: '0–9 ppm',   w: 'czyste' },
+    { max: 35,  c: '#FFD600', t: '10–35 ppm', w: 'podwyższone' },
+    { max: 100, c: '#FF9100', t: '36–100 ppm', w: 'wysokie' },
+    { max: Infinity, c: '#E53935', t: '>100 ppm', w: 'niebezpieczne' },
   ],
   rs: [   // gorszy stan = niższy Rs/R0, więc progi rosną
-    { max: 0.5, c: '#ef4444', t: '< 0,5', w: 'dużo gazu' },
-    { max: 0.8, c: '#facc15', t: '0,5–0,8', w: 'gaz' },
-    { max: Infinity, c: '#4ade80', t: '≥ 0,8', w: 'czyste powietrze' },
+    { max: 0.5, c: '#E53935', t: '< 0,5', w: 'dużo gazu' },
+    { max: 0.8, c: '#FFD600', t: '0,5–0,8', w: 'gaz' },
+    { max: Infinity, c: '#00C853', t: '≥ 0,8', w: 'czyste powietrze' },
   ],
   level: [
-    { max: 1, c: '#4ade80', t: '1' },
-    { max: 2, c: '#facc15', t: '2' },
-    { max: 3, c: '#fb923c', t: '3' },
-    { max: 4, c: '#ef4444', t: '4' },
+    { max: 1, c: '#00C853', t: '1' },
+    { max: 2, c: '#FFD600', t: '2' },
+    { max: 3, c: '#FF9100', t: '3' },
+    { max: 4, c: '#E53935', t: '4' },
   ],
 };
 
@@ -1927,8 +1964,8 @@ const AQ_PANELS = [
       { id: 'in_pm25_5m',   label: 'PM2.5 · 5 min', bands: 'pm25' },
       { id: 'in_pm25_24h',  label: 'PM2.5 · 24 h',  bands: 'pm25' },
     ],
-    legends: [{ name: 'PM2.5', bands: 'pm25' }, { name: 'PM10', bands: 'pm10' }],
-    note: 'Pył mierzony czujnikiem optycznym; wilgotność powietrza wpływa na odczyt.' },
+    rhHint: 'in_rh_corr',
+    legends: [{ name: 'PM2.5', bands: 'pm25' }, { name: 'PM10', bands: 'pm10' }] },
   { title: 'Temperatura i wilgotność (DHT11)',
     rows: [
       { id: 'in_air_t',     label: 'Temperatura' },
@@ -1937,7 +1974,6 @@ const AQ_PANELS = [
       { id: 'in_air_h24',   label: 'Wilgotność · 24 h' },
       { id: 'in_air_t_ext', label: 'Temperatura zewn.' },
       { id: 'in_air_h_ext', label: 'Wilgotność zewn.' },
-      { id: 'in_rh_corr',   label: 'Korekcja RH' },
     ],
     note: 'Temperatura i wilgotność są mierzone razem z pyłem - wilgotność wpływa na odczyt czujnika optycznego.' },
   { title: 'Gazy (TVOC 30712)',
@@ -1956,20 +1992,28 @@ const AQ_PANELS = [
   { title: 'MiCS5524 (ADS1115)',
     rows: [
       { id: 'in_mics_v',  label: 'Napięcie wyjścia' },
-      { id: 'in_mics_rs', label: 'Rs/R0', bands: 'rs' },
-      { id: 'in_mics_co', label: 'CO ekwiwalent', bands: 'co' },
-      { id: 'in_mics_wu', label: 'Wygrzewanie', hideZero: true },
+      { id: 'in_mics_rs', label: 'Rs/R0 (opór czujnika)', bands: 'rs' },
+      { id: 'in_mics_co', label: 'CO ekwiwalent', bands: 'co', hideOnWarmup: 'in_mics_wu' },
     ],
-    state: { id: 'in_mics_rs', bands: 'rs' },
-    legends: [{ name: 'Rs/R0', bands: 'rs', words: true }],
+    state: { id: 'in_mics_rs', bands: 'rs', warmup: 'in_mics_wu' },
+    sentences: [
+      { c: '#00C853', s: 'Rs/R0 ≥ 0,8 — czyste powietrze' },
+      { c: '#FFD600', s: 'Rs/R0 0,5–0,8 — gaz' },
+      { c: '#E53935', s: 'Rs/R0 < 0,5 — dużo gazu' },
+    ],
     note: 'Napięcie to surowe wyjście czujnika (niskie ≈ 0,01–0,1 V = czyste powietrze, rośnie przy gazie). Rs/R0 to opór względem bazy. CO ekwiwalent jest orientacyjny - czujnik jest nieselektywny (alkohol i wodór też podbijają wynik).' },
   { title: 'MQ-7 (CO, ADS1115 AIN1)',
     rows: [
       { id: 'in_mq7_v',  label: 'Napięcie wyjścia' },
-      { id: 'in_mq7_rs', label: 'Rs/R0', bands: 'rs' },
+      { id: 'in_mq7_rs', label: 'Rs/R0 (opór czujnika)', bands: 'rs' },
       { id: 'in_mq7_co', label: 'CO',    bands: 'co' },
     ],
-    legends: [{ name: 'CO', bands: 'co', words: true }],
+    sentences: [
+      { c: '#00C853', s: 'CO 0–9 ppm — czyste' },
+      { c: '#FFD600', s: 'CO 10–35 ppm — podwyższone' },
+      { c: '#FF9100', s: 'CO 36–100 ppm — wysokie' },
+      { c: '#E53935', s: 'CO >100 ppm — niebezpieczne' },
+    ],
     note: 'Orientacyjne stężenie tlenku węgla (krzywa przybliżona). Czujnik wymaga wygrzania 24–48 h i kalibracji R0 w czystym powietrzu.' },
 ];
 
@@ -1984,78 +2028,110 @@ function aqBand(bandsKey, v) {
 function renderAirPanels(grid, list) {
   const byId = new Map(list.map((c) => [c.id, c]));
   const used = new Set();
+  const cards = [];
 
-  const rowText = (c, spec) => {
-    const v = Number(c.value);
-    const txt = fmtChannelValue(c);
-    const unit = spec.unit || c.unit;
-    return { txt, unit, band: spec.bands ? aqBand(spec.bands, v) : null, v };
+  // Wiersz "nazwa ... wartość jednostka" (jak .metric na stacji powietrza).
+  const metric = (label, valText, unit, color) => {
+    const d = document.createElement('div');
+    d.className = 'm';
+    const sp = document.createElement('span');
+    sp.textContent = t(label);
+    const b = document.createElement('b');
+    b.textContent = valText;
+    if (color) b.style.color = color;
+    const em = document.createElement('em');
+    em.textContent = unit ? t(unit) : '';
+    d.append(sp, b, em);
+    return d;
   };
+
+  // Parametr, który najbardziej obniża jakość powietrza ("Największy wpływ").
+  const causeOf = () => {
+    const cands = [
+      ['PM2.5', 'in_pm25', 'pm25'], ['PM10', 'in_pm10', 'pm10'],
+      ['CO₂', 'co2', 'co2'], ['TVOC', 'tvoc', 'tvoc'], ['CH₂O', 'ch2o', 'ch2o'],
+    ];
+    let name = '', lvl = -1;
+    for (const [n, id, bandsKey] of cands) {
+      const c = byId.get(id);
+      if (!c) continue;
+      const b = aqBand(bandsKey, Number(c.value));
+      if (b) {
+        const l = AQ_BANDS[bandsKey].indexOf(b);
+        if (l > lvl) { lvl = l; name = n; }
+      }
+    }
+    return t('Największy wpływ') + ': ' + (name || '—');
+  };
+  const warmup = (id) => { const c = byId.get(id); return c && Number(c.value) > 0; };
 
   for (const p of AQ_PANELS) {
     // Panel pomijamy, gdy nie ma ani jednego jego kanału z odczytem.
-    const present = p.iaq ? ['in_iaq', 'in_motion'].filter((id) => byId.has(id))
-                          : (p.rows || []).map((r) => r.id).filter((id) => byId.has(id));
-    if (!present.length) continue;
+    const present = p.iaq ? (byId.has('in_iaq') || byId.has('in_motion'))
+                          : (p.rows || []).some((r) => byId.has(r.id));
+    if (!present) continue;
 
     const box = document.createElement('div');
-    box.className = 'aq-panel';
+    box.className = 'aqp' + (p.iaq ? ' aqi' : '');
     const h = document.createElement('h4');
     h.textContent = t(p.title);
     box.appendChild(h);
 
     if (p.iaq) {
       const iaq = byId.get('in_iaq');
-      if (iaq) {
-        const b = aqBand('iaq', Number(iaq.value));
-        const big = document.createElement('div');
-        big.className = 'aq-big';
-        big.innerHTML = `<div class="n" style="color:${b ? b.c : 'var(--text)'}">${fmtChannelValue(iaq)}</div>` +
-                        `<div class="w" style="color:${b ? b.c : 'var(--text)'}">${escapeHtml(t(b ? b.w : ''))}</div>`;
-        box.appendChild(big);
-        // Pasek progów z podziałką - jak na stronie stacji powietrza.
-        const bar = document.createElement('div');
-        bar.className = 'aq-bar';
-        AQ_BANDS.iaq.forEach((x, i) => {
-          const prev = i === 0 ? 0 : AQ_BANDS.iaq[i - 1].max;
-          const seg = document.createElement('span');
-          seg.style.background = x.c;
-          seg.style.flex = String(Math.min(x.max, 500) - prev);
-          bar.appendChild(seg);
-        });
-        box.appendChild(bar);
-        const ticks = document.createElement('div');
-        ticks.className = 'aq-ticks';
-        ['0', '50', '100', '150', '200', '300', '500'].forEach((n) => {
+      const b = aqBand('iaq', iaq ? Number(iaq.value) : NaN);
+      const big = document.createElement('div');
+      big.className = 'aqi-big';
+      big.textContent = iaq ? fmtChannelValue(iaq) : '—';
+      big.style.color = b ? b.c : 'var(--text)';
+      const lbl = document.createElement('div');
+      lbl.className = 'aqi-label';
+      lbl.textContent = b ? t(b.w) : t('czekam na dane…');
+      box.append(big, lbl);
+      const cause = document.createElement('div');
+      cause.className = 'aqi-cause';
+      cause.textContent = causeOf();
+      box.appendChild(cause);
+      // Skala IAQ (gradient EPA) ze znacznikiem bieżącej wartości.
+      const scale = document.createElement('div');
+      scale.className = 'aqi-scale';
+      const track = document.createElement('div');
+      track.className = 'aqi-track';
+      const marker = document.createElement('div');
+      marker.className = 'aqi-marker';
+      const pct = Math.max(0, Math.min(100, (iaq ? Number(iaq.value) : 0) / 500 * 100));
+      marker.style.left = pct + '%';
+      track.appendChild(marker);
+      const ticks = document.createElement('div');
+      ticks.className = 'aqi-ticks';
+      [[0, 0], [50, 10], [100, 20], [150, 30], [200, 40], [300, 60], [500, 100]]
+        .forEach(([n, pos]) => {
           const s = document.createElement('span');
           s.textContent = n;
+          s.style.left = pos + '%';
           ticks.appendChild(s);
         });
-        box.appendChild(ticks);
-        const lg = document.createElement('div');
-        lg.className = 'aq-legend';
-        // Legenda IAQ: kropka + słowo + zakres (ten sam układ co tam).
-        AQ_BANDS.iaq.forEach((x) => {
-          const row = document.createElement('div');
-          row.className = 'aq-lrow';
-          const dot = document.createElement('span');
-          dot.className = 'aq-dot';
-          dot.style.background = x.c;
-          row.appendChild(dot);
-          const nm = document.createElement('span');
-          nm.innerHTML = `<b>${escapeHtml(t(x.w))}</b> <span style="opacity:.8">${x.t}</span>`;
-          row.appendChild(nm);
-          lg.appendChild(row);
-        });
-        box.appendChild(lg);
-      }
+      scale.append(track, ticks);
+      box.appendChild(scale);
+      // Legenda kategorii IAQ.
+      const lg = document.createElement('div');
+      lg.className = 'aqi-legend';
+      AQ_BANDS.iaq.forEach((x) => {
+        const it = document.createElement('div');
+        it.className = 'aqi-lg';
+        it.innerHTML = `<span class="sw" style="background:${x.c}"></span>` +
+                       escapeHtml(t(x.w)) + `<em>${x.t}</em>`;
+        lg.appendChild(it);
+      });
+      box.appendChild(lg);
+      // Ruch.
       const mo = byId.get('in_motion');
-      if (mo) {
-        const r = document.createElement('div');
-        r.className = 'aq-sub';
-        r.textContent = Number(mo.value) > 0 ? t('Wykryto ruch') : t('Bez ruchu');
-        box.appendChild(r);
-      }
+      const motion = document.createElement('div');
+      motion.className = 'motion';
+      const on = mo && Number(mo.value) > 0;
+      motion.textContent = on ? '● ' + t('Ruch wykryty') : t('Bez ruchu');
+      if (on) motion.classList.add('on');
+      box.appendChild(motion);
       used.add('in_iaq');
       used.add('in_motion');
     } else {
@@ -2063,66 +2139,83 @@ function renderAirPanels(grid, list) {
         const c = byId.get(spec.id);
         if (!c) continue;
         used.add(spec.id);
-        // Wiersz informacyjny (np. wygrzewanie) pokazujemy tylko, gdy jest aktywny.
-        if (spec.hideZero && !Number(c.value)) continue;
-        const rt = rowText(c, spec);
-        const row = document.createElement('div');
-        row.className = 'aq-row';
-        const k = document.createElement('span');
-        k.className = 'k';
-        k.textContent = t(spec.label);
-        const v = document.createElement('span');
-        v.className = 'v';
-        v.innerHTML = escapeHtml(rt.txt) +
-          (rt.unit ? ' <i>' + escapeHtml(t(rt.unit)) + '</i>' : '');
-        if (rt.band) v.style.color = rt.band.c;
-        row.appendChild(k);
-        row.appendChild(v);
-        box.appendChild(row);
+        if (spec.hideOnWarmup && warmup(spec.hideOnWarmup)) continue;
+        const b = spec.bands ? aqBand(spec.bands, Number(c.value)) : null;
+        box.appendChild(metric(spec.label, fmtChannelValue(c), c.unit || '', b ? b.c : ''));
       }
       if (p.state) {
         const c = byId.get(p.state.id);
-        const b = c ? aqBand(p.state.bands, Number(c.value)) : null;
-        if (b) {
-          const row = document.createElement('div');
-          row.className = 'aq-row';
-          row.innerHTML = `<span class="k">${t('Stan')}</span>` +
-            `<span class="v aq-state" style="color:${b.c}">${escapeHtml(t(b.w))}</span>`;
-          box.appendChild(row);
+        if (c) {
+          const warm = p.state.warmup && warmup(p.state.warmup);
+          if (warm) used.add(p.state.warmup);
+          let txt = '', col = '';
+          if (warm) txt = t('rozgrzewanie…');
+          else { const b = aqBand(p.state.bands, Number(c.value)); if (b) { txt = t(b.w); col = b.c; } }
+          box.appendChild(metric('Stan', txt || '—', '', col || ''));
         }
       }
+      // Legenda progów: poziome wiersze "nazwa [kolor]zakres ...".
       if (p.legends) {
         const lg = document.createElement('div');
-        lg.className = 'aq-legend';
+        lg.className = 'lgd';
         for (const spec of p.legends) {
-          const bands = AQ_BANDS[spec.bands];
-          bands.forEach((band, i) => {
-            const row = document.createElement('div');
-            row.className = 'aq-lrow';
-            const dot = document.createElement('span');
-            dot.className = 'aq-dot';
-            dot.style.background = band.c;
-            row.appendChild(dot);
-            const txt = spec.words === true
-                ? t(spec.name) + ' ' + band.t + ' — ' + t(band.w)
-                : (spec.words ? t(spec.words[i]) : (t(spec.name) + ' ' + band.t));
-            const sp = document.createElement('span');
-            sp.textContent = txt;
-            row.appendChild(sp);
-            lg.appendChild(row);
+          const row = document.createElement('div');
+          row.className = 'lgd-row';
+          const nm = document.createElement('span');
+          nm.className = 'nm';
+          nm.textContent = t(spec.name);
+          row.appendChild(nm);
+          AQ_BANDS[spec.bands].forEach((band, i) => {
+            const it = document.createElement('span');
+            it.className = 'lgd-i';
+            const txt = spec.words === true ? (band.t + ' — ' + t(band.w))
+                       : (spec.words ? t(spec.words[i]) : band.t);
+            it.innerHTML = `<i class="sw" style="background:${band.c}"></i>` + escapeHtml(txt);
+            row.appendChild(it);
           });
+          lg.appendChild(row);
         }
         box.appendChild(lg);
       }
+      // Legenda zdań (MiCS / MQ-7).
+      if (p.sentences) {
+        const lg = document.createElement('div');
+        lg.className = 'sent';
+        for (const it of p.sentences) {
+          const item = document.createElement('div');
+          item.className = 'sent-i';
+          item.innerHTML = `<span class="sw" style="background:${it.c}"></span> ` + escapeHtml(t(it.s));
+          lg.appendChild(item);
+        }
+        box.appendChild(lg);
+      }
+      // Korekcja wilgotności PM.
+      if (p.rhHint) {
+        const c = byId.get(p.rhHint);
+        if (c) used.add(c.id);
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent = (c && isFinite(Number(c.value)))
+          ? 'Korekcja wilgotności PM: ON (RH ' + Math.round(Number(c.value)) + '%)'
+          : t('Korekcja wilgotności PM: OFF (RH poniżej progu)');
+        box.appendChild(hint);
+      }
       if (p.note) {
-        const n = document.createElement('div');
-        n.className = 'aq-note';
+        const n = document.createElement('p');
+        n.className = 'hint';
         n.textContent = t(p.note);
         box.appendChild(n);
       }
     }
-    grid.appendChild(box);
+    cards.push(box);
   }
+
+  if (!cards.length) return used;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'aqp-grid';
+  cards.forEach((c) => wrap.appendChild(c));
+  grid.appendChild(wrap);
   return used;
 }
 
@@ -2171,13 +2264,13 @@ function buildThermo(v, min, max) {
   const f = clamp01((v - min) / (max - min));
   const hue = Math.round(215 - f * 215);                 // niebieski -> czerwony
   const color = `hsl(${hue}, 85%, 45%)`;
-  const svg = wxSvg(46, 115, '0 0 60 150');
+  const svg = wxSvg(44, 106, '0 0 60 150');
   let scale = '';
   for (let i = 0; i <= 6; i++) {
     const t = min + (max - min) * i / 6;
     const y = (115 - clamp01((t - min) / (max - min)) * 103).toFixed(1);
     scale += `<line x1="17" y1="${y}" x2="22" y2="${y}" stroke="#64748b" stroke-width="1"/>` +
-             `<text x="14" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="7">${Math.round(t)}</text>`;
+             `<text x="14" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="8">${Math.round(t)}</text>`;
   }
   svg.innerHTML =
     `<rect x="22" y="8" width="16" height="96" rx="8" fill="none" stroke="#334155" stroke-width="2"/>` +
@@ -2196,7 +2289,7 @@ function buildDial(v, min, max) {
   if (v > max) max = Math.ceil(v) + 4;
   const f = clamp01((v - min) / (max - min));
   const cx = 55, cy = 58;
-  const svg = wxSvg(110, 110, '0 0 110 110');
+  const svg = wxSvg(96, 96, '0 0 110 110');
   let inner = `<circle cx="${cx}" cy="${cy}" r="44" fill="none" stroke="#273449" stroke-width="2"/>`;
   for (const [a0, a1, c] of [[-135, -45, '#4fc3f7'], [-45, 45, '#81c784'], [45, 135, '#ffb74d']]) {
     inner += `<path d="${wxArc(cx, cy, 39, a0, a1)}" fill="none" stroke="${c}" stroke-width="6"/>`;
@@ -2226,13 +2319,13 @@ function buildDrop(v, min, max) {
   const f = clamp01((v - min) / (max - min));
   const id = 'wxDrop' + (++wxUid);
   const path = 'M35,6 C56,34 62,54 62,72 A27,27 0 0 1 8,72 C8,54 14,34 35,6 Z';
-  const svg = wxSvg(74, 100, '0 0 84 120');
+  const svg = wxSvg(68, 92, '0 0 84 120');
   let scale = '';
   for (let i = 0; i <= 4; i++) {
     const val = min + (max - min) * i / 4;
     const y = (104 - i * 23).toFixed(1);
     scale += `<line x1="66" y1="${y}" x2="70" y2="${y}" stroke="#64748b" stroke-width="1"/>` +
-             `<text x="64" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="7">${Math.round(val)}</text>`;
+             `<text x="64" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="8">${Math.round(val)}</text>`;
   }
   svg.innerHTML =
     `<defs><clipPath id="${id}"><path d="${path}"/></clipPath></defs>` +
@@ -2251,7 +2344,7 @@ function buildBeaker(v, max) {
   const f = clamp01(v / m);
   const id = 'wxBeaker' + (++wxUid);
   const shape = 'M20,6 L16,14 L10,112 L60,112 L54,14 L50,6 Z';
-  const svg = wxSvg(74, 100, '0 0 88 120');
+  const svg = wxSvg(68, 92, '0 0 88 120');
   let inner =
     `<defs><clipPath id="${id}"><path d="${shape}"/></clipPath></defs>` +
     `<path d="${shape}" fill="none" stroke="#334155" stroke-width="2"/>` +
@@ -2260,7 +2353,7 @@ function buildBeaker(v, max) {
     const val = m * i / 4;
     const yy = (112 - (i / 4) * 92).toFixed(1);
     inner += `<line x1="60" y1="${yy}" x2="65" y2="${yy}" stroke="#64748b" stroke-width="1"/>` +
-             `<text x="67" y="${(Number(yy) + 2.5).toFixed(1)}" fill="#94a3b8" font-size="7">${wxScaleLabel(val)}</text>`;
+             `<text x="67" y="${(Number(yy) + 2.5).toFixed(1)}" fill="#94a3b8" font-size="8">${wxScaleLabel(val)}</text>`;
   }
   svg.innerHTML = inner;
   const fill = svg.querySelector('.wx-fill');
@@ -2269,7 +2362,7 @@ function buildBeaker(v, max) {
 }
 
 function buildWind(dir) {
-  const svg = wxSvg(90, 90, '0 0 100 100');
+  const svg = wxSvg(84, 84, '0 0 100 100');
   svg.innerHTML =
     `<circle cx="50" cy="50" r="44" fill="none" stroke="#273449" stroke-width="2"/>` +
     `<text x="50" y="16" text-anchor="middle" fill="#94a3b8" font-size="9">N</text>` +
@@ -2284,7 +2377,7 @@ function buildWind(dir) {
 
 function buildBar(v, min, max, color) {
   const f = clamp01((v - min) / (max - min));
-  const svg = wxSvg(110, 24, '0 0 120 26');
+  const svg = wxSvg(108, 22, '0 0 120 26');
   svg.innerHTML =
     `<rect x="0" y="5" width="120" height="6" rx="3" fill="#3b4a5f"/>` +
     `<rect class="wx-fillw" x="0" y="5" width="0" height="6" rx="3" fill="${color}"/>` +
@@ -2395,6 +2488,9 @@ function renderWxGauges(grid, specs, byId) {
   box.appendChild(h);
   const row = document.createElement('div');
   row.className = 'wx-grid';
+  // Wszystkie wskaźniki w jednej linii (tyle kolumn, ile kart) - na wąskim
+  // ekranie media query z CSS przywraca zawijanie.
+  row.style.gridTemplateColumns = 'repeat(' + cards.length + ', 1fr)';
   cards.forEach(cd => row.appendChild(cd));
   box.appendChild(row);
   grid.appendChild(box);
