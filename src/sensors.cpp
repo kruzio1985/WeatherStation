@@ -243,6 +243,21 @@ bool SensorManager::begin() {
   addVev("vev_uv",         "UV (VEVOR)",          "",     1, "", "", "mdi:weather-sunny-alert");
   addVev("vev_light",      "Lux (VEVOR)",         "lx",   0, "illuminance", "lx", "mdi:white-balance-sunny");
 
+  // Pogoda z internetu (Open-Meteo) - kanały net_* do porównania z naszymi
+  // czujnikami. Widoczne na pulpicie i w CSV/MQTT jak VEVOR (można wyłączyć
+  // w zakładce Czujniki).
+  auto addNet = [&](const char* id, const char* name, const char* unit, uint8_t dec,
+                    const char* haClass, const char* haUnit, const char* icon) {
+    Channel c; c.id = id; c.name = name; c.unit = unit; c.decimals = dec;
+    c.zone = "out"; c.enabled = true;
+    c.haClass = haClass; c.haUnit = haUnit; c.haIcon = icon;
+    channels_.push_back(c);
+  };
+  addNet("net_temp", "Temperatura (internet)", "°C", 1, "temperature", "°C", "mdi:thermometer");
+  addNet("net_hum",  "Wilgotność (internet)",  "%",  1, "humidity",    "%",  "mdi:water-percent");
+  addNet("net_wind", "Wiatr (internet)",       "km/h", 1, "wind_speed", "km/h", "mdi:weather-windy");
+  addNet("net_app",  "Odczuwalna (internet)",  "°C", 1, "temperature", "°C", "mdi:thermometer");
+
   // Jakość powietrza na zewnątrz (PMS5003)
   Channel q1; q1.id="pm1"; q1.name="PM 1.0"; q1.unit="µg/m³"; q1.decimals=0;
   q1.zone="out";
@@ -337,9 +352,10 @@ bool SensorManager::begin() {
       Wire.write(0x01); // Power ON - po włączeniu zasilania BH1750 jest w Power Down
       Wire.endTransmission();
       delay(10);
-      Wire.beginTransmission(a);
-      Wire.write(0x10); // tryb ciągły, rozdzielczość 1 lx
-      Wire.endTransmission();
+      // Trybu ciągłego celowo nie włączamy: pomiar zleca readBH1750() jako
+      // jednorazowy. W trybie ciągłym BH1750 przytrzymuje SCL do ~180 ms,
+      // a sterownik I2C ESP32 gubi wtedy synchronizację i czujnik przestaje
+      // odświeżać wynik (kanał "light" zamarzał na 0 albo na maksimum).
       bhOk_ = true;
       bhAddr_ = a;
       setPresent("light", true);
@@ -529,6 +545,25 @@ float SensorManager::valueByHaClass(const char* haClass, const char* zone) {
   return out;
 }
 
+// Najniższa potwierdzona temperatura w strefie zewnętrznej. Bierzemy minimum,
+// a nie pierwszy kanał z listy, bo obudowa stacji nagrzewa się od elektroniki
+// (kanał "temp" potrafi pokazywać +25 °C przy mrozie na dworze) - jeśli choć
+// jeden czujnik na zewnątrz mierzy poniżej progu, śnieg jest możliwy.
+// Zwracamy NAN, gdy żaden czujnik zewnętrzny nie podał sensownej temperatury.
+float SensorManager::coldestOutdoorTemp() {
+  float coldest = NAN;
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  for (auto& c : channels_) {
+    if (!c.enabled || !c.measured || c.zone != "out") continue;
+    if (c.haClass != "temperature") continue;
+    float v = c.value;
+    if (isnan(v) || isinf(v) || v < -60.0f || v > 80.0f) continue;
+    if (isnan(coldest) || v < coldest) coldest = v;
+  }
+  if (mutex_) xSemaphoreGive(mutex_);
+  return coldest;
+}
+
 // Zapisuje wartość kanału i oznacza go jako realnie zmierzony.
 void SensorManager::putValue(const String& id, float v, bool valid) {
   Channel* c = ch(id);
@@ -550,19 +585,89 @@ void SensorManager::readAll() {
   bridgeMissing();
 }
 
-// Wypełnia główny kanał ciśnienia z BMP280/BMP390 sterownika T/H/P, gdy
-// na płycie nie ma BME280 (press bez pomiaru). Dzięki temu pulpit pokazuje
-// ciśnienie z zewnętrznego czujnika BMP280.
+// Barometry na magistrali - który kanał zastępuje główne "Ciśnienie", gdy
+// stacja nie ma własnego barometru (BME280/BMP581 na I2C). Kolejność = priorytet.
+static const char* const PRESS_SRC[] = {
+  "ths_bmp280_p", "bmp_p", "ths_bmp390_p", "ths_dps_p", "ths_lps22_p",
+  "ths_lps25_p", "ths_lps28_p", "ths_mpl_p", "ths_ms5611_p",
+};
+// To samo dla głównej temperatury, gdy czujnik po UART (Tuya) milczy.
+static const char* const TEMP_SRC[] = {
+  "ths_bmp280_t", "bmp_t", "ths_bmp390_t", "ths_dps_t", "ths_lps22_t",
+  "ths_mpl_t", "ths_sht_t", "ths_aht_t", "ths_hdc_t", "ths_si70_t",
+  "ths_tmp117", "ths_mcp9808", "rtd_temp",
+};
+#define SRCS_N(a) (sizeof(a) / sizeof((a)[0]))
+
+// Wypełnia kanał główny odczytem z pierwszego dostępnego czujnika sterownika i
+// oznacza ten czujnik jako "alias". Kopia jest robiona przy KAŻDYM przebiegu
+// (a nie raz, gdy kanał był pusty) - poprzednia wersja kopiowała tylko raz, więc
+// "Ciśnienie" zamarzało na wartości z chwili startu, a odczyt z BMP280 szedł
+// osobno jako drugi kafelek z prawie tą samą liczbą.
+void SensorManager::adoptMain(Channel* main, const char* const* srcs, size_t n) {
+  if (!main) return;
+
+  Channel* picked = nullptr;
+  for (size_t i = 0; i < n && !picked; i++) {
+    Channel* s = ch(srcs[i]);
+    if (s && s->measured && !isnan(s->value)) picked = s;
+  }
+  // Znacznik zdejmujemy ze wszystkich kandydatów, żeby nie został na kanale,
+  // który przestał być źródłem (np. po dołożeniu własnego czujnika).
+  for (size_t i = 0; i < n; i++) {
+    Channel* s = ch(srcs[i]);
+    if (s) s->alias = (s == picked);
+  }
+  if (!picked) return;
+
+  main->value = picked->value;
+  main->measured = true;
+  main->present = true;
+  main->detected = true;
+
+  // Jednorazowa informacja w logu, który czujnik zasila kanał główny.
+  static String logged;
+  if (logged.indexOf(main->id) < 0) {
+    logged += main->id;
+    logged += '|';
+    LOG_I("%s: brak własnego czujnika - używam odczytu z %s (%.2f)",
+          main->id.c_str(), picked->name.c_str(), (double)picked->value);
+  }
+}
+
+// Wypełnia główne kanały z czujników sterownika T/H/P lub z VEVOR, gdy
+// czujnik na płycie głównej nie jest zamontowany albo mierzy w ogrzanej
+// obudowie - pulpit pokazuje wtedy sensowną temperaturę, ciśnienie i wilgotność.
 void SensorManager::bridgeMissing() {
   if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
-  Channel* press = ch("press");
-  Channel* bp = ch("ths_bmp280_p");
-  if (press && bp && bp->measured && !isnan(bp->value) &&
-      (!press->measured || isnan(press->value))) {
-    press->value = bp->value;
-    press->measured = true;
-    press->present = true;
-    press->detected = true;
+
+  // Kanał główny bierzemy z czujnika na magistrali tylko wtedy, gdy nie ma
+  // własnego źródła: "press" ma je w BME280 (bmeOk_), "temp" w czujniku po
+  // UART (tuyOk_). Gdy własny czujnik działa, znaczniki alias są zdejmowane i
+  // oba odczyty pokazują się osobno - bo to naprawdę dwa różne czujniki.
+  if (!bmeOk_) adoptMain(ch("press"), PRESS_SRC, SRCS_N(PRESS_SRC));
+  if (!tuyOk_) adoptMain(ch("temp"),  TEMP_SRC,  SRCS_N(TEMP_SRC));
+
+  // Wilgotność względna czujnika w ogrzanej obudowie jest zaniżona (ta sama
+  // para wodna przy wyższej temperaturze daje niższe RH), a para
+  // temperatura/wilgotność trafia do CSV, prognozy i serwisów. Dlatego na
+  // życzenie główna wilgotność może pochodzić z czujnika na zewnątrz.
+  if (config.extraF(KEY_HUM_FROM_VEV, 0.0f) >= 0.5f) {
+    Channel* hum = ch("hum");
+    Channel* vh = ch("vev_hum");
+    const bool useVev = (hum && vh && vh->measured && !isnan(vh->value));
+    if (useVev) {
+      hum->value = vh->value;
+      hum->measured = true;
+      hum->present = true;
+      hum->detected = true;
+    }
+    // Wilgotność VEVOR-a zostaje osobnym kanałem w sekcji "VEVOR 868 MHz".
+    // Główna wilgotność może z niego korzystać (ustawienie "wilgotność z
+    // VEVOR"), ale kafel VEVOR-a i tak pokazuje swoją wartość, a nie "—".
+    if (vh) vh->alias = false;
+  } else if (Channel* vh = ch("vev_hum")) {
+    vh->alias = false;   // własny czujnik wilgotności -> VEVOR jest osobnym odczytem
   }
   if (mutex_) xSemaphoreGive(mutex_);
 }
@@ -698,49 +803,76 @@ void SensorManager::readBME280() {
 #endif
 }
 
+// -------------------------------------------------------------
+//  BH1750 - pomiar jednorazowy
+//
+//  W trybie ciągłym BH1750 przytrzymuje linię SCL przez cały pomiar
+//  (do ~180 ms). Sterownik I2C w ESP32 nie obsługuje tak długiego
+//  przytrzymania dobrze: gdy transakcja zerwie się w połowie, czujnik
+//  przestaje odświeżać rejestr wyniku i kanał "light" zamiera na ostatniej
+//  wartości - raz na zerze, raz na maksimum (65535). Objaw nie zależy od
+//  tego, czy układ jest oryginalny, czy tani - to kwestia protokołu.
+//
+//  Tryb jednorazowy nie ma tego problemu: każdy pomiar to osobne zlecenie
+//  (Power ON + One-Time H-Res), po którym czujnik sam wraca do Power Down.
+//  Nie ma stanu, który mógłby się rozjechać. Zlecenie i odczyt są rozłożone
+//  na dwa wywołania, żeby nie blokować pętli głównej przez ~200 ms.
+// -------------------------------------------------------------
+
+// Odczyt surowych 2 bajtów wyniku (kolejność: MSB, LSB).
+static bool bhReadRaw(uint8_t addr, uint16_t& raw) {
+  if (Wire.requestFrom((int)addr, 2) != 2) return false;
+  raw = ((uint16_t)Wire.read() << 8) | Wire.read();
+  return true;
+}
+
+// Zlecenie pomiaru jednorazowego w rozdzielczości 1 lx.
+static bool bhTrigger(uint8_t addr) {
+  Wire.beginTransmission(addr);
+  Wire.write(0x01);                  // Power ON
+  if (Wire.endTransmission() != 0) return false;
+  Wire.beginTransmission(addr);
+  Wire.write(0x20);                  // One-Time H-Resolution Mode
+  return Wire.endTransmission() == 0;
+}
+
 void SensorManager::readBH1750() {
   if (!bhOk_) return;
 
-  // BH1750 w trybie ciągłym potrafi przeciągać SCL do ~180 ms (pomiar trwa
-  // 120-180 ms). Globalny timeout I2C 20 ms był za krótki i odczyt wracał
-  // z 0 bajtów, przez co lux nigdy nie trafiał do kanału.
+  // Pomiar w trybie H-res trwa 120-180 ms - dopiero po tym czasie rejestr
+  // wyniku jest gotowy. Dłuższy timeout I2C, bo pojedyncza transakcja bywa
+  // wolna przy długich przewodach.
   const uint16_t oldTimeout = Wire.getTimeOut();
   Wire.setTimeOut(250);
 
-  bool ok = false;
   static bool firstLogged = false;
-  static unsigned zeroCount = 0;
-  for (int attempt = 0; attempt < 3 && !ok; attempt++) {
-    int n = Wire.requestFrom((int)bhAddr_, 2);
-    if (n == 2) {
-      uint16_t raw = ((uint16_t)Wire.read() << 8) | Wire.read();
-      float lux = raw / 1.2f;
+  static unsigned long errLogMs = 0;
+
+  if (bhPending_) {
+    if ((long)(millis() - bhTriggerMs_) < 200) return;   // jeszcze mierzy
+
+    bhPending_ = false;
+    uint16_t raw = 0;
+    if (bhReadRaw(bhAddr_, raw)) {
+      const float lux = raw / 1.2f;
       if (!firstLogged) {
         LOG_I("BH1750: pierwszy odczyt raw=%u -> %.1f lx", (unsigned)raw, (double)lux);
         firstLogged = true;
-      } else if (raw == 0) {
-        zeroCount++;
-        if (zeroCount == 1 || zeroCount % 20 == 0)
-          LOG_W("BH1750: raw=0 mimo światła (odczyt #%u)", zeroCount);
       }
       ChannelConfig c = config.channelCfg("light");
       if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
       putValue("light", lux + c.offset);
       if (mutex_) xSemaphoreGive(mutex_);
-      ok = true;
-    } else {
-      LOG_W("BH1750: odczyt zwrócił %d bajtów (oczekiwano 2), próba %d", n, attempt + 1);
-      // Czujnik mógł wypaść z trybu ciągłego (np. zanik zasilania) -
-      // przywracamy Power ON + tryb ciągły H-res i próbujemy ponownie.
-      Wire.beginTransmission(bhAddr_);
-      Wire.write(0x01);
-      Wire.endTransmission();
-      delay(10);
-      Wire.beginTransmission(bhAddr_);
-      Wire.write(0x10);
-      Wire.endTransmission();
-      delay(20);
+    } else if (millis() - errLogMs > 60000UL) {
+      errLogMs = millis();
+      LOG_W("BH1750: brak wyniku pomiaru (oczekiwano 2 bajtów)");
     }
+  } else if (bhTrigger(bhAddr_)) {
+    bhPending_ = true;
+    bhTriggerMs_ = millis();
+  } else if (millis() - errLogMs > 60000UL) {
+    errLogMs = millis();
+    LOG_W("BH1750: brak odpowiedzi na I2C przy zlecaniu pomiaru - sprawdź SDA/SCL");
   }
 
   Wire.setTimeOut(oldTimeout);
@@ -956,36 +1088,64 @@ void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float g
   int weekKey  = (tmv.tm_year + 1900) * 100 + ((tmv.tm_yday - daysSinceMon) / 7);
   int monthKey = (tmv.tm_year + 1900) * 100 + (tmv.tm_mon + 1);
 
+  // Sumy deszczu liczymy narastająco i trzymamy w NVS, a nie jako różnicę
+  // względem "bazy". Poprzednia wersja zapisywała bazę = rain_mm na początku
+  // okresu, więc gdy licznik VEVOR-a cofnął się (reset stacji VEVOR, nowa
+  // doba albo restart sniffera), suma doby/miesiąca spadała do zera i po
+  // restarcie stacji "deszcz w tym miesiącu" znikał.
   bool changed = false;
-  if (config.state.vevRainDay != dayKey) {
-    config.state.vevRainDay = dayKey;
-    config.state.vevRainBaseDay = rainMm;
-    changed = true;
-  } else if (rainMm < config.state.vevRainBaseDay) {
-    config.state.vevRainBaseDay = rainMm;    // licznik VEVOR się zresetował
-    changed = true;
-  }
-  if (config.state.vevRainWeek != weekKey) {
-    config.state.vevRainWeek = weekKey;
-    config.state.vevRainBaseWeek = rainMm;
-    changed = true;
-  } else if (rainMm < config.state.vevRainBaseWeek) {
-    config.state.vevRainBaseWeek = rainMm;
-    changed = true;
-  }
-  if (config.state.vevRainMonth != monthKey) {
-    config.state.vevRainMonth = monthKey;
-    config.state.vevRainBaseMonth = rainMm;
-    changed = true;
-  } else if (rainMm < config.state.vevRainBaseMonth) {
-    config.state.vevRainBaseMonth = rainMm;
-    changed = true;
-  }
-  if (changed) config.saveState();
+  if (!isnan(rainMm)) {
+    if (config.state.vevRainDay != dayKey) {
+      config.state.vevRainDay = dayKey;
+      config.state.vevRainDayAcc = 0.0f;
+      changed = true;
+    }
+    if (config.state.vevRainWeek != weekKey) {
+      config.state.vevRainWeek = weekKey;
+      config.state.vevRainWeekAcc = 0.0f;
+      changed = true;
+    }
+    if (config.state.vevRainMonth != monthKey) {
+      config.state.vevRainMonth = monthKey;
+      config.state.vevRainMonthAcc = 0.0f;
+      changed = true;
+    }
 
-  float rainDay   = fmaxf(0.0f, rainMm - config.state.vevRainBaseDay);
-  float rainWeek  = fmaxf(0.0f, rainMm - config.state.vevRainBaseWeek);
-  float rainMonth = fmaxf(0.0f, rainMm - config.state.vevRainBaseMonth);
+    // Deszcz liczymy jako przyrost licznika VEVOR-a względem ostatniej
+    // "potwierdzonej" wartości (vevRainMax). Ważne: sniffer 868 MHz potrafi
+    // zdekodować pojedynczą ramkę z absurdalnie wysokim deszczem (błędna
+    // ramka / sąsiednia stacja VEVOR), a potem wrócić do poprawnej wartości.
+    // Dlatego przyrost większy niż VEV_RAIN_MAX_STEP (mm na ~20 s) traktujemy
+    // jako błąd odbioru i całkowicie ignorujemy - bez tego "dzisiaj" potrafiło
+    // urosnąć o 61,28 mm mimo braku opadów.
+    const float VEV_RAIN_MAX_STEP = 20.0f;
+    if (config.state.vevRainMax < 0.0f) {
+      // Pierwsza próbka (albo po wyczyszczeniu pamięci) - przyjmujemy bieżący
+      // stan licznika jako punkt startu; nie wiemy, ile napadało wcześniej.
+      config.state.vevRainMax = rainMm;
+      changed = true;
+    } else {
+      float delta = rainMm - config.state.vevRainMax;
+      if (delta >= 0.0f && delta <= VEV_RAIN_MAX_STEP) {
+        config.state.vevRainDayAcc   += delta;
+        config.state.vevRainWeekAcc  += delta;
+        config.state.vevRainMonthAcc += delta;
+        config.state.vevRainMax = rainMm;
+        if (delta > 0.0f) changed = true;
+      } else if (delta < 0.0f) {
+        // Licznik cofnął się (reset stacji VEVOR, nowa doba, restart sniffera)
+        // - historii NIE zerujemy, przyjmujemy nową, niższą bazę.
+        config.state.vevRainMax = rainMm;
+        changed = true;
+      }
+      // delta > VEV_RAIN_MAX_STEP: podejrzany skok - ignorujemy próbkę w całości.
+    }
+    if (changed) config.saveState();
+  }
+
+  float rainDay   = config.state.vevRainDayAcc;
+  float rainWeek  = config.state.vevRainWeekAcc;
+  float rainMonth = config.state.vevRainMonthAcc;
 
   // Intensywność "teraz" (mm/h) z różnicy dwóch ostatnich próbek
   float rainNow = 0.0f;
@@ -1022,6 +1182,21 @@ void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float g
   LOG_I("VEVOR: %.1f°C %.0f%% wiatr %.1f km/h (poryw %.1f) kier %.0f° deszcz %.1f mm (dziś %.1f, teraz %.1f mm/h)",
         (double)tempC, (double)humPct, (double)(windMs * 3.6f), (double)(gustMs * 3.6f),
         (double)dirDeg, (double)rainMm, (double)rainDay, (double)rainNow);
+}
+
+void SensorManager::publishNetWeather(float tempC, float humPct, float windKmh, float feelsC) {
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  auto pub = [&](const char* id, float val, bool have) {
+    if (!have || isnan(val)) return;
+    setPresent(id, true);
+    setDetected(id, true);
+    putValue(id, val, true);
+  };
+  pub("net_temp", tempC,   !isnan(tempC));
+  pub("net_hum",  humPct,  !isnan(humPct));
+  pub("net_wind", windKmh, !isnan(windKmh));
+  pub("net_app",  feelsC,  !isnan(feelsC));
+  if (mutex_) xSemaphoreGive(mutex_);
 }
 
 void SensorManager::readWind() {

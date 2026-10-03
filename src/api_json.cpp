@@ -21,6 +21,7 @@
 #include "pinmap.h"
 #include "sensors.h"
 #include "sd_card.h"
+#include "camera.h"
 #include "led_ring.h"
 #include "syslog.h"
 #include "nvs_store.h"
@@ -196,6 +197,7 @@ static String buildStatus() {
     co["detected"] = c.detected;
     co["measured"] = c.measured;
     co["decimals"] = c.decimals;
+    co["alias"] = c.alias;     // kanał tylko źródłowy - pulpit go pomija
     co["remote"] = c.remote;   // kanał z drugiego ESP (po RS485)
     co["remote_addr"] = c.remote ? c.remoteAddr : 0;   // adres węzła magistrali
     if (isnan(c.value)) co["value"] = nullptr;
@@ -485,7 +487,12 @@ static String buildDiagnostics() {
           extraAq.length() ? extraAq : String("nie wykryto (SEN5x / SPS30)"), extraAq.length() ? "ok" : "warn");
   diagRow(cc, "Strefy czujników",
           String("wewnętrzne ") + String(inCnt) + ", zewnętrzne " + String(outCnt));
-  diagRow(cc, "Kamera", "planowana", nullptr);
+  diagRow(cc, "Kamera", camera.enabled()
+              ? (camera.remoteUrl().length()
+                     ? String("zewnętrzna (") + camera.remoteUrl() + ")"
+                     : String("lokalna, ") + String(camera.modelName()))
+              : String("wyłączona w ustawieniach"),
+          camera.enabled() ? "ok" : "warn");
 
   // --- Pierścień LED RGB ---
   JsonArray rr = diagCard(d, "Pierścień LED RGB (status pogody)");

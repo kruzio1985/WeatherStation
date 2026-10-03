@@ -159,13 +159,20 @@ struct StationState {
   unsigned long rainStartTips = 0;   // impulsy na początku bieżącej doby
   int rainDay = -1;                  // unikalny klucz doby (rok*1000 + dzień roku)
 
-  // Deszcz ze stacji VEVOR (sniffer 868 MHz): bazy rain_mm na początku okresu
-  float vevRainBaseDay = 0.0f;       // suma rain_mm na początku doby
+  // Deszcz ze stacji VEVOR (sniffer 868 MHz): sumy narastające, zapisywane
+  // w NVS przy każdej zmianie, więc przetrwają restart stacji. Przyrost
+  // liczymy względem najwyższej dotąd wartości licznika (vevRainMax), a
+  // cofnięcie licznika (reset stacji VEVOR, nowa doba albo restart sniffera)
+  // NIE kasuje historii - inaczej "deszcz w tym miesiącu" znikałby po każdym
+  // restarcie.
+  float vevRainMax = -1.0f;          // najwyższa dotychczasowa wartość rain_mm
+  float vevRainDayAcc = 0.0f;        // suma doby (mm)
   int   vevRainDay = -1;             // klucz doby (rok*1000 + dzień roku)
-  float vevRainBaseWeek = 0.0f;      // suma rain_mm na początku tygodnia (ISO)
+  float vevRainWeekAcc = 0.0f;       // suma tygodnia ISO (mm)
   int   vevRainWeek = -1;            // rok*100 + numer tygodnia ISO
-  float vevRainBaseMonth = 0.0f;     // suma rain_mm na początku miesiąca
+  float vevRainMonthAcc = 0.0f;      // suma miesiąca (mm)
   int   vevRainMonth = -1;           // rok*100 + miesiąc
+  int   vevRainVer = 0;              // wersja algorytmu - do jednorazowej migracji
 };
 
 // Kolory stanów pogody dla pierścienia LED RGB (0xRRGGBB).
@@ -279,6 +286,8 @@ public:
   uint16_t camMaxPhotos();     // limit liczby zdjęć na karcie (0 = bez limitu)
   uint16_t camMaxMb();         // limit łącznego rozmiaru zdjęć w MB (0 = bez limitu)
   String   camRemoteUrl();     // adres zewnętrznej kamery (ESP32-CAM), np. http://192.168.1.150/capture
+  uint16_t camRotate();        // obrót obrazu przy podglądzie i analizie: 0/90/180/270 stopni
+                               // (90 = w prawo; ustawiane, gdy kamera wisi bokiem)
 
   // Czujnik jakości powietrza wewnętrznego (SCD4x / SGP30)
   // 0 = wykryj automatycznie, 1 = SCD40/SCD41 (CO2), 2 = SGP30/SGP40 (eCO2+TVOC),
@@ -332,6 +341,10 @@ public:
   void  setExtraF(const char* key, float value);
   void  removeExtra(const char* key);
   bool  hasExtra(const char* key);
+
+  // Ten sam mechanizm dla wartości tekstowych (np. listy identyfikatorów kanałów).
+  String extraS(const char* key, const String& def);
+  void   setExtraS(const char* key, const String& value);
 
   // Serwisy zewnętrzne (Weather Underground, PWSWeather, Windy, OpenWeather,
   // ThingSpeak, własny adres). Cała sekcja jest jednym obiektem JSON, żeby

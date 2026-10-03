@@ -22,6 +22,7 @@ struct ExtDevice {
   bool   ok = false;      // ostatni odczyt udany
   unsigned long lastMs = 0;   // millis() ostatniego odczytu
   String lastErr;
+  int    failCount = 0;   // kolejne nieudane odczyty (do backoffu)
 };
 
 class ExtDevManager {

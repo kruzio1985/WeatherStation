@@ -7,6 +7,11 @@
  */
 #pragma once
 #include <Arduino.h>
+
+// Główna wilgotność z czujnika zewnętrznego (VEVOR) zamiast z czujnika na
+// płytce, który mierzy w ogrzanej obudowie i ma przez to zaniżone RH.
+// Używane w sensors.cpp (bridgeMissing) i sensors_extra.cpp (publishExtra).
+#define KEY_HUM_FROM_VEV    "hum_from_vev"
 #include <vector>
 #include "pins.h"
 
@@ -36,6 +41,13 @@ struct Channel {
   bool measured = false;
   int decimals = 1;
 
+  // true = kanał jest wyłącznie źródłem dla kanału głównego (np. "ths_bmp280_p"
+  // zasila "press", gdy na płytce nie ma osobnego barometru). Pulpit pomija
+  // takie kanały, żeby ta sama wartość nie pojawiała się dwa razy; ustawiane
+  // w SensorManager::bridgeMissing() przy każdym przebiegu, więc znika samo,
+  // gdy kanał główny zacznie mieć własny odczyt.
+  bool alias = false;
+
   // true = kanał pochodzi z innego ESP (magistrala RS485, id "x2_...", "x3_...").
   // Strona www pokazuje takie kanały w osobnej sekcji pulpitu.
   bool remote = false;
@@ -47,6 +59,37 @@ struct Channel {
   String haUnit;      // jednostka w HA, np. "°C", "%", "hPa"
   float haFactor = 1.0f; // mnożnik przed wysłaniem do HA (np. km/h -> m/s)
   String haIcon;      // mdi:...
+};
+
+// Odczyt z zewnętrznej stacji jakości powietrza (osobne ESP32, extdev "aq").
+// Stacja podaje kilkadziesiąt kanałów i z czasem dochodzą nowe, dlatego nie ma
+// tu wypisanych pojedynczych pól - trzymamy pary (identyfikator, wartość),
+// a mapowanie na kanały tej stacji opisuje tabela AIR_IMPORT w
+// sensors_extra.cpp (jedna linijka na kanał).
+struct AirStationValue {
+  char  id[24];
+  float value;
+};
+
+struct AirStationData {
+  static const size_t MAX_ITEMS = 40;
+  AirStationValue items[MAX_ITEMS];
+  size_t count = 0;
+
+  void add(const char* id, float v) {
+    if (!id || !*id || isnan(v) || count >= MAX_ITEMS) return;
+    strncpy(items[count].id, id, sizeof(items[0].id) - 1);
+    items[count].id[sizeof(items[0].id) - 1] = 0;
+    items[count].value = v;
+    count++;
+  }
+
+  float get(const char* id) const {
+    for (size_t i = 0; i < count; i++) {
+      if (strcmp(items[i].id, id) == 0) return items[i].value;
+    }
+    return NAN;
+  }
 };
 
 class SensorManager {
@@ -70,6 +113,9 @@ public:
 
   // Bieżąca wartość pojedynczego kanału (NAN = brak danych / kanał wyłączony)
   float valueOf(const String& id);
+  // Najniższa potwierdzona temperatura ze strefy zewnętrznej (NAN, gdy brak).
+  // Kamera używa jej, żeby nie ogłosić śniegu przy dodatniej temperaturze.
+  float coldestOutdoorTemp();
 
   // Wartość pierwszego kanału danego typu (klasa HA, np. "temperature") w danej
   // strefie ("in"/"out"). Odczyt idzie wprost po liście kanałów, bez jej
@@ -99,6 +145,21 @@ public:
   // Tworzy kanały btgw_<mac>_t/_h/_bat/_rssi dla każdego czujnika BT.
   void ingestBleSensor(const String& mac, const String& name,
                        float temp, float hum, int batt, int rssi);
+
+  // --- Pogoda z internetu (Open-Meteo, do porównania) ---
+  // Wypełnia kanały net_temp/net_hum/net_wind/net_app.
+  void publishNetWeather(float tempC, float humPct, float windKmh, float feelsC);
+
+  // --- Stacja jakości powietrza (osobne ESP32, HTTP - extdev typ "aq") ---
+  // Wciąga pył i gazy jako odczyty wewnętrzne. Wartości trafiają tylko do
+  // kanałów, których nie obsługuje własny czujnik stacji.
+  void ingestAirStation(const AirStationData& d);
+
+  // Zapis potwierdzonego pomiaru do dowolnego kanału (present + detected +
+  // wartość z korektą kalibracji) oraz wyczyszczenie nieaktualnej wartości.
+  // Używane przez sterowniki dodatkowych czujników i przez analizę zdjęć.
+  void publishExtra(const String& id, float v);
+  void clearExtra(const String& id);
 
   // Kierunek wiatru jako strona świata ("N", "SW", ...) - pusta wartość,
   // gdy czujnik nie podał jeszcze realnego pomiaru
@@ -155,6 +216,11 @@ public:
 
 private:
   Channel* ch(const String& id);
+  // Uzupełnia kanał główny odczytem z pierwszego zmierzonego kanału sterownika
+  // (barometr / czujnik T/H na magistrali) i oznacza ten kanał jako "alias",
+  // żeby ta sama wartość nie trafiła na pulpit dwa razy. Wołane z
+  // bridgeMissing() przy każdym przebiegu, więc odczyt nadąża za czujnikiem.
+  void adoptMain(Channel* main, const char* const* srcs, size_t n);
   void setPresent(const String& id, bool present);
   void setDetected(const String& id, bool detected);
   bool initScd4x();            // SCD40/SCD41 na I2C (CO2)
@@ -163,14 +229,14 @@ private:
   // Mutex musi być już zajęty przez wołającego.
   void putValue(const String& id, float v, bool valid = true);
 
-  // Dodatkowe czujniki: zapis potwierdzonego pomiaru (present + detected +
-  // wartość z korektą kalibracji) oraz wyczyszczenie nieaktualnej wartości.
-  void publishExtra(const String& id, float v);
-  void clearExtra(const String& id);
-
   // Wypełnia główne kanały (np. press) z czujników sterownika T/H/P, gdy
   // czujnik na płycie głównej nie jest zamontowany - pulpit pokazuje ciśnienie.
   void bridgeMissing();
+
+  // Kompensacja nasłonecznienia czujników temperatury na płytce (opis w
+  // sensors_extra.cpp). Zwraca skorygowaną wartość albo v bez zmian.
+  float sunCompensate(const String& id, float v);
+  float boardWindMs();         // wiatr w m/s: własny anemometr, potem VEVOR
 
   std::vector<Channel> channels_;
   SemaphoreHandle_t mutex_ = nullptr;
@@ -182,6 +248,8 @@ private:
   // BH1750 (I2C, surowy odczyt - opcjonalny)
   bool bhOk_ = false;
   uint8_t bhAddr_ = 0x23;   // 0x23 domyślnie, 0x5C gdy ADDR podpięty do VCC
+  bool bhPending_ = false;          // trwa pomiar jednorazowy (patrz readBH1750)
+  unsigned long bhTriggerMs_ = 0;   // kiedy zlecono bieżący pomiar
 
   // VEVOR: ostatnia próbka deszczu (do liczenia intensywności "teraz" w mm/h)
   float vevLastRainMm_ = NAN;
@@ -198,12 +266,17 @@ private:
   bool pmsStarted_ = false;   // UART otwarty
   bool pmsOk_ = false;        // odebrano poprawną ramkę (czujnik naprawdę jest)
 
-  // Tuya temp./wilg. (SoftwareSerial, RX-only)
-  void* tuySerial_ = nullptr;  // SoftwareSerial* (void*, żeby nie ciągnąć nagłówka)
+  // Tuya temp./wilg. (RX-only; sprzętowy UART2 na S3, SoftwareSerial na 2-UART)
+  void* tuySerial_ = nullptr;  // SoftwareSerial* (tylko gdy brak UART2)
   bool tuyStarted_ = false;    // odbiornik otwarty
   bool tuyOk_ = false;         // odebrano poprawną linię
+  bool tuyHwUart_ = false;     // odbiór po sprzętowym UART2 (Serial2)
   String tuyBuf_;              // akumulator linii
+  String tuyLastLine_;         // ostatnia pełna linia (diagnostyka)
   unsigned long tuyLastRxMs_ = 0;
+  unsigned long tuyRawBytes_ = 0;   // licznik odebranych bajtów (diagnostyka)
+  unsigned long tuyLastDiagMs_ = 0; // ostatni log diagnostyczny
+  int tuyLastByte_ = -1;            // ostatni odebrany bajt (diagnostyka)
 
   // Deszcz / wiatr
   static volatile unsigned long rainPulses_;

@@ -12,6 +12,9 @@
 #include <time.h>
 #include <map>
 #include <math.h>
+#include <string.h>
+#include <stdlib.h>
+#include <esp_task_wdt.h>
 
 DataLogger logger;
 
@@ -78,6 +81,19 @@ String DataLogger::columnForMetric(const String& metric) {
   if (metric == "co2") return "co2";
   if (metric == "eco2") return "eco2";
   if (metric == "tvoc") return "tvoc";
+  // Formaldehyd (zewnętrzna stacja jakości powietrza) - nie ma własnej kolumny
+  // w szerokim CSV, więc trafia do dziennika długiego /logs/extra-YYYY-MM.csv
+  // (patrz logNow) i stamtąd czytają go wykresy.
+  if (metric == "ch2o") return "ch2o";
+  // Analiza zdjęcia z kamery (pogoda, faza dnia, zachmurzenie, deszcz, śnieg,
+  // mgła, światło) - również bez kolumn w szerokim CSV, czyli dziennik długi.
+  if (metric.startsWith("cam_")) return metric;
+  // Stacja VEVOR (sniffer 868 MHz): temperatura, wilgotność, wiatr, porywy,
+  // kierunek, deszcz (łącznie/dziś/tydzień/miesiąc/teraz), UV i światło
+  // zewnętrzne. Bez kolumn w szerokim CSV - trafiają do dziennika długiego
+  // /logs/extra-YYYY-MM.csv, z którego da się policzyć statystyki miesięczne
+  // bez ruszania szerokiego pliku.
+  if (metric.startsWith("vev_")) return metric;
   // Dodatkowe czujniki
   if (metric == "sht_t") return "sht_t";
   if (metric == "sht_h") return "sht_h";
@@ -95,6 +111,13 @@ String DataLogger::columnForMetric(const String& metric) {
   if (metric == "sen_h") return "sen_h";
   if (metric == "sen_voc") return "sen_voc";
   if (metric == "sen_nox") return "sen_nox";
+  // Kanały przejmowane ze stacji jakości powietrza (in_iaq, in_mics_*, in_mq7_*,
+  // in_air_*, in_pm25_1m/5m/24h, in_rh_corr, in_motion) - nie mają kolumn
+  // w szerokim CSV, więc trafiają do dziennika długiego
+  // /logs/extra-YYYY-MM.csv i stamtąd czytają je wykresy. Ta reguła MUSI być
+  // poniżej jawnych zwrotów dla in_pm1/in_pm25/in_pm4/in_pm10, które mają
+  // własne kolumny szerokiego pliku.
+  if (metric.startsWith("in_")) return metric;
   if (metric.startsWith("ads_")) return String("ads") + metric.substring(4);
   // Kanały z węzłów RS485: id "x2_temp" -> kolumna "x2_temp",
   // "x2_ds_3" -> "x2_ds3", "x2_ads_2" -> "x2_ads2". Lista kolumn szerokiego
@@ -238,19 +261,23 @@ static long bucketStart(time_t ts, const String& period) {
 }
 
 static bool fileInRange(const String& name, long from, long to, const String& period) {
-  // name = "YYYY-MM.csv"
+  // name = "YYYY-MM.csv" - plik obejmuje cały miesiąc, więc czytamy go tylko
+  // wtedy, gdy jego zakres [początek miesiąca, początek następnego) przecina
+  // żądane okno. Poprzednia wersja zwracała praktycznie zawsze true (zapas
+  // 32 dni), więc wykres dzienny czytał także pliki sprzed miesiąca - przy
+  // 1 MB CSV to kilka sekund blokady pętli głównej na każde żądanie.
+  (void)period;
   int y, m;
   if (sscanf(name.c_str(), "%d-%d", &y, &m) != 2) return false;
+  if (m < 1 || m > 12) return false;
   struct tm tmv = {};
   tmv.tm_year = y - 1900;
-  tmv.tm_mon = m - 1;
+  tmv.tm_mon  = m - 1;
   tmv.tm_mday = 1;
-  time_t fileTs = mktime(&tmv);
-
-  if (period == "year") {
-    return fileTs >= from - 32 * 86400 && fileTs <= to;
-  }
-  return fileTs >= from - 32 * 86400 && fileTs <= to;
+  time_t fileStart = mktime(&tmv);
+  tmv.tm_mon = m;              // m == 12 -> mktime sam przechodzi na styczeń
+  time_t fileEnd = mktime(&tmv);
+  return fileStart <= to && fileEnd > from;
 }
 
 // ------------------------------------------------------------
@@ -269,6 +296,9 @@ static bool seriesFromLong(const String& metric, long from, time_t now,
     int slash = name.lastIndexOf('/');
     if (slash >= 0) name = name.substring(slash + 1);
     if (!name.startsWith("extra-") || !name.endsWith(".csv")) continue;
+    // Ten sam filtr miesięcy co dla szerokiego CSV - bez niego dziennik długi
+    // czytał do RAM-u również pliki spoza żądanego okresu.
+    if (!fileInRange(name.substring(6), from, now, period)) continue;
 
     String content;
     if (!sdCard.readFile(fi.path, content, 2 * 1024 * 1024)) continue;
@@ -353,48 +383,110 @@ bool DataLogger::getSeries(const String& period, const String& metric,
     if (!name.endsWith(".csv") || name.startsWith(".")) continue;
     if (!fileInRange(name, from, now, period)) continue;
 
-    String content;
-    if (!sdCard.readFile(fi.path, content, 2 * 1024 * 1024)) continue;
+    // Strumieniowe czytanie pliku (bez wczytywania całości do RAM-u i bez
+    // doklejania String znak po znaku - poprzednia wersja potrafiła blokować
+    // pętlę główną na kilkanaście sekund przy miesięcznym pliku).
+    File f = sdCard.openRead(fi.path);
+    if (!f) continue;
 
-    int pos = 0;
+    char buf[512];
+    char line[2048];
+    size_t lineLen = 0;
     bool header = true;
-    while (pos < (int)content.length()) {
-      int nl = content.indexOf('\n', pos);
-      if (nl < 0) nl = content.length();
-      String line = content.substring(pos, nl);
-      pos = nl + 1;
-      line.trim();
-      if (line.length() == 0) continue;
-      if (header) { header = false; continue; } // pomiń nagłówek
-
-      // timestamp to pierwsze pole
-      int c1 = line.indexOf(',');
-      if (c1 < 0) continue;
-      long ts = atol(line.substring(0, c1).c_str());
-      if (ts < from || ts > now) continue;
-
-      // znajdź pole o indeksie colIdx+2 (timestamp, datetime, potem kolumny)
-      int field = 0;
-      int start = 0;
-      String value;
-      int idx = c1 + 1;
-      while (idx <= (int)line.length()) {
-        if (idx == (int)line.length() || line[idx] == ',') {
-          if (field == colIdx + 2) { value = line.substring(start, idx); break; }
-          field++;
-          start = idx + 1;
+    int lines = 0;
+    while (f.available()) {
+      int n = f.read((uint8_t*)buf, sizeof(buf));
+      if (n <= 0) break;
+      for (int i = 0; i < n; i++) {
+        char c = buf[i];
+        if (c == '\n') {
+          if (lineLen && line[lineLen - 1] == '\r') lineLen--;
+          while (lineLen && (line[lineLen - 1] == ' ' || line[lineLen - 1] == '\t')) lineLen--;
+          if (lineLen) {
+            line[lineLen] = 0;
+            if (header) {
+              header = false;
+            } else {
+              const char* c1 = strchr(line, ',');
+              if (c1) {
+                long ts = atol(line);
+                if (ts >= from && ts <= now) {
+                  const char* p = strchr(c1 + 1, ',');  // pomiń datetime
+                  if (p) {
+                    p++;
+                    int field = 0;
+                    while (*p) {
+                      const char* comma = strchr(p, ',');
+                      if (field == colIdx) {
+                        if (comma ? comma > p : (*p != 0)) {
+                          float v = atof(p);
+                          if (!isnan(v)) {
+                            long b = bucketStart(ts, period);
+                            Aggregate& a = buckets[b];
+                            a.sum += v; a.n++;
+                            if (v < a.mn) a.mn = v;
+                            if (v > a.mx) a.mx = v;
+                          }
+                        }
+                        break;
+                      }
+                      if (!comma) break;
+                      p = comma + 1;
+                      field++;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          lineLen = 0;
+          if ((++lines & 0x3F) == 0) { yield(); esp_task_wdt_reset(); }
+        } else if (lineLen < sizeof(line) - 1) {
+          line[lineLen++] = c;
         }
-        idx++;
       }
-      if (value.length() == 0) continue;
-
-      float v = atof(value.c_str());
-      long b = bucketStart(ts, period);
-      Aggregate& a = buckets[b];
-      a.sum += v; a.n++;
-      if (v < a.mn) a.mn = v;
-      if (v > a.mx) a.mx = v;
     }
+    // ostatnia linia bez znaku nowej linii
+    if (lineLen) {
+      if (line[lineLen - 1] == '\r') lineLen--;
+      while (lineLen && (line[lineLen - 1] == ' ' || line[lineLen - 1] == '\t')) lineLen--;
+      if (lineLen) {
+        line[lineLen] = 0;
+        if (!header) {
+          const char* c1 = strchr(line, ',');
+          if (c1) {
+            long ts = atol(line);
+            if (ts >= from && ts <= now) {
+              const char* p = strchr(c1 + 1, ',');
+              if (p) {
+                p++;
+                int field = 0;
+                while (*p) {
+                  const char* comma = strchr(p, ',');
+                  if (field == colIdx) {
+                    if (comma ? comma > p : (*p != 0)) {
+                      float v = atof(p);
+                      if (!isnan(v)) {
+                        long b = bucketStart(ts, period);
+                        Aggregate& a = buckets[b];
+                        a.sum += v; a.n++;
+                        if (v < a.mn) a.mn = v;
+                        if (v > a.mx) a.mx = v;
+                      }
+                    }
+                    break;
+                  }
+                  if (!comma) break;
+                  p = comma + 1;
+                  field++;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    f.close();
   }
 
   if (buckets.empty()) { err = "Brak danych dla tego okresu"; return false; }

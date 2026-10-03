@@ -113,6 +113,9 @@ void ConfigManager::ensureDefaults() {
   // Adres zewnętrznej kamery (ESP32-CAM). Puste = kamera lokalna na pinach.
   // Po ustawieniu master tylko odbiera zdjęcia (HTTP POST /api/camera/upload).
   if (!o["cam_remote_url"].is<const char*>()) o["cam_remote_url"] = "";
+  // Obrót obrazu 0/90/180/270 (90 = w prawo). Stosowany przy podglądzie na
+  // stronie i przy analizie zdjęcia (region nieba musi być na górze kadru).
+  if (!o["cam_rotate"].is<uint16_t>()) o["cam_rotate"] = 0;
 
   // Serwisy zewnętrzne (udostępnianie pomiarów poza MQTT/Home Assistant)
   {
@@ -709,6 +712,16 @@ String ConfigManager::camRemoteUrl() {
   return getString("cam_remote_url");
 }
 
+uint16_t ConfigManager::camRotate() {
+  lock();
+  int v = doc_["cam_rotate"] | 0;
+  unlock();
+  // Tylko wielokrotności 90 stopni - inna wartość (np. z ręcznie wpisanego
+  // JSON-a) traktowana jest jak brak obrotu.
+  if (v != 90 && v != 180 && v != 270) return 0;
+  return (uint16_t)v;
+}
+
 // --- Położenie geograficzne i GPS ---
 double ConfigManager::latitude() {
   lock();
@@ -934,6 +947,23 @@ bool ConfigManager::hasExtra(const char* key) {
   return out;
 }
 
+String ConfigManager::extraS(const char* key, const String& def) {
+  if (!key || !*key) return def;
+  lock();
+  JsonVariant v = doc_["extra"][key];
+  String out = v.is<const char*>() ? String(v.as<const char*>()) : def;
+  unlock();
+  return out;
+}
+
+void ConfigManager::setExtraS(const char* key, const String& value) {
+  if (!key || !*key) return;
+  lock();
+  JsonObject ex = objIn(doc_["extra"]);
+  ex[key] = value;
+  unlock();
+}
+
 // --- Serwisy zewnętrzne ---
 
 // Scala podane pola z sekcją "services" (nie kasuje pozostałych), dzięki czemu
@@ -1029,12 +1059,27 @@ bool ConfigManager::loadState() {
   state.rainTipsTotal = d["rainTipsTotal"] | 0;
   state.rainStartTips = d["rainStartTips"] | 0;
   state.rainDay       = d["rainDay"] | -1;
-  state.vevRainBaseDay   = d["vevRainBaseDay"] | 0.0f;
-  state.vevRainDay       = d["vevRainDay"] | -1;
-  state.vevRainBaseWeek  = d["vevRainBaseWeek"] | 0.0f;
-  state.vevRainWeek      = d["vevRainWeek"] | -1;
-  state.vevRainBaseMonth = d["vevRainBaseMonth"] | 0.0f;
-  state.vevRainMonth     = d["vevRainMonth"] | -1;
+  state.vevRainMax      = d["vevRainMax"] | -1.0f;
+  state.vevRainDayAcc   = d["vevRainDayAcc"] | 0.0f;
+  state.vevRainDay      = d["vevRainDay"] | -1;
+  state.vevRainWeekAcc  = d["vevRainWeekAcc"] | 0.0f;
+  state.vevRainWeek     = d["vevRainWeek"] | -1;
+  state.vevRainMonthAcc = d["vevRainMonthAcc"] | 0.0f;
+  state.vevRainMonth    = d["vevRainMonth"] | -1;
+  state.vevRainVer      = d["vevRainVer"] | 0;
+
+  // Migracja do algorytmu v2 (próg przyrostu na próbkę): stare sumy mogły
+  // zawierać fałszywy deszcz z pojedynczych, błędnie zdekodowanych ramek
+  // (np. 61,28 mm "wyskakujące" między 0 a 0). Zerujemy je raz.
+  if (state.vevRainVer < 2) {
+    state.vevRainMax      = -1.0f;
+    state.vevRainDayAcc   = 0.0f;
+    state.vevRainWeekAcc  = 0.0f;
+    state.vevRainMonthAcc = 0.0f;
+    state.vevRainVer      = 2;
+    LOG_I("Deszcz VEVOR: migracja algorytmu do v2 - sumy wyzerowane");
+    saveState();
+  }
   return true;
 }
 
@@ -1043,12 +1088,14 @@ bool ConfigManager::saveState() {
   d["rainTipsTotal"] = state.rainTipsTotal;
   d["rainStartTips"] = state.rainStartTips;
   d["rainDay"]       = state.rainDay;
-  d["vevRainBaseDay"]   = state.vevRainBaseDay;
-  d["vevRainDay"]       = state.vevRainDay;
-  d["vevRainBaseWeek"]  = state.vevRainBaseWeek;
-  d["vevRainWeek"]      = state.vevRainWeek;
-  d["vevRainBaseMonth"] = state.vevRainBaseMonth;
-  d["vevRainMonth"]     = state.vevRainMonth;
+  d["vevRainMax"]      = state.vevRainMax;
+  d["vevRainDayAcc"]   = state.vevRainDayAcc;
+  d["vevRainDay"]      = state.vevRainDay;
+  d["vevRainWeekAcc"]  = state.vevRainWeekAcc;
+  d["vevRainWeek"]     = state.vevRainWeek;
+  d["vevRainMonthAcc"] = state.vevRainMonthAcc;
+  d["vevRainMonth"]    = state.vevRainMonth;
+  d["vevRainVer"]      = state.vevRainVer;
   String s;
   serializeJson(d, s);
 

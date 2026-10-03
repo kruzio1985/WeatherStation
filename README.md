@@ -5,8 +5,10 @@
 > *Autor / Author: **kruzio1985** — [github.com/kruzio1985](https://github.com/kruzio1985)*
 > *Licencja / Licence: [PolyForm Noncommercial License 1.0.0](LICENSE)*
 
-Kompletna stacja pogodowa z interfejsem WWW, wysyłką do Home Assistant przez MQTT
-(auto-discovery), logowaniem na karcie microSD i wykresami (dni/tygodnie/miesiące/lata).
+Kompletna stacja pogodowa z interfejsem WWW: wysyłka do Home Assistant przez MQTT
+(auto-discovery), logowanie na karcie microSD, wykresy (dni/tygodnie/miesiące/lata),
+pogoda z obrazu kamery, sniffer stacji VEVOR 868 MHz, panele jakości powietrza
+i animowane wskaźniki pogodowe.
 
 > **Stan projektu:** czujniki nie są jeszcze zlutowane. Kod jest gotowy do wgrania —
 > każdy czujnik jest **opcjonalny** i wykrywany przy starcie. Brak czujnika nie powoduje
@@ -16,8 +18,9 @@ Kompletna stacja pogodowa z interfejsem WWW, wysyłką do Home Assistant przez M
 
 ## 🇬🇧 English — full description
 
-A complete weather station with a web interface, MQTT publishing to Home Assistant
-(auto-discovery), logging to a microSD card and charts (day/week/month/year).
+A complete weather station with a web interface: MQTT publishing to Home Assistant
+(auto-discovery), microSD logging, charts (day/week/month/year), camera-based weather
+analysis, a VEVOR 868 MHz station sniffer, air-quality panels and animated weather gauges.
 
 > **Project status:** the sensors are not soldered yet. The code is ready to flash — every sensor
 > is **optional** and detected at boot. A missing sensor does not cause an error; it simply does

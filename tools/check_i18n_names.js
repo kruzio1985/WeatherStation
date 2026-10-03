@@ -24,6 +24,11 @@ const INDEX = path.join(ROOT, 'data', 'index.html');
 const SRC = path.join(ROOT, 'src');
 
 const CHAN_ROW = /^\s*\{\s*"([a-z0-9_]+)"\s*,\s*"((?:[^"\\]|\\.)*)"/;
+// Wiersz tabeli AIR_IMPORT (import ze stacji jakości powietrza w
+// sensors_extra.cpp): {zrodlo, kanal, skala, wlasciciel[, nazwa, jednostka...]}.
+// Nazwa jest tu TRZECIM napisem, a nie drugim - bez tej reguly skrypt bralby
+// identyfikator kanalu jako jego nazwe i zglaszal falszywe braki w slowniku.
+const AIR_ROW = /^\s*\{\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9_]+)"\s*,\s*[\d.]+f\s*,\s*(?:'[^']*'|0)\s*(?:,\s*"((?:[^"\\]|\\.)*)")?/;
 const PIN_ROW = /^\s*\{\s*"([a-z0-9_]+)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"/;
 const DOTNAME = /\.name\s*=\s*"((?:[^"\\]|\\.)*)"/g;
 
@@ -40,6 +45,13 @@ function collectNames() {
   for (const f of files) {
     const text = read(path.join(srcDir, f));
     text.split(/\r?\n/).forEach((line) => {
+      const air = AIR_ROW.exec(line);
+      if (air) {
+        // Trzeci napis (nazwa) jest opcjonalny: brak = kanał jest już
+        // zarejestrowany gdzie indziej, więc nie ma czego sprawdzać.
+        if (air[3] && /[a-zA-Z]/.test(air[3]) && !names.has(air[3])) names.set(air[3], f);
+        return;
+      }
       const row = CHAN_ROW.exec(line);
       if (row) {
         if (!names.has(row[2])) names.set(row[2], f);

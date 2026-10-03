@@ -63,14 +63,146 @@
   .photo img { width:100%; height:120px; object-fit:cover; display:block; background:#0b1220; }
   .photo-cap { padding:6px 8px; font-size:.72rem; color:var(--muted); overflow:hidden;
                text-overflow:ellipsis; white-space:nowrap; }
-  .card { background:var(--panel); border-radius:12px; padding:14px; }
+  /* Zdjęcie obrócone o 90/270° obracamy w CSS, więc plik JPEG na karcie SD
+     zostaje bez zmian (bez ponownej kompresji). Miniatura dostaje kwadratowy
+     obszar, żeby obrócony obraz się w niej mieścił. */
+  .photo.rot90 img, .photo.rot270 img { width:120px; height:auto; align-self:center; object-fit:contain; }
+  .photo.rot90 img  { transform: rotate(90deg); }
+  .photo.rot180 img { transform: rotate(180deg); }
+  .photo.rot270 img { transform: rotate(270deg); }
+  /* Pełnoekranowy podgląd zdjęcia (galeria kamery) */
+  #lightbox { position:fixed; inset:0; z-index:200; display:none; padding:12px;
+              background:rgba(2,6,23,.93); align-items:center; justify-content:center; }
+  #lightbox.on { display:flex; }
+  #lightbox img { max-width:96vw; max-height:86vh; object-fit:contain; background:#0b1220;
+                  border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
+  /* Po obrocie o 90° szerokość obrazu bierze się z jego wysokości - dlatego
+     limity zamieniamy miejscami, żeby obrócone zdjęcie zmieściło się w oknie. */
+  #lightbox img.rot90, #lightbox img.rot270 { max-width:86vh; max-height:96vw; }
+  #lightbox img.rot90  { transform: rotate(90deg); }
+  #lightbox img.rot180 { transform: rotate(180deg); }
+  #lightbox img.rot270 { transform: rotate(270deg); }
+  #lightbox .lb-bar { position:absolute; left:0; right:0; bottom:14px; text-align:center;
+                      color:var(--muted); font-size:.8rem; padding:0 14px; }
+  .card { background:var(--panel); border-radius:12px; padding:14px; border-left:3px solid #334155; }
   .card .label { color:var(--muted); font-size:.8rem; }
   .card .value { font-size:1.5rem; font-weight:700; margin-top:4px; }
   .card .unit { font-size:.9rem; color:var(--muted); }
+  /* Krótki opis stanu pod wartością (np. "czyste powietrze", "podwyższone") -
+     progi takie same, jakich używa strona stacji jakości powietrza. */
+  .card .note { color:var(--muted); font-size:.72rem; margin-top:2px; }
+
+  /* --- Panele jakości powietrza (wygląd jak stacja powietrza 192.168.1.141) ---
+     Karty w siatce (min. 280 px), wiersze "nazwa ... wartość jednostka",
+     poziome legendy progów i karta IAQ ze skalą gradientową. */
+  .aqp-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+              gap:16px; grid-column:1 / -1; }
+  .aqp { background:var(--panel); border:1px solid #2a3342; border-radius:12px;
+         padding:16px 18px; }
+  .aqp h4 { margin:0 0 12px; font-size:15px; font-weight:600; color:var(--text); }
+  .aqp .m { display:grid; grid-template-columns:1fr auto auto; align-items:baseline; gap:8px;
+            padding:7px 0; border-bottom:1px solid #222a36; }
+  .aqp .m:last-child { border-bottom:none; }
+  .aqp .m span { color:var(--muted); font-size:13px; }
+  .aqp .m b { font-size:20px; font-weight:600; }
+  .aqp .m em { color:var(--muted); font-style:normal; font-size:12px; }
+  /* Legenda progów: poziome wiersze "nazwa [kolor]zakres [kolor]zakres..." */
+  .aqp .lgd { margin-top:12px; border-top:1px solid #222a36; padding-top:10px;
+              display:flex; flex-direction:column; gap:5px; }
+  .aqp .lgd-row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px;
+                  font-size:11px; color:var(--muted); }
+  .aqp .lgd-row .nm { min-width:46px; color:var(--text); font-weight:600; font-size:12px; }
+  .aqp .lgd-i { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+  .aqp .lgd-i .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  /* Legenda zdań (MiCS / MQ-7): kolor + zdanie */
+  .aqp .sent { margin-top:12px; border-top:1px solid #222a36; padding-top:10px;
+               display:flex; flex-wrap:wrap; gap:14px; }
+  .aqp .sent-i { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+  .aqp .sent-i .sw { width:16px; height:16px; border-radius:4px; display:inline-block; flex:0 0 auto; }
+  .aqp .hint { color:var(--muted); font-size:12px; line-height:1.5; margin:12px 0 0; }
+  .aqp .hint b { color:var(--text); }
+  /* Karta IAQ */
+  .aqp.aqi { text-align:center; }
+  .aqp .aqi-big { font-size:64px; font-weight:700; line-height:1; margin:8px 0 2px; }
+  .aqp .aqi-label { color:var(--muted); margin-bottom:12px; }
+  .aqp .aqi-cause { margin-top:8px; font-size:13px; color:var(--muted); }
+  .aqp .aqi-scale { margin-top:14px; }
+  .aqp .aqi-track { position:relative; height:22px; border-radius:11px;
+    background:linear-gradient(to right,
+      #00C853 0%, #00C853 10%,
+      #FFD600 10%, #FFD600 20%,
+      #FF9100 20%, #FF9100 30%,
+      #E53935 30%, #E53935 40%,
+      #8E24AA 40%, #8E24AA 60%,
+      #7B1F1F 60%, #7B1F1F 100%); }
+  .aqp .aqi-marker { position:absolute; top:-4px; bottom:-4px; width:4px; margin-left:-2px;
+                     border-radius:2px; background:#fff;
+                     box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 8px rgba(0,0,0,.9);
+                     transition:left .4s; }
+  .aqp .aqi-ticks { position:relative; height:20px; margin-top:6px; font-size:11px; color:var(--muted); }
+  .aqp .aqi-ticks span { position:absolute; transform:translateX(-50%); }
+  .aqp .aqi-ticks span:first-child { transform:none; }
+  .aqp .aqi-ticks span:last-child { transform:translateX(-100%); }
+  .aqp .aqi-legend { display:grid; grid-template-columns:repeat(auto-fit, minmax(105px, 1fr));
+                     gap:6px 8px; margin-top:12px; text-align:left; }
+  .aqp .aqi-lg { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
+  .aqp .aqi-lg .sw { flex:0 0 11px; height:11px; border-radius:3px; display:inline-block; }
+  .aqp .aqi-lg em { font-style:normal; margin-left:auto; color:#66707d; }
+  .aqp .motion { margin-top:12px; font-size:13px; color:var(--muted); }
+  .aqp .motion.on { color:var(--accent); }
+  /* --- Wskaźniki pogody (styl Weather Underground) ---
+     Karta ze wskaźnikiem SVG (termometr, barometr, kropla, zlewka deszczu,
+     wiatrowskaz, pasek) - wskazanie animuje się po każdej aktualizacji. */
+  .wx-panel { background:var(--panel); border-radius:12px; padding:12px 14px;
+              grid-column:1 / -1; }
+  .wx-panel h4 { margin:0 0 10px; font-size:.95rem; font-weight:600; color:var(--text); }
+  .wx-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px; }
+  /* Na wąskim ekranie wskaźniki zawijają się, zamiast ściskać w jedną linię
+     (inline grid-template-columns z renderWxGauges wymusza jedną linię). */
+  @media (max-width: 760px) {
+    .wx-grid { grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)) !important; }
+  }
+  .wx-card { background:var(--panel2); border:1px solid #273449; border-radius:10px;
+             padding:8px 8px 10px; text-align:center; display:flex; flex-direction:column;
+             align-items:center; height:166px; }
+  .wx-card .lbl { color:var(--muted); font-size:.78rem; }
+  .wx-card svg { display:block; margin:4px auto; flex:0 0 auto; }
+  .wx-card .val { font-size:1.22rem; font-weight:700; line-height:1.15;
+                  font-variant-numeric:tabular-nums; margin-top:auto; }
+  .wx-card .unit { font-size:.72rem; color:var(--muted); font-weight:400; }
+  .wx-card .sub { color:var(--muted); font-size:.72rem; margin-top:2px; }
+  .wx-card .bigico { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
+                     font-size:2.4rem; line-height:1.2; }
+  .wx-fill   { transition: y .9s cubic-bezier(.25,.9,.35,1), height .9s cubic-bezier(.25,.9,.35,1); }
+  .wx-fillw  { transition: width .9s cubic-bezier(.25,.9,.35,1); }
+  .wx-needle { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
+  .wx-arrow  { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
   .card.off { opacity:.45; }
   .zone-head { grid-column:1/-1; color:var(--muted); font-size:.78rem; text-transform:uppercase;
-               letter-spacing:.06em; margin:6px 0 -2px; display:flex; align-items:center; gap:8px; }
+               letter-spacing:.06em; margin:6px 0 -2px; display:flex; align-items:center; gap:8px;
+               font-weight:600; }
   .zone-head::after { content:""; flex:1 1 auto; height:1px; background:#334155; }
+  /* Podsekcje wewnątrz strefy (cząsteczki, gazy, MiCS5524, MQ-7...). Układ
+     wzorowany na stronie stacji jakości powietrza - bez tego sekcja "Wewnątrz"
+     była jednym długim ciągiem dwudziestu kilku kafelków. */
+  .sub-head { grid-column:1/-1; color:var(--muted); font-size:.72rem; font-weight:600;
+              text-transform:uppercase; letter-spacing:.05em; margin:9px 0 -7px 2px;
+              display:flex; align-items:center; gap:6px; }
+  .sub-head::after { content:""; flex:1 1 auto; height:1px; background:#334155; opacity:.45; }
+  /* Kolory stref - wiadomo od razu, co do czego należy */
+  .zone-head[data-tone="in"],   .card[data-tone="in"]   { --tone:#38bdf8; }
+  .zone-head[data-tone="out"],  .card[data-tone="out"]  { --tone:#4ade80; }
+  .zone-head[data-tone="bt"],   .card[data-tone="bt"]   { --tone:#a78bfa; }
+  .zone-head[data-tone="vev"],  .card[data-tone="vev"]  { --tone:#fbbf24; }
+  .zone-head[data-tone="node"], .card[data-tone="node"] { --tone:#22d3ee; }
+  .zone-head[data-tone="net"],  .card[data-tone="net"]  { --tone:#fb7185; }
+  .zone-head[data-tone="cam"],  .card[data-tone="cam"]  { --tone:#f472b6; }
+  .zone-head[data-tone] { color:var(--tone); }
+  .zone-head[data-tone]::after { background:var(--tone); opacity:.5; }
+  .card[data-tone] { border-left-color:var(--tone);
+                     background:linear-gradient(135deg, var(--panel) 0%, var(--panel) 70%, color-mix(in srgb, var(--tone) 8%, transparent) 100%); }
+  .card[data-tone] .value { color:var(--text); }
+  .card[data-tone] .label { color:color-mix(in srgb, var(--tone) 70%, #94a3b8); }
   .needle-wrap { width:74px; height:74px; border-radius:50%; background:var(--panel2); position:relative;
                  display:flex; align-items:center; justify-content:center; margin-top:6px; }
   .needle-wrap span { position:absolute; font-size:.62rem; color:var(--muted); }
@@ -221,6 +353,11 @@
   <span class="badge" id="ringBadge">Led --</span>
   <select class="lang" id="langSel" aria-label="Język / Language / Sprache"></select>
 </header>
+
+<div id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" alt="" onclick="event.stopPropagation()">
+  <div class="lb-bar" id="lightboxCap"></div>
+</div>
 
 <div class="layout">
   <aside class="sidebar">
@@ -464,6 +601,42 @@
     </div>
 
     <div class="box" style="margin-top:18px">
+      <h3>Kompensacja obudowy (czujniki na płytce)</h3>
+      <p class="muted">Czujniki temperatury na płytce (BMP280, BME280, BMP581, SHT4x) siedzą w tej samej obudowie
+        co ESP32 i pierścień LED, więc w słońcu pokazują temperaturę obudowy, a nie powietrza - nawet o kilkanaście
+        stopni wyższą. Stacja wylicza nadwyżkę z natężenia światła, a wiatr ją zmniejsza (przewiew chłodzi obudowę).
+        Stałą część błędu (ciepło własne elektroniki) popraw offsetem kanału w tabeli powyżej - oba mechanizmy
+        działają razem. Nocą korekta nie działa, więc wystarczy dobrać współczynnik w słoneczny dzień, porównując
+        odczyt z czujnikiem zewnętrznym.</p>
+      <div class="form-grid">
+        <label>Kompensacja włączona
+          <select id="calBtcOn">
+            <option value="0">nie</option>
+            <option value="1">tak</option>
+          </select>
+        </label>
+        <label>Nasłonecznienie - °C na √klx<input type="number" step="0.1" id="calBtcSun" placeholder="4.3"></label>
+        <label>Chłodzenie wiatrem - °C na m/s<input type="number" step="0.1" id="calBtcWind" placeholder="1.5"></label>
+        <label>Kanały z kompensacją (ID po przecinku)<input type="text" id="calBtcIds" placeholder="ths_bmp280_t:4.3, temp:2.75"></label>
+      </div>
+      <p class="muted" style="margin-top:8px">Każdy kanał można podać z własnymi parametrami po dwukropkach:
+        <code>id:współczynnik:wykładnik</code>, np. <code>temp:0.97:0.65</code>. Współczynnik mówi, jak mocno
+        słońce grzeje dany czujnik, a wykładnik opisuje kształt tej zależności - układ na płytce grzeje się prawie
+        liniowo z nasłonecznieniem, a powietrze w obudowie słabiej. Kanał bez własnych wartości używa wspólnych
+        ustawień. Nasłonecznienie brane jest z czujnika stacji VEVOR, bo BH1750 nasyca się w pełnym słońcu i nie
+        widać wtedy różnicy między południem a popołudniem. Na tej stacji:
+        <code>ths_bmp280_t:1.72:0.615, temp:0.97:0.65</code>.</p>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="calHumFromVev"> Główna wilgotność z czujnika zewnętrznego (VEVOR)</label>
+      <p class="muted">Wilgotność względna mierzona w ogrzanej obudowie jest zaniżona (ta sama para wodna przy wyższej
+        temperaturze daje niższe RH), a para temperatura/wilgotność trafia do plików CSV, prognozy i serwisów
+        pogodowych. Po włączeniu główna wilgotność pochodzi z czujnika na zewnątrz, a nie z czujnika na płytce.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" onclick="saveCalibExtra()">Zapisz kalibrację</button>
+        <span class="muted" id="calBtcMsg"></span>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:18px">
       <h3>Zaawansowana kalibracja układów</h3>
       <p class="muted">Parametry pracy układów I²C i SPI: wzmocnienie i czas integracji, rezystor bocznikowy, skala UV, kompensacja temperatury i wysokości, typ termopary, rezystor odniesienia RTD, zakresy IMU, emisyjność IR i korekta poziomu mikrofonu. Puste pole oznacza wartość domyślną (podaną obok). Nowe wartości układy odczytują przy wykrywaniu, czyli po restarcie stacji.</p>
       <div id="calibAdvBody"></div>
@@ -497,6 +670,7 @@
         <select id="evType">
           <option value="vevor">VEVOR (wiatr/deszcz/UV/lux)</option>
           <option value="ble">Bramka BLE (czujniki T/H)</option>
+          <option value="aq">Stacja jakości powietrza (PM + gazy)</option>
         </select>
         <label class="muted">co <input type="number" id="evInterval" value="20" min="5" step="5" style="width:70px"> s</label>
         <button class="btn" onclick="addExtDev()">Dodaj</button>
@@ -1284,6 +1458,20 @@
     <div class="grid" id="gpsGrid"></div>
 
     <div class="box" style="margin-top:14px">
+      <h3>Siła sygnału satelitów (do ustawienia anteny)</h3>
+      <p class="muted">Paski pokazują moc sygnału (SNR) każdego satelity w dB-Hz. Ustawiaj antenę tak, żeby jak najwięcej pasków było zielonych (powyżej 40 dB). Znacznik ✓ = satelita użyty w rozwiązaniu pozycji. Odświeżanie co 2 s.</p>
+      <div id="gpsSats"></div>
+      <style>
+        .sat-row{display:flex;align-items:center;gap:8px;margin:3px 0}
+        .sat-prn{width:90px;font-family:monospace;font-size:.85em;color:#9ad0ff}
+        .sat-bar{flex:1;background:#1a1a2e;height:14px;border-radius:4px;overflow:hidden}
+        .sat-bar div{height:100%;transition:width .3s}
+        .sat-snr{width:56px;text-align:right;font-family:monospace;font-size:.85em}
+        .sat-az{width:96px;text-align:right;font-size:.8em;color:#888}
+      </style>
+    </div>
+
+    <div class="box" style="margin-top:14px">
       <h3>Ustawienia odbiornika</h3>
       <div class="form-grid">
         <label>Tryb pracy
@@ -1354,7 +1542,15 @@
           <input type="number" id="camQuality" min="0" max="63" step="1">
         </label>
         <label>Adres kamery zewnętrznej (ESP32-CAM)
-          <input type="text" id="camRemoteUrl" placeholder="http://192.168.1.50/capture">
+          <input type="text" id="camRemoteUrl" placeholder="http://192.168.1.142/capture">
+        </label>
+        <label>Obrót obrazu
+          <select id="camRotate">
+            <option value="0">Brak obrotu (0°)</option>
+            <option value="90">90° w prawo</option>
+            <option value="180">180° (do góry nogami)</option>
+            <option value="270">90° w lewo</option>
+          </select>
         </label>
         <label>Maksymalna liczba zdjęć (0 = bez limitu)
           <input type="number" id="camMaxPhotos" min="0" max="50000" step="1">
@@ -1363,7 +1559,7 @@
           <input type="number" id="camMaxMb" min="0" max="65535" step="1">
         </label>
       </div>
-      <p class="muted">Kamera zapisuje zdjęcia na karcie SD w katalogu <code>/photos</code> (osobny podkatalog na każdy miesiąc). Timelapse 0 minut = tylko zdjęcia ręczne. Gdy ustawisz <b>adres kamery zewnętrznej</b>, przycisk „Zrób zdjęcie” wyzwala ujęcie na module ESP32-CAM, a zdjęcie wraca samo przez <code>/api/camera/upload</code>.</p>
+      <p class="muted">Kamera zapisuje zdjęcia na karcie SD w katalogu <code>/photos</code> (osobny podkatalog na każdy miesiąc). Timelapse 0 minut = tylko zdjęcia ręczne. Gdy ustawisz <b>adres kamery zewnętrznej</b>, stacja sama pobiera zdjęcie z tego adresu (np. <code>http://192.168.1.142/capture</code>), zapisuje je i od razu analizuje — z niego powstają odczyty <b>Pogoda z kamery</b> (deszcz, śnieg, mgła, zachmurzenie, dzień/noc) widoczne na pulpicie i w Home Assistant. Jeśli adres tylko wyzwala ujęcie, zdjęcie wróci osobno przez <code>/api/camera/upload</code>. <b>Obrót obrazu</b> ustaw, gdy kamera wisi bokiem — poprawia też analizę, bo region nieba musi być na górze kadru.</p>
       <div class="row" style="margin-top:12px">
         <button class="btn" onclick="saveCamera()">Zapisz ustawienia</button>
         <button class="btn" onclick="captureNow()">Zrób zdjęcie teraz</button>
@@ -1595,43 +1791,880 @@ const post = (path, data) => api(path, {
 });
 
 // ---------------- Pulpit ----------------
+// Etykiety kanałów, których wartością jest kod (analiza zdjęcia z kamery).
+// Kolejność musi się zgadzać z publishAnalysis() w camera.cpp i definicjami
+// kanałów w sensors_extra.cpp.
+const CAM_WEATHER_LABEL = ['Noc', 'Bezchmurnie', 'Pochmurno', 'Deszcz', 'Śnieg', 'Mgła'];
+const CAM_PHASE_LABEL   = ['Noc', 'Świt / zmierzch', 'Dzień'];
+
+// Progi indeksu jakości powietrza (IAQ) - te same, których używa stacja
+// jakości powietrza, żeby opis słowny zgadzał się z jej stroną.
+const IAQ_SCALE = [
+  [50,  'Dobra'],
+  [100, 'Umiarkowana'],
+  [150, 'Zła (wrażliwe grupy)'],
+  [200, 'Zła'],
+  [300, 'Bardzo zła'],
+  [500, 'Niebezpieczna'],
+];
+
+function iaqLabel(v) {
+  if (!isFinite(v)) return '';
+  for (const [limit, name] of IAQ_SCALE) if (v <= limit) return t(name);
+  return t('Niebezpieczna');
+}
+
+// Jednostka obok wartości (bez zmian - kanały opisowe mają własną jednostkę "",
+// a ich stan słowny pokazujemy pod wartością, patrz fmtChannelNote).
+function fmtChannelUnit(c) {
+  return c.unit;
+}
+
+// Progi dla gazów i pyłów - takie same, jakich używa stacja jakości powietrza,
+// więc opis stanu zgadza się z jej stroną. Trzeci element to treść podpowiedzi.
+const MICS_RS_SCALE = [
+  [0.5, 'dużo gazu',        'Rs/R0 < 0,5 — dużo gazu'],
+  [0.8, 'gaz',              'Rs/R0 0,5–0,8 — gaz'],
+  [Infinity, 'czyste powietrze', 'Rs/R0 ≥ 0,8 — czyste powietrze'],
+];
+const CO_SCALE = [
+  [9,        'czyste',        'CO 0–9 ppm — czyste'],
+  [35,       'podwyższone',   'CO 10–35 ppm — podwyższone'],
+  [100,      'wysokie',       'CO 36–100 ppm — wysokie'],
+  [Infinity, 'niebezpieczne', 'CO >100 ppm — niebezpieczne'],
+];
+// Poziom gazu liczony przez stację powietrza z CO2, TVOC i formaldehydu.
+const GAS_LEVEL = ['dobre', 'umiarkowane', 'złe', 'bardzo złe'];
+
+const NOTE_SCALES = {
+  in_mics_rs: MICS_RS_SCALE,
+  in_mics_co: CO_SCALE,
+  in_mq7_co:  CO_SCALE,
+};
+
+// Podpowiedź (tytuł kafelka) z progami - widać, co znaczy dana liczba.
+const CHANNEL_HINTS = {
+  in_iaq:    'IAQ: Dobra 0–50 • Umiarkowana 51–100 • Zła (wrażliwe grupy) 101–150 • Zła 151–200 • Bardzo zła 201–300 • Niebezpieczna 301–500',
+  in_pm25:   'PM 2.5: 0–10 • 10–15 • 15–25 • 25–37,5 • 37,5+ µg/m³',
+  in_pm25_1m:'PM 2.5 (średnia 1 min): 0–10 • 10–15 • 15–25 • 25–37,5 • 37,5+ µg/m³',
+  in_pm25_5m:'PM 2.5 (średnia 5 min): 0–10 • 10–15 • 15–25 • 25–37,5 • 37,5+ µg/m³',
+  in_pm25_24h:'PM 2.5 (średnia 24 h): 0–10 • 10–15 • 15–25 • 25–37,5 • 37,5+ µg/m³',
+  in_pm10:   'PM 10: 0–20 • 20–45 • 45–75 • 75+ µg/m³',
+  co2:       'CO₂: 0–600 • 600–1000 • 1000–1500 • 1500+ ppm',
+  tvoc:      'TVOC: 0–300 • 300–500 • 500–1000 • 1000+ ppb',
+  ch2o:      'Formaldehyd: 0–20 • 20–40 • 40–80 • 80+ ppb',
+  in_tvoc_lvl: 'Poziom gazu: 1 — dobry, 2 — umiarkowany, 3 — zły, 4 — bardzo zły',
+  in_motion: '1 = wykryto ruch, 0 = bez ruchu',
+  in_mics_v: 'Niskie napięcie ≈ 0,01–0,1 V to czyste powietrze; rośnie przy gazie.',
+  in_mq7_v:  'Surowe napięcie wyjściowe czujnika MQ-7 (rośnie przy tlenku węgla).',
+  in_mics_wu: '1 = czujnik MiCS5524 jeszcze się wygrzewa, 0 = gotowy do pomiaru.',
+};
+
+function scaleNote(scale, v) {
+  for (const [limit, name] of scale) if (v <= limit) return name;
+  return '';
+}
+
+// Krótki opis stanu pod wartością; pusty = nic nie pokazujemy.
+function fmtChannelNote(c) {
+  const v = Number(c.value);
+  if (!isFinite(v)) return '';
+  if (c.id === 'in_iaq')        return iaqLabel(v);
+  if (c.id === 'in_mics_wu')    return v > 0 ? t('wygrzewanie') : t('gotowy');
+  if (c.id === 'in_motion')     return v > 0 ? t('ruch') : t('bez ruchu');
+  if (c.id === 'in_tvoc_lvl') {
+    const i = Math.round(v);
+    return (i >= 1 && i <= 4) ? t(GAS_LEVEL[i - 1]) : '';
+  }
+  const sc = NOTE_SCALES[c.id];
+  return sc ? t(scaleNote(sc, v)) : '';
+}
+
+function fmtChannelHint(c) {
+  const sc = NOTE_SCALES[c.id];
+  const base = CHANNEL_HINTS[c.id];
+  const ranges = sc ? sc.map((x) => t(x[2])).join(' • ') : '';
+  return [base, ranges].filter(Boolean).join(' ');
+}
+
+// ---------------------------------------------------------------
+//  Panele jakości powietrza (sekcja "Wewnątrz")
+//
+//  Układ wzorowany na stronie stacji jakości powietrza: panel na grupę, w nim
+//  wiersze "nazwa ... wartość", wartości kolorowane wg progów i legenda
+//  kolorów z zakresami. Progi są te same, których używa tamta stacja.
+// ---------------------------------------------------------------
+const AQ_BANDS = {
+  iaq: [
+    { max: 50,  c: '#00C853', t: '0–50',   w: 'Dobra' },
+    { max: 100, c: '#FFD600', t: '51–100', w: 'Umiarkowana' },
+    { max: 150, c: '#FF9100', t: '101–150', w: 'Zła (wrażliwe grupy)' },
+    { max: 200, c: '#E53935', t: '151–200', w: 'Zła' },
+    { max: 300, c: '#8E24AA', t: '201–300', w: 'Bardzo zła' },
+    { max: Infinity, c: '#7B1F1F', t: '301–500', w: 'Niebezpieczna' },
+  ],
+  pm25: [
+    { max: 10,   c: '#00C853', t: '0–10' },
+    { max: 15,   c: '#76FF03', t: '10–15' },
+    { max: 25,   c: '#FFD600', t: '15–25' },
+    { max: 37.5, c: '#FF9100', t: '25–37,5' },
+    { max: Infinity, c: '#E53935', t: '37,5+' },
+  ],
+  pm10: [
+    { max: 20, c: '#00C853', t: '0–20' },
+    { max: 45, c: '#FFD600', t: '20–45' },
+    { max: 75, c: '#FF9100', t: '45–75' },
+    { max: Infinity, c: '#E53935', t: '75+' },
+  ],
+  co2: [
+    { max: 600,  c: '#00C853', t: '0–600' },
+    { max: 1000, c: '#FFD600', t: '600–1000' },
+    { max: 1500, c: '#FF9100', t: '1000–1500' },
+    { max: Infinity, c: '#E53935', t: '1500+' },
+  ],
+  tvoc: [   // kanał tej stacji jest w ppb (stacja powietrza podaje ppm)
+    { max: 300,  c: '#00C853', t: '0–300' },
+    { max: 500,  c: '#FFD600', t: '300–500' },
+    { max: 1000, c: '#FF9100', t: '500–1000' },
+    { max: Infinity, c: '#E53935', t: '1000+' },
+  ],
+  ch2o: [
+    { max: 20, c: '#00C853', t: '0–20' },
+    { max: 40, c: '#FFD600', t: '20–40' },
+    { max: 80, c: '#FF9100', t: '40–80' },
+    { max: Infinity, c: '#E53935', t: '80+' },
+  ],
+  co: [
+    { max: 9,   c: '#00C853', t: '0–9 ppm',   w: 'czyste' },
+    { max: 35,  c: '#FFD600', t: '10–35 ppm', w: 'podwyższone' },
+    { max: 100, c: '#FF9100', t: '36–100 ppm', w: 'wysokie' },
+    { max: Infinity, c: '#E53935', t: '>100 ppm', w: 'niebezpieczne' },
+  ],
+  rs: [   // gorszy stan = niższy Rs/R0, więc progi rosną
+    { max: 0.5, c: '#E53935', t: '< 0,5', w: 'dużo gazu' },
+    { max: 0.8, c: '#FFD600', t: '0,5–0,8', w: 'gaz' },
+    { max: Infinity, c: '#00C853', t: '≥ 0,8', w: 'czyste powietrze' },
+  ],
+  level: [
+    { max: 1, c: '#00C853', t: '1' },
+    { max: 2, c: '#FFD600', t: '2' },
+    { max: 3, c: '#FF9100', t: '3' },
+    { max: 4, c: '#E53935', t: '4' },
+  ],
+};
+
+const AQ_PANELS = [
+  { title: 'Jakość powietrza (IAQ)', iaq: true },
+  { title: 'Cząsteczki (PMS7003)',
+    rows: [
+      { id: 'in_pm1',       label: 'PM1.0' },
+      { id: 'in_pm25',      label: 'PM2.5',        bands: 'pm25' },
+      { id: 'in_pm10',      label: 'PM10',         bands: 'pm10' },
+      { id: 'in_pm25_1m',   label: 'PM2.5 · 1 min', bands: 'pm25' },
+      { id: 'in_pm25_5m',   label: 'PM2.5 · 5 min', bands: 'pm25' },
+      { id: 'in_pm25_24h',  label: 'PM2.5 · 24 h',  bands: 'pm25' },
+    ],
+    rhHint: 'in_rh_corr',
+    legends: [{ name: 'PM2.5', bands: 'pm25' }, { name: 'PM10', bands: 'pm10' }] },
+  { title: 'Temperatura i wilgotność (DHT11)',
+    rows: [
+      { id: 'in_air_t',     label: 'Temperatura' },
+      { id: 'in_air_h',     label: 'Wilgotność' },
+      { id: 'in_air_t24',   label: 'Temperatura · 24 h' },
+      { id: 'in_air_h24',   label: 'Wilgotność · 24 h' },
+      { id: 'in_air_t_ext', label: 'Temperatura zewn.' },
+      { id: 'in_air_h_ext', label: 'Wilgotność zewn.' },
+    ],
+    note: 'Temperatura i wilgotność są mierzone razem z pyłem - wilgotność wpływa na odczyt czujnika optycznego.' },
+  { title: 'Gazy (TVOC 30712)',
+    rows: [
+      { id: 'co2',         label: 'CO₂',         bands: 'co2' },
+      { id: 'ch2o',        label: 'Formaldehyd', bands: 'ch2o' },
+      { id: 'tvoc',        label: 'TVOC',        bands: 'tvoc' },
+      { id: 'in_tvoc_lvl', label: 'Poziom',      bands: 'level' },
+    ],
+    legends: [
+      { name: 'CO₂',  bands: 'co2'  },
+      { name: 'TVOC', bands: 'tvoc' },
+      { name: 'CH₂O', bands: 'ch2o' },
+      { name: 'Poziom', bands: 'level', words: ['1 dobre', '2 umiark.', '3 złe', '4 b. złe'] },
+    ] },
+  { title: 'MiCS5524 (ADS1115)',
+    rows: [
+      { id: 'in_mics_v',  label: 'Napięcie wyjścia' },
+      { id: 'in_mics_rs', label: 'Rs/R0 (opór czujnika)', bands: 'rs' },
+      { id: 'in_mics_co', label: 'CO ekwiwalent', bands: 'co', hideOnWarmup: 'in_mics_wu' },
+    ],
+    state: { id: 'in_mics_rs', bands: 'rs', warmup: 'in_mics_wu' },
+    sentences: [
+      { c: '#00C853', s: 'Rs/R0 ≥ 0,8 — czyste powietrze' },
+      { c: '#FFD600', s: 'Rs/R0 0,5–0,8 — gaz' },
+      { c: '#E53935', s: 'Rs/R0 < 0,5 — dużo gazu' },
+    ],
+    note: 'Napięcie to surowe wyjście czujnika (niskie ≈ 0,01–0,1 V = czyste powietrze, rośnie przy gazie). Rs/R0 to opór względem bazy. CO ekwiwalent jest orientacyjny - czujnik jest nieselektywny (alkohol i wodór też podbijają wynik).' },
+  { title: 'MQ-7 (CO, ADS1115 AIN1)',
+    rows: [
+      { id: 'in_mq7_v',  label: 'Napięcie wyjścia' },
+      { id: 'in_mq7_rs', label: 'Rs/R0 (opór czujnika)', bands: 'rs' },
+      { id: 'in_mq7_co', label: 'CO',    bands: 'co' },
+    ],
+    sentences: [
+      { c: '#00C853', s: 'CO 0–9 ppm — czyste' },
+      { c: '#FFD600', s: 'CO 10–35 ppm — podwyższone' },
+      { c: '#FF9100', s: 'CO 36–100 ppm — wysokie' },
+      { c: '#E53935', s: 'CO >100 ppm — niebezpieczne' },
+    ],
+    note: 'Orientacyjne stężenie tlenku węgla (krzywa przybliżona). Czujnik wymaga wygrzania 24–48 h i kalibracji R0 w czystym powietrzu.' },
+];
+
+function aqBand(bandsKey, v) {
+  const bands = AQ_BANDS[bandsKey];
+  if (!bands || !isFinite(v)) return null;
+  for (const b of bands) if (v <= b.max) return b;
+  return bands[bands.length - 1];
+}
+
+// Rysuje panele i zwraca zbiór id kanałów, które zostały w nich pokazane.
+function renderAirPanels(grid, list) {
+  const byId = new Map(list.map((c) => [c.id, c]));
+  const used = new Set();
+  const cards = [];
+
+  // Wiersz "nazwa ... wartość jednostka" (jak .metric na stacji powietrza).
+  const metric = (label, valText, unit, color) => {
+    const d = document.createElement('div');
+    d.className = 'm';
+    const sp = document.createElement('span');
+    sp.textContent = t(label);
+    const b = document.createElement('b');
+    b.textContent = valText;
+    if (color) b.style.color = color;
+    const em = document.createElement('em');
+    em.textContent = unit ? t(unit) : '';
+    d.append(sp, b, em);
+    return d;
+  };
+
+  // Parametr, który najbardziej obniża jakość powietrza ("Największy wpływ").
+  const causeOf = () => {
+    const cands = [
+      ['PM2.5', 'in_pm25', 'pm25'], ['PM10', 'in_pm10', 'pm10'],
+      ['CO₂', 'co2', 'co2'], ['TVOC', 'tvoc', 'tvoc'], ['CH₂O', 'ch2o', 'ch2o'],
+    ];
+    let name = '', lvl = -1;
+    for (const [n, id, bandsKey] of cands) {
+      const c = byId.get(id);
+      if (!c) continue;
+      const b = aqBand(bandsKey, Number(c.value));
+      if (b) {
+        const l = AQ_BANDS[bandsKey].indexOf(b);
+        if (l > lvl) { lvl = l; name = n; }
+      }
+    }
+    return t('Największy wpływ') + ': ' + (name || '—');
+  };
+  const warmup = (id) => { const c = byId.get(id); return c && Number(c.value) > 0; };
+
+  for (const p of AQ_PANELS) {
+    // Panel pomijamy, gdy nie ma ani jednego jego kanału z odczytem.
+    const present = p.iaq ? (byId.has('in_iaq') || byId.has('in_motion'))
+                          : (p.rows || []).some((r) => byId.has(r.id));
+    if (!present) continue;
+
+    const box = document.createElement('div');
+    box.className = 'aqp' + (p.iaq ? ' aqi' : '');
+    const h = document.createElement('h4');
+    h.textContent = t(p.title);
+    box.appendChild(h);
+
+    if (p.iaq) {
+      const iaq = byId.get('in_iaq');
+      const b = aqBand('iaq', iaq ? Number(iaq.value) : NaN);
+      const big = document.createElement('div');
+      big.className = 'aqi-big';
+      big.textContent = iaq ? fmtChannelValue(iaq) : '—';
+      big.style.color = b ? b.c : 'var(--text)';
+      const lbl = document.createElement('div');
+      lbl.className = 'aqi-label';
+      lbl.textContent = b ? t(b.w) : t('czekam na dane…');
+      box.append(big, lbl);
+      const cause = document.createElement('div');
+      cause.className = 'aqi-cause';
+      cause.textContent = causeOf();
+      box.appendChild(cause);
+      // Skala IAQ (gradient EPA) ze znacznikiem bieżącej wartości.
+      const scale = document.createElement('div');
+      scale.className = 'aqi-scale';
+      const track = document.createElement('div');
+      track.className = 'aqi-track';
+      const marker = document.createElement('div');
+      marker.className = 'aqi-marker';
+      const pct = Math.max(0, Math.min(100, (iaq ? Number(iaq.value) : 0) / 500 * 100));
+      marker.style.left = pct + '%';
+      track.appendChild(marker);
+      const ticks = document.createElement('div');
+      ticks.className = 'aqi-ticks';
+      [[0, 0], [50, 10], [100, 20], [150, 30], [200, 40], [300, 60], [500, 100]]
+        .forEach(([n, pos]) => {
+          const s = document.createElement('span');
+          s.textContent = n;
+          s.style.left = pos + '%';
+          ticks.appendChild(s);
+        });
+      scale.append(track, ticks);
+      box.appendChild(scale);
+      // Legenda kategorii IAQ.
+      const lg = document.createElement('div');
+      lg.className = 'aqi-legend';
+      AQ_BANDS.iaq.forEach((x) => {
+        const it = document.createElement('div');
+        it.className = 'aqi-lg';
+        it.innerHTML = `<span class="sw" style="background:${x.c}"></span>` +
+                       escapeHtml(t(x.w)) + `<em>${x.t}</em>`;
+        lg.appendChild(it);
+      });
+      box.appendChild(lg);
+      // Ruch.
+      const mo = byId.get('in_motion');
+      const motion = document.createElement('div');
+      motion.className = 'motion';
+      const on = mo && Number(mo.value) > 0;
+      motion.textContent = on ? '● ' + t('Ruch wykryty') : t('Bez ruchu');
+      if (on) motion.classList.add('on');
+      box.appendChild(motion);
+      used.add('in_iaq');
+      used.add('in_motion');
+    } else {
+      for (const spec of p.rows) {
+        const c = byId.get(spec.id);
+        if (!c) continue;
+        used.add(spec.id);
+        if (spec.hideOnWarmup && warmup(spec.hideOnWarmup)) continue;
+        const b = spec.bands ? aqBand(spec.bands, Number(c.value)) : null;
+        box.appendChild(metric(spec.label, fmtChannelValue(c), c.unit || '', b ? b.c : ''));
+      }
+      if (p.state) {
+        const c = byId.get(p.state.id);
+        if (c) {
+          const warm = p.state.warmup && warmup(p.state.warmup);
+          if (warm) used.add(p.state.warmup);
+          let txt = '', col = '';
+          if (warm) txt = t('rozgrzewanie…');
+          else { const b = aqBand(p.state.bands, Number(c.value)); if (b) { txt = t(b.w); col = b.c; } }
+          box.appendChild(metric('Stan', txt || '—', '', col || ''));
+        }
+      }
+      // Legenda progów: poziome wiersze "nazwa [kolor]zakres ...".
+      if (p.legends) {
+        const lg = document.createElement('div');
+        lg.className = 'lgd';
+        for (const spec of p.legends) {
+          const row = document.createElement('div');
+          row.className = 'lgd-row';
+          const nm = document.createElement('span');
+          nm.className = 'nm';
+          nm.textContent = t(spec.name);
+          row.appendChild(nm);
+          AQ_BANDS[spec.bands].forEach((band, i) => {
+            const it = document.createElement('span');
+            it.className = 'lgd-i';
+            const txt = spec.words === true ? (band.t + ' — ' + t(band.w))
+                       : (spec.words ? t(spec.words[i]) : band.t);
+            it.innerHTML = `<i class="sw" style="background:${band.c}"></i>` + escapeHtml(txt);
+            row.appendChild(it);
+          });
+          lg.appendChild(row);
+        }
+        box.appendChild(lg);
+      }
+      // Legenda zdań (MiCS / MQ-7).
+      if (p.sentences) {
+        const lg = document.createElement('div');
+        lg.className = 'sent';
+        for (const it of p.sentences) {
+          const item = document.createElement('div');
+          item.className = 'sent-i';
+          item.innerHTML = `<span class="sw" style="background:${it.c}"></span> ` + escapeHtml(t(it.s));
+          lg.appendChild(item);
+        }
+        box.appendChild(lg);
+      }
+      // Korekcja wilgotności PM.
+      if (p.rhHint) {
+        const c = byId.get(p.rhHint);
+        if (c) used.add(c.id);
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent = (c && isFinite(Number(c.value)))
+          ? 'Korekcja wilgotności PM: ON (RH ' + Math.round(Number(c.value)) + '%)'
+          : t('Korekcja wilgotności PM: OFF (RH poniżej progu)');
+        box.appendChild(hint);
+      }
+      if (p.note) {
+        const n = document.createElement('p');
+        n.className = 'hint';
+        n.textContent = t(p.note);
+        box.appendChild(n);
+      }
+    }
+    cards.push(box);
+  }
+
+  if (!cards.length) return used;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'aqp-grid';
+  cards.forEach((c) => wrap.appendChild(c));
+  grid.appendChild(wrap);
+  return used;
+}
+
+// ---------------------------------------------------------------
+//  Wskaźniki pogody (styl Weather Underground)
+//
+//  Termometr z rtęcią, barometr ze wskazówką, kropla wilgotności, zlewka
+//  deszczu, wiatrowskaz i paski UV/światła. Wskazanie animuje się po każdej
+//  aktualizacji pulpitu (wypełnienie / wskazówka / strzałka poruszają się
+//  przez ~0,9 s do nowej wartości).
+// ---------------------------------------------------------------
+let wxUid = 0;
+const SVGNS = 'http://www.w3.org/2000/svg';
+const clamp01 = x => (x < 0 ? 0 : (x > 1 ? 1 : x));
+
+function wxSvg(w, h, vb) {
+  const s = document.createElementNS(SVGNS, 'svg');
+  s.setAttribute('viewBox', vb || `0 0 ${w} ${h}`);
+  s.setAttribute('width', w);
+  s.setAttribute('height', h);
+  return s;
+}
+function wxPolar(cx, cy, r, deg) {
+  const a = deg * Math.PI / 180;
+  return [cx + r * Math.sin(a), cy - r * Math.cos(a)];
+}
+function wxArc(cx, cy, r, a0, a1) {
+  const [x0, y0] = wxPolar(cx, cy, r, a0);
+  const [x1, y1] = wxPolar(cx, cy, r, a1);
+  const large = (a1 - a0) > 180 ? 1 : 0;
+  return `M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)}`;
+}
+function wxCompass(deg) {
+  if (!isFinite(deg)) return '';
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+function wxScaleLabel(v) {
+  if (!isFinite(v)) return '';
+  if (Math.abs(v) >= 10000) return Math.round(v / 1000) + 'k';
+  if (Number.isInteger(v)) return String(v);
+  return v.toFixed(1);
+}
+
+function buildThermo(v, min, max) {
+  const f = clamp01((v - min) / (max - min));
+  const hue = Math.round(215 - f * 215);                 // niebieski -> czerwony
+  const color = `hsl(${hue}, 85%, 45%)`;
+  const svg = wxSvg(44, 106, '0 0 60 150');
+  let scale = '';
+  for (let i = 0; i <= 6; i++) {
+    const t = min + (max - min) * i / 6;
+    const y = (115 - clamp01((t - min) / (max - min)) * 103).toFixed(1);
+    scale += `<line x1="17" y1="${y}" x2="22" y2="${y}" stroke="#64748b" stroke-width="1"/>` +
+             `<text x="14" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="8">${Math.round(t)}</text>`;
+  }
+  svg.innerHTML =
+    `<rect x="22" y="8" width="16" height="96" rx="8" fill="none" stroke="#334155" stroke-width="2"/>` +
+    `<circle cx="30" cy="124" r="13" fill="none" stroke="#334155" stroke-width="2"/>` +
+    `<circle cx="30" cy="124" r="9" fill="${color}"/>` +
+    `<rect class="wx-fill" x="25" y="115" width="10" height="0" rx="4" fill="${color}"/>` +
+    scale;
+  const fill = svg.querySelector('.wx-fill');
+  const y1 = (115 - f * 103).toFixed(2), h1 = Math.max(0.001, f * 103).toFixed(2);
+  return { svg, settle: () => { fill.setAttribute('y', y1); fill.setAttribute('height', h1); } };
+}
+
+function buildDial(v, min, max) {
+  if (!isFinite(v)) v = min;
+  if (v < min) min = Math.floor(v) - 4;
+  if (v > max) max = Math.ceil(v) + 4;
+  const f = clamp01((v - min) / (max - min));
+  const cx = 55, cy = 58;
+  const svg = wxSvg(96, 96, '0 0 110 110');
+  let inner = `<circle cx="${cx}" cy="${cy}" r="44" fill="none" stroke="#273449" stroke-width="2"/>`;
+  for (const [a0, a1, c] of [[-135, -45, '#4fc3f7'], [-45, 45, '#81c784'], [45, 135, '#ffb74d']]) {
+    inner += `<path d="${wxArc(cx, cy, 39, a0, a1)}" fill="none" stroke="${c}" stroke-width="6"/>`;
+  }
+  for (let i = 0; i <= 10; i++) {
+    const a = -135 + 270 * i / 10;
+    const [x0, y0] = wxPolar(cx, cy, 30, a), [x1, y1] = wxPolar(cx, cy, 36, a);
+    inner += `<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="#64748b" stroke-width="${i % 5 === 0 ? 2 : 1}"/>`;
+  }
+  // Skala liczbowa (min .. max) na zewnątrz tarczy.
+  for (let i = 0; i <= 4; i++) {
+    const a = -135 + 270 * i / 4;
+    const [lx, ly] = wxPolar(cx, cy, 48, a);
+    const val = min + (max - min) * i / 4;
+    inner += `<text x="${lx.toFixed(1)}" y="${(ly + 2.5).toFixed(1)}" text-anchor="middle" fill="#94a3b8" font-size="8">${Math.round(val)}</text>`;
+  }
+  inner += `<g class="wx-needle" style="transform:rotate(0deg);transform-origin:${cx}px ${cy}px">` +
+           `<polygon points="${cx - 2.5},${cy + 4} ${cx + 2.5},${cy + 4} ${cx},${cy - 30}" fill="#e2e8f0"/>` +
+           `<circle cx="${cx}" cy="${cy}" r="4" fill="#e2e8f0"/></g>`;
+  svg.innerHTML = inner;
+  const needle = svg.querySelector('.wx-needle');
+  const ang = (-135 + 270 * f).toFixed(1);
+  return { svg, settle: () => { needle.style.transform = `rotate(${ang}deg)`; } };
+}
+
+function buildDrop(v, min, max) {
+  const f = clamp01((v - min) / (max - min));
+  const id = 'wxDrop' + (++wxUid);
+  const path = 'M35,6 C56,34 62,54 62,72 A27,27 0 0 1 8,72 C8,54 14,34 35,6 Z';
+  const svg = wxSvg(68, 92, '0 0 84 120');
+  let scale = '';
+  for (let i = 0; i <= 4; i++) {
+    const val = min + (max - min) * i / 4;
+    const y = (104 - i * 23).toFixed(1);
+    scale += `<line x1="66" y1="${y}" x2="70" y2="${y}" stroke="#64748b" stroke-width="1"/>` +
+             `<text x="64" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="8">${Math.round(val)}</text>`;
+  }
+  svg.innerHTML =
+    `<defs><clipPath id="${id}"><path d="${path}"/></clipPath></defs>` +
+    `<path d="${path}" fill="none" stroke="#334155" stroke-width="2"/>` +
+    `<rect class="wx-fill" clip-path="url(#${id})" x="0" y="118" width="70" height="112" fill="#4fc3f7"/>` +
+    scale;
+  const fill = svg.querySelector('.wx-fill');
+  const y1 = (118 - f * 112).toFixed(2);
+  return { svg, settle: () => { fill.setAttribute('y', y1); } };
+}
+
+function buildBeaker(v, max) {
+  if (!isFinite(v)) v = 0;
+  let m = max || 25;
+  if (v > m) m = Math.ceil(v + 1);
+  const f = clamp01(v / m);
+  const id = 'wxBeaker' + (++wxUid);
+  const shape = 'M20,6 L16,14 L10,112 L60,112 L54,14 L50,6 Z';
+  const svg = wxSvg(68, 92, '0 0 88 120');
+  let inner =
+    `<defs><clipPath id="${id}"><path d="${shape}"/></clipPath></defs>` +
+    `<path d="${shape}" fill="none" stroke="#334155" stroke-width="2"/>` +
+    `<rect class="wx-fill" clip-path="url(#${id})" x="0" y="112" width="70" height="112" fill="#3b82f6"/>`;
+  for (let i = 0; i <= 4; i++) {
+    const val = m * i / 4;
+    const yy = (112 - (i / 4) * 92).toFixed(1);
+    inner += `<line x1="60" y1="${yy}" x2="65" y2="${yy}" stroke="#64748b" stroke-width="1"/>` +
+             `<text x="67" y="${(Number(yy) + 2.5).toFixed(1)}" fill="#94a3b8" font-size="8">${wxScaleLabel(val)}</text>`;
+  }
+  svg.innerHTML = inner;
+  const fill = svg.querySelector('.wx-fill');
+  const y1 = (112 - f * 92).toFixed(2);
+  return { svg, settle: () => { fill.setAttribute('y', y1); } };
+}
+
+function buildWind(dir) {
+  const svg = wxSvg(84, 84, '0 0 100 100');
+  svg.innerHTML =
+    `<circle cx="50" cy="50" r="44" fill="none" stroke="#273449" stroke-width="2"/>` +
+    `<text x="50" y="16" text-anchor="middle" fill="#94a3b8" font-size="9">N</text>` +
+    `<text x="50" y="94" text-anchor="middle" fill="#94a3b8" font-size="9">S</text>` +
+    `<text x="10" y="53" text-anchor="middle" fill="#94a3b8" font-size="9">W</text>` +
+    `<text x="90" y="53" text-anchor="middle" fill="#94a3b8" font-size="9">E</text>` +
+    `<g class="wx-arrow" style="transform:rotate(0deg);transform-origin:50px 50px">` +
+    `<polygon points="50,18 46,44 49,44 49,68 51,68 51,44 54,44" fill="#e2e8f0"/></g>`;
+  const arrow = svg.querySelector('.wx-arrow');
+  return { svg, settle: () => { arrow.style.transform = `rotate(${dir}deg)`; } };
+}
+
+function buildBar(v, min, max, color) {
+  const f = clamp01((v - min) / (max - min));
+  const svg = wxSvg(108, 22, '0 0 120 26');
+  svg.innerHTML =
+    `<rect x="0" y="5" width="120" height="6" rx="3" fill="#3b4a5f"/>` +
+    `<rect class="wx-fillw" x="0" y="5" width="0" height="6" rx="3" fill="${color}"/>` +
+    `<text x="0" y="21" fill="#94a3b8" font-size="7">${wxScaleLabel(min)}</text>` +
+    `<text x="120" y="21" text-anchor="end" fill="#94a3b8" font-size="7">${wxScaleLabel(max)}</text>`;
+  const fill = svg.querySelector('.wx-fillw');
+  return { svg, settle: () => { fill.setAttribute('width', (f * 120).toFixed(2)); } };
+}
+
+function buildWeatherIcon(code) {
+  const icons = { 0: '🌙', 1: '☀️', 2: '☁️', 3: '🌧️', 4: '🌨️', 5: '🌫️' };
+  const d = document.createElement('div');
+  d.className = 'bigico';
+  const missing = code === null || code === undefined || !isFinite(code);
+  d.textContent = missing ? '—' : (icons[code] || '❓');
+  if (missing) d.style.opacity = '0.35';
+  return { node: d, settle: () => {} };
+}
+
+// Specyfikacja wskaźników: id kanału, rodzaj, etykieta/jednostka (na wypadek
+// braku kanału - wskaźnik pokazuje wtedy "—", ale zostaje na pulpicie), zakres
+// i (opcjonalnie) kanały pomocnicze (kierunek/poryw wiatru, deszcz "teraz").
+const WX_OUT_GAUGES = [
+  { id: 'temp',        kind: 'thermo', label: 'Temperatura',      unit: '°C',  min: -20, max: 40 },
+  { id: 'press',       kind: 'dial',   label: 'Ciśnienie',        unit: 'hPa', min: 950, max: 1050 },
+  { id: 'hum',         kind: 'drop',   label: 'Wilgotność',       unit: '%',   min: 0,   max: 100, alt: 'vev_hum' },
+  { id: 'uv',          kind: 'bar',    label: 'Indeks UV',        unit: '',    min: 0,   max: 11,   color: '#a78bfa' },
+  { id: 'light',       kind: 'bar',    label: 'Natężenie światła', unit: 'lx', min: 0,   max: 120000, color: '#fbbf24' },
+  { id: 'cam_weather', kind: 'icon',   label: 'Pogoda z kamery',  unit: '' },
+];
+const WX_VEV_GAUGES = [
+  { id: 'vev_wind',     kind: 'wind',   label: 'Wiatr',            unit: 'km/h', dir: 'vev_vane', gust: 'vev_gust' },
+  { id: 'vev_rain_day', kind: 'beaker', label: 'Deszcz dziś',      unit: 'mm',   max: 25, sub: 'vev_rain_now' },
+  { id: 'vev_temp',     kind: 'thermo', label: 'Temperatura (VEVOR)', unit: '°C', min: -20, max: 40 },
+  { id: 'vev_hum',      kind: 'drop',   label: 'Wilgotność (VEVOR)', unit: '%',  min: 0,   max: 100 },
+  { id: 'vev_uv',       kind: 'bar',    label: 'UV (VEVOR)',      unit: '',    min: 0,   max: 11,   color: '#a78bfa' },
+  { id: 'vev_light',    kind: 'bar',    label: 'Lux (VEVOR)',    unit: 'lx',  min: 0,   max: 120000, color: '#fbbf24' },
+];
+
+function renderWxGauges(grid, specs, byId) {
+  const used = new Set();
+  const cards = [];
+  const settlers = [];
+
+  for (const spec of specs) {
+    const c = byId.get(spec.id) || (spec.alt ? byId.get(spec.alt) : null);
+    const v = c ? Number(c.value) : NaN;
+    if (c) used.add(c.id);
+
+    let gauge, sub = '';
+    if (spec.kind === 'icon') {
+      gauge = buildWeatherIcon(isFinite(v) ? v : null);
+    } else if (spec.kind === 'wind') {
+      const dirC = byId.get(spec.dir);
+      const gustC = byId.get(spec.gust);
+      if (dirC) used.add(dirC.id);
+      if (gustC) used.add(gustC.id);
+      const dirV = dirC ? Number(dirC.value) : NaN;
+      gauge = buildWind(isFinite(dirV) ? dirV : 0);
+      if (isFinite(dirV)) sub = wxCompass(dirV) + ' ' + Math.round(dirV) + '°';
+      if (gustC && isFinite(Number(gustC.value))) sub += (sub ? ' • ' : '') + t('Poryw') + ' ' + fmtNum(Number(gustC.value), 1) + ' km/h';
+    } else if (spec.kind === 'beaker') {
+      gauge = buildBeaker(isFinite(v) ? v : 0, spec.max);
+      const nowC = byId.get(spec.sub);
+      if (nowC && isFinite(Number(nowC.value))) {
+        used.add(nowC.id);
+        sub = t('teraz') + ' ' + fmtNum(Number(nowC.value), 1) + ' mm/h';
+      }
+    } else if (spec.kind === 'thermo') {
+      gauge = buildThermo(isFinite(v) ? v : spec.min, spec.min, spec.max);
+    } else if (spec.kind === 'dial') {
+      gauge = buildDial(isFinite(v) ? v : spec.min, spec.min, spec.max);
+    } else if (spec.kind === 'drop') {
+      gauge = buildDrop(isFinite(v) ? v : 0, spec.min, spec.max);
+    } else if (spec.kind === 'bar') {
+      gauge = buildBar(isFinite(v) ? v : 0, spec.min, spec.max, spec.color || '#fbbf24');
+    } else {
+      continue;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'wx-card';
+    const lbl = document.createElement('div');
+    lbl.className = 'lbl';
+    lbl.textContent = t(spec.label);
+    card.appendChild(lbl);
+    if (gauge.node) card.appendChild(gauge.node);
+    else card.appendChild(gauge.svg);
+    const val = document.createElement('div');
+    val.className = 'val';
+    const unit = c && c.unit ? c.unit : (spec.unit || '');
+    val.innerHTML = escapeHtml(c ? fmtChannelValue(c) : '—') +
+      (unit ? ' <span class="unit">' + escapeHtml(t(unit)) + '</span>' : '');
+    card.appendChild(val);
+    if (sub) {
+      const sd = document.createElement('div');
+      sd.className = 'sub';
+      sd.textContent = sub;
+      card.appendChild(sd);
+    }
+    cards.push(card);
+    settlers.push(gauge.settle);
+  }
+
+  if (!cards.length) return used;
+
+  const box = document.createElement('div');
+  box.className = 'wx-panel';
+  const h = document.createElement('h4');
+  h.textContent = t('Wskaźniki pogody');
+  box.appendChild(h);
+  const row = document.createElement('div');
+  row.className = 'wx-grid';
+  // Wszystkie wskaźniki w jednej linii (tyle kolumn, ile kart) - na wąskim
+  // ekranie media query z CSS przywraca zawijanie.
+  row.style.gridTemplateColumns = 'repeat(' + cards.length + ', 1fr)';
+  cards.forEach(cd => row.appendChild(cd));
+  box.appendChild(row);
+  grid.appendChild(box);
+
+  if (wxFirstPaint) {
+    // Pierwsze wyświetlenie: wskaźniki "dopełniają się" od zera (efekt przy
+    // wejściu na pulpit). Przy każdym kolejnym odświeżeniu ustawiamy wartość
+    // od razu, bez animacji - inaczej co 10 s wskaźniki wizualnie "startują"
+    // od zera i pulpit wygląda, jakby się restartował.
+    requestAnimationFrame(() => requestAnimationFrame(() => settlers.forEach(s => s())));
+  } else {
+    settlers.forEach(s => s());
+  }
+  return used;
+}
+
+// Wartość kanału gotowa do wyświetlenia: liczby jak dotąd, kody słownie.
+function fmtChannelValue(c) {
+  if (c.value === null || c.value === undefined) return '—';
+  const v = Number(c.value);
+  if (!isFinite(v)) return '—';
+  if (c.id === 'cam_weather') return t(CAM_WEATHER_LABEL[v] || String(v));
+  if (c.id === 'cam_phase')   return t(CAM_PHASE_LABEL[v] || String(v));
+  return v.toFixed(c.decimals);
+}
+
 // Licznik przerysowań: start strony woła loadStatus() dwa razy (wprost i przez
 // showTab), a przerwy na /api/forecast i /api/status pozwalały starszemu
 // wywołaniu dopisać karty po nowszym - na pulpicie dublowały się wtedy
 // róża wiatrów i pierścień LED.
 let statusSeq = 0;
+// Wskaźniki pogody animują się tylko przy pierwszym rysowaniu pulpitu.
+let wxFirstPaint = true;
 
 async function loadStatus() {
   const seq = ++statusSeq;
-  const s = await api('/api/status');
+  // Pobieramy status i prognozę razem, a pulpit budujemy w oderwanym
+  // fragmencie i podmieniamy jednym ruchem (replaceChildren). Dzięki temu
+  // dane zmieniają się "w miejscu" - strona nie miga ani nie pokazuje
+  // pustego pulpitu przy odświeżaniu co 10 s.
+  const [s, fc] = await Promise.all([api('/api/status'), api('/api/forecast')]);
   if (seq !== statusSeq) return;
   const grid = document.getElementById('dashboard');
-  grid.innerHTML = '';
-  const chans = (s.channels||[]).filter(c => c.detected && c.enabled);
+  const frag = document.createDocumentFragment();
+  // Kanały będące tylko źródłem dla kanału głównego (np. ciśnienie z BMP280,
+  // gdy stacja pokazuje je jako "Ciśnienie") pomijamy - inaczej ta sama
+  // wartość pojawia się na pulpicie dwa razy.
+  const chans = (s.channels||[]).filter(c => c.detected && c.enabled && !c.alias);
   const isIn = c => c.zone === 'in';
 
   // Karta jednego kanału - pokazujemy wyłącznie czujniki z potwierdzonym odczytem,
   // więc na pulpicie nie ma kafelków "czeka na dane" dla niepodłączonego sprzętu.
-  const addCard = c => {
+  const addCard = (c, tone) => {
     const d = document.createElement('div');
     d.className = 'card';
+    // Analiza zdjęcia z kamery stoi teraz razem z czujnikami zewnętrznymi, ale
+    // zachowuje własny kolor kafelka, żeby było widać, że to nie pomiar
+    // czujnika, tylko to, co kamera "widzi".
+    if (c.id.startsWith('cam_')) tone = 'cam';
+    if (tone) d.dataset.tone = tone;
     if (c.id === 'light') d.id = 'card-light';   // szybkie odświeżanie luksomierza
-    const val = (c.value === null || c.value === undefined) ? '—' : Number(c.value).toFixed(c.decimals);
+    const val = fmtChannelValue(c);
+    const note = fmtChannelNote(c);
+    const hint = fmtChannelHint(c);
+    if (hint) d.title = hint;
     d.innerHTML = `<div class="label">${escapeHtml(c.name)}</div>
-      <div class="value">${val} <span class="unit">${c.unit}</span></div>`;
-    grid.appendChild(d);
+      <div class="value">${val} <span class="unit">${fmtChannelUnit(c)}</span></div>` +
+      (note ? `<div class="note">${escapeHtml(note)}</div>` : '');
+    frag.appendChild(d);
   };
-  const addZone = (label, list) => {
+  const addZone = (label, list, tone, icon) => {
     if (!list.length) return;
     const h = document.createElement('div');
     h.className = 'zone-head';
-    h.textContent = label;
-    grid.appendChild(h);
-    list.forEach(addCard);
+    if (tone) h.dataset.tone = tone;
+    h.textContent = (icon ? icon + ' ' : '') + label;
+    frag.appendChild(h);
+    list.forEach(c => addCard(c, tone));
   };
 
-  addZone('Wewnątrz', chans.filter(c => isIn(c) && !c.remote));
-  addZone('Na zewnątrz', chans.filter(c => !isIn(c) && !c.remote));
+  const isVev = c => c.id.startsWith('vev_');
+  const isBtgw = c => c.id.startsWith('btgw_');
+  const isNet = c => c.id.startsWith('net_');
+
+  // Odczyt z kamery (pogoda, faza dnia, zachmurzenie, światło, deszcz, śnieg,
+  // mgła) traktujemy jak zwykłe pomiary zewnętrzne i pokazujemy razem z
+  // pozostałymi czujnikami na zewnątrz - kamera patrzy na to samo niebo.
+  const inList  = chans.filter(c => isIn(c)  && !c.remote && !isVev(c) && !isBtgw(c) && !isNet(c));
+  const outList = chans.filter(c => !isIn(c) && !c.remote && !isVev(c) && !isBtgw(c) && !isNet(c));
+
+  // Sekcja wewnętrzna: panele jakości powietrza w układzie strony stacji
+  // jakości powietrza (patrz AQ_PANELS - grupy, kolorowane wartości, progi),
+  // a dla pozostałych czujników wewnętrznych (sterowniki modułowe, zasilanie,
+  // ekspandery) zwykłe kafelki, żeby nic nie zniknęło z pulpitu.
+  const addSubHead = (icon, label) => {
+    const h = document.createElement('div');
+    h.className = 'sub-head';
+    h.textContent = (icon ? icon + ' ' : '') + t(label);
+    frag.appendChild(h);
+  };
+
+  if (inList.length) {
+    const zh = document.createElement('div');
+    zh.className = 'zone-head';
+    zh.dataset.tone = 'in';
+    zh.textContent = '🏠 ' + t('Wewnątrz');
+    frag.appendChild(zh);
+
+    const used = renderAirPanels(frag, inList);
+    const rest = inList.filter(c => !used.has(c.id));
+    if (rest.length) {
+      addSubHead('📦', 'Pozostałe czujniki wewnętrzne');
+      rest.forEach(c => addCard(c, 'in'));
+    }
+  }
+
+  // Sekcja zewnętrzna: wskaźniki pogody (termometr, barometr, kropla, paski
+  // UV/światła, ikona pogody z kamery). Wskaźniki są zawsze widoczne - bez
+  // danych pokazują "—" - a pozostałe kanały zewnętrzne zostają kafelkami.
+  {
+    const zh = document.createElement('div');
+    zh.className = 'zone-head';
+    zh.dataset.tone = 'out';
+    zh.textContent = '🌤️ ' + t('Na zewnątrz');
+    frag.appendChild(zh);
+    const byId = new Map(chans.map(c => [c.id, c]));
+    const used = renderWxGauges(frag, WX_OUT_GAUGES, byId);
+    const rest = outList.filter(c => !used.has(c.id));
+    if (rest.length) {
+      addSubHead('📦', 'Pozostałe na zewnątrz');
+      rest.forEach(c => addCard(c, 'out'));
+    }
+  }
+
+  // Czujniki Bluetooth z bramki BLE - osobno od czujników stacji, po jednej
+  // podsekcji na urządzenie (MAC). Nazwa urządzenia = nazwa kanału bez końcówki.
+  const btByMac = new Map();
+  chans.filter(isBtgw).forEach(c => {
+    const mac = c.id.substring(5, c.id.lastIndexOf('_'));
+    if (!btByMac.has(mac)) btByMac.set(mac, []);
+    btByMac.get(mac).push(c);
+  });
+  [...btByMac.keys()].sort().forEach(mac => {
+    const list = btByMac.get(mac);
+    const devChan = list.find(c => c.id.endsWith('_t')) || list[0];
+    const label = devChan.name.replace(/\s+(temperatura|wilgotność|bateria|sygnał)$/i, '').trim();
+    addZone(label || ('BT ' + mac), list, 'bt', '📶');
+  });
+
+  // Stacja VEVOR (sniffer 868 MHz) - zawsze widoczna sekcja z wskaźnikami
+  // wiatru i deszczu (tu jest ich źródło); bez danych pokazują "—".
+  // Pozostałe kanały VEVOR zostają kafelkami.
+  const vevList = chans.filter(isVev);
+  {
+    const zh = document.createElement('div');
+    zh.className = 'zone-head';
+    zh.dataset.tone = 'vev';
+    zh.textContent = '📻 ' + t('VEVOR 868 MHz');
+    frag.appendChild(zh);
+    const byId = new Map(chans.map(c => [c.id, c]));
+    const used = renderWxGauges(frag, WX_VEV_GAUGES, byId);
+    const rest = vevList.filter(c => !used.has(c.id));
+    if (rest.length) {
+      addSubHead('📻', 'Pozostałe (VEVOR)');
+      rest.forEach(c => addCard(c, 'vev'));
+    }
+  }
+
+  // Pogoda z internetu (Open-Meteo) - do bezpośredniego porównania z naszymi
+  // czujnikami i stacją VEVOR.
+  addZone('Internet (Open-Meteo)', chans.filter(isNet), 'net', '🌐');
 
   // Kanały węzłów magistrali: osobna sekcja na każdy węzeł (adres węzła
   // przychodzi w /api/status jako remote_addr).
@@ -1641,21 +2674,19 @@ async function loadStatus() {
     if (!byAddr.has(a)) byAddr.set(a, []);
     byAddr.get(a).push(c);
   });
-  [...byAddr.keys()].sort((x, y) => x - y).forEach(a => addZone(r2NodeLabel(a), byAddr.get(a)));
+  [...byAddr.keys()].sort((x, y) => x - y).forEach(a => addZone(r2NodeLabel(a), byAddr.get(a), 'node', '🔗'));
 
   if (!chans.length) {
     const e = document.createElement('div');
     e.className = 'muted';
     e.textContent = t('Nie wykryto żadnego czujnika - podłącz czujnik i zajrzyj do zakładki Czujniki.');
-    grid.appendChild(e);
+    frag.appendChild(e);
   }
 
   // Skrót prognozy lokalnej - najważniejsze informacje bez wchodzenia w zakładkę.
-  const fc = await api('/api/forecast');
-  if (seq !== statusSeq) return;
   if (fc && fc.valid !== undefined) {
     const tr = fc.trend || {}, rn = fc.rain || {};
-    grid.appendChild(infoCard(
+    frag.appendChild(infoCard(
       t('Prognoza lokalna'),
       t(FC_OUTLOOK[fc.outlook_key] || fc.outlook_key), '',
       t('Pewność prognozy') + ': ' + fmtNum(fc.confidence, 0) + ' % • ' +
@@ -1679,7 +2710,7 @@ async function loadStatus() {
         <span style="color:${col}">${escapeHtml(aqi.category || '')}</span>
       </div>
       <div class="unit">${pmParts.join(' • ') || 'brak danych PM'}</div>`;
-    grid.appendChild(d);
+    frag.appendChild(d);
   }
 
   // Róża wiatrów - tylko gdy wiatrowskaz już coś zmierzył.
@@ -1699,7 +2730,7 @@ async function loadStatus() {
           <div class="unit">${deg === null ? 'brak danych' : deg.toFixed(0) + '°'}</div>
         </div>
       </div>`;
-    grid.appendChild(d);
+    frag.appendChild(d);
   }
   document.getElementById('clock').textContent = s.datetime || '--';
   const w = s.wifi||{}; const m = s.mqtt||{}; const sd = s.sd||{};
@@ -1717,11 +2748,19 @@ async function loadStatus() {
         <span style="width:14px;height:14px;border-radius:50%;flex:0 0 auto;background:${col};box-shadow:0 0 8px ${col}"></span>
         ${escapeHtml(rg.state_name || '')}</div>
       <div class="unit">${rg.power_ma || 0} mA • jasność ${rg.brightness || 0}%</div>`;
-    grid.appendChild(d);
+    frag.appendChild(d);
     setBadge('ringBadge', 'Led: ' + (rg.state_name || '?'), true);
   } else {
     setBadge('ringBadge', 'Led wyłączony', false);
   }
+
+  // Jedna atomowa podmiana zawartości pulpitu - dane zmieniają się w miejscu,
+  // bez migania i bez widocznego "restartu" strony.
+  grid.replaceChildren(frag);
+
+  // Po pierwszym kompletnym rysunku pulpitu wskaźniki pogody aktualizują się
+  // już bez animacji "od zera" (patrz renderWxGauges / wxFirstPaint).
+  wxFirstPaint = false;
 }
 
 function setBadge(id, text, ok) {
@@ -2752,6 +3791,29 @@ async function loadAstro() {
 // ---------------- GPS ----------------
 // Odświeża tylko karty stanu (bez nadpisywania pól formularza) - wołane
 // z licznika 15 s, żeby wpisywane współrzędne nie były co chwilę kasowane.
+// Siła sygnału satelitów (SNR) - paski do ustawiania anteny w czasie rzeczywistym.
+function renderGpsSats(list) {
+  const el = document.getElementById('gpsSats');
+  if (!el) return;
+  const sats = (list || []).filter(s => s.snr > 0);
+  if (!sats.length) {
+    el.innerHTML = '<p class="muted">Brak danych o sygnale satelitów (poczekaj na ramki GSV - zwykle kilka sekund).</p>';
+    return;
+  }
+  sats.sort((a, b) => b.snr - a.snr);
+  let h = '';
+  for (const s of sats) {
+    const pct = Math.min(100, s.snr * 2);
+    const col = s.snr > 40 ? '#3ddc84' : s.snr > 25 ? '#ffd400' : s.snr > 15 ? '#ff9f43' : '#ff5a5a';
+    h += '<div class="sat-row"><span class="sat-prn">PRN ' + String(s.prn).padStart(2, '0') +
+         (s.used ? ' ✓' : '') + '</span>' +
+         '<div class="sat-bar"><div style="width:' + pct + '%;background:' + col + '"></div></div>' +
+         '<span class="sat-snr">' + s.snr + ' dB</span>' +
+         '<span class="sat-az">azymut ' + s.azim + '° · elew. ' + s.elev + '°</span></div>';
+  }
+  el.innerHTML = h;
+}
+
 async function loadGpsStatus() {
   const d = await api('/api/gps');
   const grid = document.getElementById('gpsGrid');
@@ -2780,6 +3842,8 @@ async function loadGpsStatus() {
       t('Błędy') + ': ' + fmtNum(d.errors, 0) + ' • ' + t('Wiek danych') + ': ' + fmtNum(d.age, 0) + ' s',
       d.errors > 0 ? 'var(--warn)' : null);
 
+  renderGpsSats(d.sats_list);
+
   // Współrzędne wpisane ręcznie - widoczne od razu po zapisaniu, używane do
   // obliczeń Słońca/Księżyca i prognozy lokalnej, gdy moduł nie ma fixa.
   if (!d.fix) {
@@ -2792,8 +3856,7 @@ async function loadGpsStatus() {
 }
 
 async function loadGps() {
-  await loadGpsStatus();
-  const cfg = await api('/api/config');
+  await loadGpsStatus();  const cfg = await api('/api/config');
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('gpsEnabled', cfg.gps_enabled === false ? '0' : '1');
   set('gpsBaud', String(cfg.gps_baud || 9600));
@@ -2879,10 +3942,14 @@ function renderCamPins(pins) {
   }
 }
 
+// Obrót zdjęć kamery z ustawień stacji (0/90/180/270). null = jeszcze nie znamy.
+let camRotate = null;
+
 async function loadCamera() {
   const d = await api('/api/camera');
   const grid = document.getElementById('cameraGrid');
   if (!grid || !d) return;
+  camRotate = d.cam_rotate || 0;
   grid.innerHTML = '';
   const add = (label, value, unit, sub, color) => grid.appendChild(infoCard(label, value, unit, sub, color));
 
@@ -2902,6 +3969,7 @@ async function loadCamera() {
         d.configured ? 'var(--ok)' : 'var(--warn)');
   }
   add(t('Rozdzielczość'), camResLabel(d.resolution), '', t('Jakość JPEG') + ': ' + d.quality);
+  add(t('Obrót obrazu'), fmtNum(d.cam_rotate || 0, 0) + '°', '', (d.cam_rotate || 0) === 0 ? t('bez obrotu') : t('obrót w prawo'));
   add(t('Timelapse'), fmtNum(d.interval_min, 0), t('min'), d.interval_min === 0 ? t('tylko zdjęcia ręczne') : '');
   if (d.last_file) add(t('Ostatnie zdjęcie'), d.last_file.split('/').pop(), '', d.last_file);
   if (d.error) add(t('Ostatni błąd'), d.error, '', '', 'var(--err)');
@@ -2912,6 +3980,7 @@ async function loadCamera() {
   set('camResolution', String(d.resolution));
   set('camQuality', d.quality);
   set('camRemoteUrl', d.cam_remote_url || '');
+  set('camRotate', String(d.cam_rotate || 0));
   set('camMaxPhotos', d.cam_max_photos);
   set('camMaxMb', d.cam_max_mb);
   renderCamPins(d.pins);
@@ -2927,11 +3996,13 @@ function renderCameraAnalysis(a) {
     add(t('Analiza'), t('Brak danych'), '', t('Zrób zdjęcie, aby zobaczyć wynik analizy'), 'var(--muted)');
     return;
   }
-  const phaseLabel = { day: t('Dzień'), 'dawn/dusk': t('Świt / zmierzch'), night: t('Noc') };
-  const weatherLabel = { clear: t('Bezchmurnie'), cloudy: t('Pochmurno'), fog: t('Mgła'),
-                         rain: t('Deszcz'), snow: t('Śnieg'), night: t('Noc') };
+  const phaseLabel = { day: t(CAM_PHASE_LABEL[2]), 'dawn/dusk': t(CAM_PHASE_LABEL[1]), night: t(CAM_PHASE_LABEL[0]) };
+  const weatherLabel = { clear: t(CAM_WEATHER_LABEL[1]), cloudy: t(CAM_WEATHER_LABEL[2]),
+                         fog: t(CAM_WEATHER_LABEL[5]), rain: t(CAM_WEATHER_LABEL[3]),
+                         snow: t(CAM_WEATHER_LABEL[4]), night: t(CAM_WEATHER_LABEL[0]) };
   add(t('Faza dnia'), phaseLabel[a.phase] || a.phase, '', t('jasność') + ': ' + fmtNum(a.brightness, 0) + '/255');
-  if (a.weather) add(t('Warunki'), weatherLabel[a.weather] || a.weather, '', t('szacunkowe z jednego zdjęcia'));
+  if (a.weather) add(t('Warunki'), weatherLabel[a.weather] || a.weather, '',
+                     t('szacunkowe z jednego zdjęcia; śnieg tylko przy temperaturze zewnętrznej ≤ 2 °C'));
   add(t('Natężenie światła'), fmtNum(a.lux, 0), 'lx', a.lux < 1 ? t('ciemno') : (a.lux > 30000 ? t('pełne słońce') : ''));
   add(t('Składowe RGB'), 'R ' + fmtNum(a.mean_r, 0) + ' G ' + fmtNum(a.mean_g, 0) + ' B ' + fmtNum(a.mean_b, 0), '', '');
   add(t('Ruch'), fmtNum(a.motion_pct, 1), '%', t('zmiana względem poprzedniego zdjęcia'));
@@ -2947,6 +4018,12 @@ async function loadPhotos() {
   const grid = document.getElementById('photosGrid');
   const info = document.getElementById('photosInfo');
   if (!grid || !p) return;
+  // Obrót z ustawień kamery - galeria może wczytać się przed loadCamera(),
+  // dlatego pytamy o niego tylko raz, gdy jeszcze nie znamy wartości.
+  if (camRotate === null) {
+    const cd = await api('/api/camera');
+    camRotate = (cd && cd.cam_rotate) || 0;
+  }
   grid.innerHTML = '';
   if (!p.mounted) {
     if (info) info.textContent = t('Karta SD nie jest zamontowana.');
@@ -2963,11 +4040,10 @@ async function loadPhotos() {
   }
   for (const f of files) {
     const a = document.createElement('a');
-    a.className = 'photo';
+    a.className = 'photo ' + rotateClass(camRotate);
     a.href = '/api/sd/download?path=' + encodeURIComponent(f.path);
-    a.target = '_blank';
-    a.rel = 'noopener';
     a.title = f.path + ' • ' + (f.size > 0 ? (f.size / 1024).toFixed(1) + ' kB' : '');
+    a.onclick = (ev) => { ev.preventDefault(); openLightbox(f.path); };
     const img = document.createElement('img');
     img.loading = 'lazy';
     img.src = '/api/sd/download?path=' + encodeURIComponent(f.path);
@@ -2981,12 +4057,51 @@ async function loadPhotos() {
   }
 }
 
+// Klasa CSS obrotu dla danego kąta z ustawień kamery (0 = brak).
+function rotateClass(deg) {
+  if (deg === 90)  return 'rot90';
+  if (deg === 180) return 'rot180';
+  if (deg === 270) return 'rot270';
+  return '';
+}
+
+// Podgląd zdjęcia na pełnym ekranie. Obrót obowiązuje też tutaj, więc zdjęcie
+// jest zorientowane tak samo jak miniatura w galerii; klik w tło zamyka.
+function openLightbox(path) {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightboxImg');
+  const cap = document.getElementById('lightboxCap');
+  if (!lb || !img) return;
+  img.className = rotateClass(camRotate);
+  img.src = '/api/sd/download?path=' + encodeURIComponent(path);
+  img.alt = path;
+  if (cap) {
+    cap.innerHTML = escapeHtml(path) + ' • <a href="/api/sd/download?path=' +
+      encodeURIComponent(path) + '" target="_blank" rel="noopener">' + t('Pobierz plik') + '</a>';
+  }
+  lb.classList.add('on');
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightboxImg');
+  if (!lb) return;
+  lb.classList.remove('on');
+  if (img) img.src = '';
+}
+
 async function captureNow() {
   const m = document.getElementById('cameraMsg');
   if (m) { m.className = ''; m.textContent = t('Wykonywanie zdjęcia…'); }
   const r = await post('/api/camera/capture', {});
   if (r && r.ok) {
-    showMsg('cameraMsg', t('Zapisano zdjęcie') + ': ' + (r.path || ''), true);
+    if (r.pending) {
+      // Zdjęcie z kamery zewnętrznej pobiera pętla główna stacji - pobranie
+      // trwa kilka sekund, więc zanim odświeżymy, dajemy jej chwilę czasu.
+      if (m) m.textContent = t('Pobieranie zdjęcia z kamery…');
+      await new Promise(done => setTimeout(done, 7000));
+    }
+    showMsg('cameraMsg', t('Zapisano zdjęcie') + (r.path ? ': ' + r.path : ''), true);
     loadCamera();
     loadPhotos();
   } else {
@@ -3001,6 +4116,7 @@ async function saveCamera() {
     cam_resolution: parseInt(document.getElementById('camResolution').value, 10) || 8,
     cam_quality: parseInt(document.getElementById('camQuality').value, 10) || 12,
     cam_remote_url: (document.getElementById('camRemoteUrl').value || '').trim(),
+    cam_rotate: parseInt(document.getElementById('camRotate').value, 10) || 0,
     cam_max_photos: parseInt(document.getElementById('camMaxPhotos').value, 10) || 0,
     cam_max_mb: parseInt(document.getElementById('camMaxMb').value, 10) || 0
   };
@@ -3008,6 +4124,7 @@ async function saveCamera() {
   if (r && r.ok) {
     showMsg('cameraMsg', t('Zapisano'), true);
     loadCamera();
+    loadPhotos();   // obrót obrazu zmienia też miniatury w galerii
   } else {
     showMsg('cameraMsg', (r && r.error) || t('Nie udało się zapisać ustawień'), false);
   }
@@ -3086,6 +4203,13 @@ async function loadCalibration() {
   document.getElementById('calSoilWet').value  = ex.soil_wet_v   ?? '';
   document.getElementById('calMagDecl').value  = ex.mag_decl     ?? '';
   document.getElementById('calSolarMv').value  = ex.solar_mv_wm2 ?? '';
+  // Kompensacja nasłonecznienia czujników na płytce (puste pole = wartość
+  // domyślna z firmware, pokazana w podpowiedzi).
+  document.getElementById('calBtcOn').value    = String(ex.btc_on ?? 0);
+  document.getElementById('calBtcSun').value   = ex.btc_sun  ?? '';
+  document.getElementById('calBtcWind').value  = ex.btc_wind ?? '';
+  document.getElementById('calBtcIds').value   = ex.btc_ids  ?? '';
+  document.getElementById('calHumFromVev').checked = Number(ex.hum_from_vev ?? 0) >= 0.5;
   renderCalibAdv(cfg, list);
 }
 
@@ -3100,8 +4224,19 @@ async function saveCalibExtra() {
   put('soil_wet_v', 'calSoilWet');
   put('mag_decl', 'calMagDecl');
   put('solar_mv_wm2', 'calSolarMv');
+  // Kompensacja nasłonecznienia: przełącznik i liczby idą jako extra, a lista
+  // kanałów jako tekst (config.extraS), więc nie przechodzi przez parseFloat.
+  // Pusta lista nie jest wysyłana - firmware zostawia wtedy swoją domyślną.
+  extra.btc_on = document.getElementById('calBtcOn').value === '1' ? 1 : 0;
+  put('btc_sun', 'calBtcSun');
+  put('btc_wind', 'calBtcWind');
+  const ids = document.getElementById('calBtcIds').value.trim();
+  if (ids !== '') extra.btc_ids = ids;
+  extra.hum_from_vev = document.getElementById('calHumFromVev').checked ? 1 : 0;
   const r = await post('/api/calibrate', {extra});
-  showMsg('calExtraMsg', r.ok ? t('Kalibracja zapisana') : ((r && r.error) || t('Nie udało się zapisać ustawień')), !!r.ok);
+  const msg = r.ok ? t('Kalibracja zapisana') : ((r && r.error) || t('Nie udało się zapisać ustawień'));
+  showMsg('calExtraMsg', msg, !!r.ok);
+  showMsg('calBtcMsg', msg, !!r.ok);
   if (r.ok) setTimeout(() => { document.getElementById('calExtraMsg').textContent = ''; }, 4000);
 }
 
@@ -3111,6 +4246,10 @@ async function saveCalibExtra() {
 // pola), 'o' to lista wyboru [wartość, opis], 's' krok dla pola liczbowego,
 // 'u' jednostka. Kluczy pilnuje tools/check_i18n_names.js (grupa "kalibracja").
 const CALIB_ADV = [
+  // Analogowy czujnik UV (GUVA-S12SD i podobne): bez tego pola nie da się
+  // skalibrować indeksu UV, bo moduły różnią się czułością nawet 20-krotnie.
+  // Własna grupa bez filtra - pole pokazuje się zawsze, gdy pin UV jest ustawiony.
+  { g: 'UV analogowy', k: 'uv_mv_uvi', l: 'UV analogowy - mV na 1 UVI', d: 100, s: 10 },
   // światło / UV
   { g: 'Światło / UV', k: 'tsl2591_gain', l: 'TSL2591 - wzmocnienie', d: 0,
     o: [[0, '1x'], [1, '25x'], [2, '428x'], [3, '9876x']] },
@@ -3303,7 +4442,7 @@ async function loadExtDev() {
       ? `<span style="color:#6bcb77">OK (${e.last_sec}s temu)</span>`
       : `<span style="color:#ff8c8c">${escapeHtml(e.last_err || 'błąd')}</span>`;
     tr.innerHTML = `<td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.url)}</td>
-      <td>${e.type === 'ble' ? 'BLE' : 'VEVOR'}</td><td>${e.interval} s</td>
+      <td>${e.type === 'ble' ? 'BLE' : (e.type === 'aq' ? 'Powietrze' : 'VEVOR')}</td><td>${e.interval} s</td>
       <td>${status}</td>
       <td><button class="btn danger" onclick="removeExtDev(${e.index})">Usuń</button></td>`;
     tbody.appendChild(tr);
@@ -5931,6 +7070,16 @@ setInterval(() => {
   if (on('astro')) loadAstro();
   if (on('gps')) loadGpsStatus();
 }, 15000);
+
+// Szybkie odświeżanie siły sygnału satelitów (co 2 s) - do ustawiania anteny.
+setInterval(async () => {
+  if (document.hidden) return;
+  if (!document.getElementById('tab-gps').classList.contains('active')) return;
+  try {
+    const d = await api('/api/gps');
+    renderGpsSats(d && d.sats_list);
+  } catch (e) { /* chwilowy brak połączenia */ }
+}, 2000);
 
 // Lista węzłów magistrali do menu bocznego - zakładka ESP ma własny licznik,
 // więc poza nią odświeżamy rzadko (dodany węzeł pojawia się w menu sam).

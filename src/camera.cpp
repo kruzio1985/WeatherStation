@@ -7,6 +7,7 @@
  */
 #include "camera.h"
 #include "sd_card.h"
+#include "sensors.h"
 #include "syslog.h"
 #include <ArduinoJson.h>
 #include <time.h>
@@ -24,6 +25,10 @@
 
 CameraManager camera;
 
+// Poniżej tej temperatury otoczenia biały kadr może być śniegiem. Powyżej -
+// to chmury, mgła albo prześwietlone niebo (śnieg nie pada przy +25 °C).
+static const float CAM_SNOW_MAX_TEMP = 2.0f;
+
 // Piny kamery w sekcji "pins" ustawień. Wartość -1 = nieużywane / nieustawione.
 static const char* const CAM_PIN_KEYS[] = {
   "cam_xclk", "cam_pclk", "cam_vsync", "cam_href",
@@ -39,6 +44,13 @@ static const char* const CAM_REQUIRED_PINS[] = {
   "cam_d0", "cam_d1", "cam_d2", "cam_d3",
   "cam_d4", "cam_d5", "cam_d6", "cam_d7"
 };
+
+// Maksymalny rozmiar zdjęcia pobieranego z kamery zewnętrznej. Bufor idzie do
+// PSRAM, ale 2 MB to bezpieczny limit (zdjęcie 1600x1200 to ~250 kB).
+#define CAM_REMOTE_MAX_BYTES (2UL * 1024UL * 1024UL)
+
+// Okno, w którym identyczny JPEG jest uznawany za duplikat (patrz saveAndAnalyze).
+#define CAM_DUP_WINDOW_MS 15000UL
 
 bool CameraManager::configured() const {
 #if !STACJA_HAS_CAMERA
@@ -119,6 +131,9 @@ bool CameraManager::begin() {
     // przez /api/camera/upload. Lokalny sterownik nie jest uruchamiany, więc
     // piny magistrali równoległej nie są wymagane.
     lastError_ = "";
+    // Pierwsza pogoda z kamery ma pojawić się szybko po starcie, a nie po
+    // pełnym interwale (inaczej po każdym restarcie kafelek długo jest pusty).
+    lastCaptureMs_ = millis() - (uint32_t)intervalMin_ * 60000UL + 45000UL;
     LOG_I("Kamera: tryb zewnętrzny (%s)", remoteUrl.c_str());
     return true;
   }
@@ -190,7 +205,8 @@ bool CameraManager::start() {
     if (info && info->name) modelName_ = info->name;
   }
   lastError_ = "";
-  lastCaptureMs_ = millis();   // pierwsze zdjęcie timelapse po pełnym interwale
+  // Pierwsze zdjęcie ~45 s po starcie, potem co pełny interwał.
+  lastCaptureMs_ = millis() - (uint32_t)intervalMin_ * 60000UL + 45000UL;
   LOG_I("Kamera: gotowa (%s), rozdzielczość %d, jakość %d",
         modelName_.length() ? modelName_.c_str() : "nieznana",
         (int)config.camResolution(), (int)config.camQuality());
@@ -237,6 +253,22 @@ void CameraManager::applyConfig() {
 
 void CameraManager::loop() {
 #if STACJA_HAS_CAMERA
+  // Zdjęcie zlecone z www ma pierwszeństwo - działa też przy timelapsie
+  // ustawionym na 0 (tylko zdjęcia ręczne). Wykonujemy je tutaj, a nie w
+  // wątku serwera www: pobranie zdjęcia z kamery trwa kilka sekund.
+  if (pendingCapture_) {
+    pendingCapture_ = false;
+    if (!enabled_) {
+      lastError_ = "kamera jest wyłączona w ustawieniach";
+      return;
+    }
+    String url = config.camRemoteUrl();
+    url.trim();
+    bool ok = (url.length() > 0) ? triggerRemote() : capture();
+    if (!ok) LOG_W("Kamera: zdjęcie na żądanie nieudane - %s", lastError_.c_str());
+    return;
+  }
+
   if (!enabled_) return;
   if (intervalMin_ == 0) return;   // tylko zdjęcia ręczne
 
@@ -250,9 +282,18 @@ void CameraManager::loop() {
     bool ok = remote ? triggerRemote() : capture();
     // Nie zapętlamy się co tick - kolejna próba za pełny interwał.
     lastCaptureMs_ = now;
-    if (!ok) LOG_W("Kamera: zdjęcie timelapse nieudane");
+    if (!ok) LOG_W("Kamera: zdjęcie timelapse nieudane - %s", lastError_.c_str());
   }
 #endif
+}
+
+bool CameraManager::requestCapture() {
+  if (!enabled_) {
+    lastError_ = "kamera jest wyłączona w ustawieniach";
+    return false;
+  }
+  pendingCapture_ = true;
+  return true;
 }
 
 bool CameraManager::capture() {
@@ -315,21 +356,42 @@ bool CameraManager::ingestJpeg(const uint8_t* data, size_t len) {
 #endif
 }
 
-// Żądanie natychmiastowego zdjęcia z zewnętrznej kamery. Adres w config
-// cam_remote_url wskazuje endpoint zwracający JPEG (np. http://.../capture).
-// Master tylko wyzwala ujęcie i ignoruje strumień - zapis następuje, gdy
-// kamera wyśle zdjęcie na /api/camera/upload.
+// Zdjęcie z zewnętrznej kamery. Adres w config cam_remote_url wskazuje
+// endpoint kamery (np. http://192.168.1.142/capture). Master najpierw próbuje
+// pobrać gotowy JPEG i sam go analizuje oraz zapisuje - dzięki temu działa
+// zwykła kamera ESP32-CAM serwująca /capture, bez żadnego programu po jej
+// stronie. Gdy odpowiedź nie jest zdjęciem (adres tylko wyzwala ujęcie),
+// kończymy połączenie od razu, a zdjęcie wraca później przez
+// /api/camera/upload - jak dotychczas.
 bool CameraManager::triggerRemote() {
 #if !STACJA_HAS_CAMERA
   return false;
 #else
+  const int r = fetchRemoteJpeg();
+  if (r > 0) return true;         // JPEG odebrany, zapisany i przeanalizowany
+  if (r == 0) {                   // tryb wyzwalania - zdjęcie wróci POST-em
+    lastError_ = "";
+    LOG_I("Kamera: wyzwolono ujęcie (zdjęcie wróci przez /api/camera/upload)");
+    return true;
+  }
+  return false;                   // fetchRemoteJpeg wpisał już powód do lastError_
+#endif
+}
+
+// Pobranie gotowego JPEG-a z adresu kamery. Zwraca 1 = odebrano zdjęcie,
+// 0 = połączenie i odpowiedź OK, ale treść nie jest zdjęciem (kamera tylko
+// wyzwala ujęcie), -1 = błąd (opis w lastError_).
+int CameraManager::fetchRemoteJpeg() {
+#if !STACJA_HAS_CAMERA
+  return -1;
+#else
   String url = config.camRemoteUrl();
   url.trim();
-  if (url.length() == 0) return false;
+  if (url.length() == 0) { lastError_ = "brak adresu kamery zewnętrznej"; return -1; }
   if (!url.startsWith("http://")) {
     lastError_ = "adres kamery musi zaczynać się od http://";
-    LOG_W("Kamera: trigger - zły adres %s", url.c_str());
-    return false;
+    LOG_W("Kamera: pobranie - zły adres %s", url.c_str());
+    return -1;
   }
 
   // Parsowanie "http://host[:port]/sciezka".
@@ -345,33 +407,132 @@ bool CameraManager::triggerRemote() {
     port = (uint16_t)host.substring(colon + 1).toInt();
     host = host.substring(0, colon);
   }
-  if (host.length() == 0) { lastError_ = "nieprawidłowy adres kamery"; return false; }
+  if (host.length() == 0) { lastError_ = "nieprawidłowy adres kamery"; return -1; }
 
-  // Fire-and-forget: wysyłamy jedynie sygnał "zrób zdjęcie" i od razu
-  // zamykamy połączenie. Blokujący GET (HTTPClient) wieszał jedyny wątek
-  // AsyncWebServer - kamera nie mogła wtedy wysłać zdjęcia z powrotem na
-  // /api/camera/upload i stacja restartowała się (deadlock).
   WiFiClient client;
   IPAddress ip;
   bool connected = ip.fromString(host)
-      ? client.connect(ip, port)
-      : client.connect(host.c_str(), port);
+      ? client.connect(ip, port, 1200)
+      : client.connect(host.c_str(), port, 1200);
   if (!connected) {
     lastError_ = "nie udało się połączyć z kamerą (" + host + ")";
-    LOG_W("Kamera: trigger - brak połączenia z %s", host.c_str());
-    return false;
+    LOG_W("Kamera: pobranie - brak połączenia z %s", host.c_str());
+    return -1;
   }
+  client.setTimeout(600);   // jedno czytanie czeka najwyżej 0,6 s
 
   client.print("GET " + path + " HTTP/1.1\r\n");
   client.print("Host: " + host + "\r\n");
   client.print("User-Agent: stacja-pogody\r\n");
+  client.print("Accept: image/jpeg\r\n");
   client.print("Connection: close\r\n\r\n");
   client.flush();
-  delay(100);
+
+  // Odpowiedź czytamy sami (a nie przez HTTPClient), bo timeout każdej
+  // operacji musi być ograniczony. Całe pobranie (połączenie + nagłówki +
+  // zdjęcie) musi zmieścić się w limicie watchdoga zadania (5 s), dlatego
+  // connect 1,2 s, odczyt 0,6 s na operację i twardy deadline 2,5 s. Kamera,
+  // która przyjmuje połączenie i milczy (zawieszony ESP32-CAM), odcina się
+  // wtedy po ~2 s, zamiast blokować pętlę do resetu stacji.
+  const unsigned long deadline = millis() + 2500UL;
+  String status = client.readStringUntil('\n');
+  int code = 0;
+  if (status.length() == 0 || sscanf(status.c_str(), "HTTP/%*d.%*d %d", &code) != 1) {
+    client.stop();
+    lastError_ = "kamera nie odpowiedziała po HTTP";
+    LOG_W("Kamera: pobranie - zła odpowiedź: '%s'", status.c_str());
+    return -1;
+  }
+
+  long contentLen = -1;
+  while (client.connected() || client.available()) {
+    String line = client.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) break;                 // koniec nagłówków
+    String low = line; low.toLowerCase();
+    if (low.startsWith("content-length:")) contentLen = low.substring(15).toInt();
+    if (millis() > deadline) break;
+  }
+
+  if (code != 200) {
+    client.stop();
+    lastError_ = "kamera zwróciła HTTP " + String(code);
+    LOG_W("Kamera: pobranie - HTTP %d", code);
+    return -1;
+  }
+
+  // Znacznik JPEG (FF D8) - jeśli treść nim nie jest, kamera tylko wyzwala
+  // ujęcie i wysyła zdjęcie osobno (POST /api/camera/upload), więc zamykamy
+  // połączenie bez odbierania całej odpowiedzi.
+  uint8_t head[2] = {0, 0};
+  int got = client.readBytes(head, 2);
+  if (got < 2 || head[0] != 0xFF || head[1] != 0xD8) {
+    client.stop();
+    return 0;
+  }
+
+  if (contentLen > CAM_REMOTE_MAX_BYTES) {
+    client.stop();
+    lastError_ = "zdjęcie z kamery za duże (" + String(contentLen) + " B)";
+    LOG_W("Kamera: %s", lastError_.c_str());
+    return -1;
+  }
+
+  // Bufor w PSRAM (zdjęcie 1600x1200 potrafi mieć ~250 kB).
+  size_t cap = (contentLen > 2) ? (size_t)contentLen : 512UL * 1024UL;
+  if (cap > CAM_REMOTE_MAX_BYTES) cap = CAM_REMOTE_MAX_BYTES;
+  uint8_t* buf = (uint8_t*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+  bool inPsram = (buf != nullptr);
+  if (!buf) buf = (uint8_t*)malloc(cap);
+  if (!buf) {
+    client.stop();
+    lastError_ = "brak pamięci na zdjęcie (" + String((unsigned)cap) + " B)";
+    LOG_E("Kamera: %s", lastError_.c_str());
+    return -1;
+  }
+
+  size_t len = 2;
+  buf[0] = head[0]; buf[1] = head[1];
+  while (len < cap && millis() < deadline) {
+    if (!client.available()) {
+      if (!client.connected()) break;
+      delay(2);
+      continue;
+    }
+    int n = client.read(buf + len, cap - len);
+    if (n <= 0) break;
+    len += (size_t)n;
+  }
   client.stop();
 
-  lastError_ = "";
-  return true;
+  // Zapisujemy wyłącznie kompletne zdjęcie. Gdy odczyt urywa się na deadline
+  // (albo kamera zerwie połączenie w połowie), na karcie zostałby nieotwieralny
+  // plik, więc lepiej zgłosić błąd i spróbować przy następnym zdjęciu.
+  const bool complete = (contentLen > 2)
+      ? (len == (size_t)contentLen)
+      : (len > 4 && buf[len - 2] == 0xFF && buf[len - 1] == 0xD9);
+  bool ok = (len > 64) && complete;
+  if (ok) {
+    // Zapis + analiza (tą samą drogą, co zdjęcie lokalne i upload z modułu).
+    // Flaga blokuje równoczesny zapis, gdy kamera w tej samej chwili przyśle
+    // zdjęcie POST-em na /api/camera/upload (to samo ujęcie).
+    String path2;
+    capturing_ = true;
+    ok = saveAndAnalyze(buf, len, path2);
+    capturing_ = false;
+    if (ok) LOG_I("Kamera: pobrano z kamery %u B", (unsigned)len);
+  } else if (len > 64) {
+    lastError_ = "odebrano niepełne zdjęcie z kamery";
+    LOG_W("Kamera: pobranie - niepełne zdjęcie (%u z %ld B)",
+          (unsigned)len, contentLen);
+  } else {
+    lastError_ = "nie udało się odebrać zdjęcia z kamery";
+    LOG_W("Kamera: pobranie - odebrano tylko %u B", (unsigned)len);
+  }
+
+  if (inPsram) heap_caps_free(buf);
+  else         free(buf);
+  return ok ? 1 : -1;
 #endif
 }
 
@@ -386,6 +547,21 @@ bool CameraManager::saveAndAnalyze(const uint8_t* jpg, size_t len, String& outPa
     lastError_ = "brak karty SD (zdjęcia zapisywane są na karcie)";
     return false;
   }
+
+  // Pominięcie duplikatu: ten sam JPEG, który już zapisaliśmy chwilę temu.
+  uint32_t h = 2166136261u;
+  for (size_t i = 0; i < len; i++) { h ^= jpg[i]; h *= 16777619u; }
+  unsigned long nowMs = millis();
+  if (h == lastJpegHash_ && (uint32_t)len == lastJpegLen_ &&
+      (nowMs - lastJpegMs_) < CAM_DUP_WINDOW_MS) {
+    LOG_I("Kamera: pominięto duplikat zdjęcia (%s)", lastFile_.c_str());
+    outPath = lastFile_;
+    lastError_ = "";
+    return true;
+  }
+  lastJpegHash_ = h;
+  lastJpegLen_ = (uint32_t)len;
+  lastJpegMs_ = nowMs;
 
   time_t now = time(nullptr);
   struct tm t;
@@ -412,6 +588,8 @@ bool CameraManager::saveAndAnalyze(const uint8_t* jpg, size_t len, String& outPa
 
   if (!analyzeJpeg(jpg, len)) {
     LOG_W("Kamera: analiza zdjęcia nieudana");
+  } else {
+    publishAnalysis();
   }
   writeAnalysisJson(path);
   enforceQuota();
@@ -475,6 +653,21 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   int stepY = h / gh; if (stepY < 1) stepY = 1;
   const int n = gw * gh;
 
+  // Region nieba to górne 45% kadru PO obrocie o cam_rotate. Przy obrazie
+  // obróconym o 90/270 stopni góra kadru to odpowiednio lewa/prawa krawędź
+  // zdjęcia z czujnika, więc zakres liczymy raz, a nie w każdej próbce.
+  const int rot = config.camRotate();
+  const int limitW = gw * 45 / 100;
+  const int limitH = gh * 45 / 100;
+  auto inSkyRegion = [&](int gx, int gy) -> bool {
+    switch (rot) {
+      case 90:  return gx < limitW;          // obrót w prawo: góra = lewa krawędź
+      case 180: return gy >= gh - limitH;    // góra = dolna krawędź
+      case 270: return gx >= gw - limitW;    // góra = prawa krawędź
+      default:  return gy < limitH;          // bez obrotu: góra kadru
+    }
+  };
+
   uint8_t* cur = (uint8_t*)malloc(n);
   if (!cur) { lastAnalysis_ = a; return false; }
 
@@ -501,7 +694,11 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
       int mx = r > g ? r : g; if (b > mx) mx = b;
       int mn = r < g ? r : g; if (b < mn) mn = b;
       int sat = mx - mn;
-      if (lum > 160 && sat < 45) whiteCnt++;   // biel śniegu / gęstych chmur
+      // Biel śniegu i gęstych chmur jest neutralna (r ≈ g ≈ b). Sam warunek
+      // "jasne i mało nasycone" łapał też blade, błękitne niebo (np. RGB
+      // 157,172,201 ma nasycenie 44, czyli tuż pod progiem), więc przy słońcu
+      // wychodził z tego śnieg. Dlatego biel nie może być wyraźnie niebieska.
+      if (lum > 160 && sat < 45 && (b - r) <= 18) whiteCnt++;
       if (sat < 30) grayCnt++;                 // niskie nasycenie (mgła / deszcz)
 
       if (havePrevLum_) {
@@ -512,7 +709,7 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
 
       // Chmury / niebo liczymy w górnych 45% kadru (kamera najczęściej
       // patrzy w niebo; przy kadrze poziomym wynik jest przybliżony).
-      if (gy < gh * 45 / 100) {
+      if (inSkyRegion(gx, gy)) {
         if (lum > 170 && r > (b * 3) / 4 && g > 80) cloud++;
         else if (b > (r * 13) / 10 && lum < 180) sky++;
       }
@@ -544,10 +741,18 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   // Orientacyjna klasyfikacja pogody z pojedynczego zdjęcia. To heurystyka
   // (jasność + nasycenie + kontrast + zachmurzenie), nie pomiar - traktować
   // jako wskaźnik do porównywania kolejnych zdjęć, nie jako dokładny opad.
+  //
+  // Śnieg wymaga dodatkowo mrozu: biały kadr przy +25 stopniach to jasne, grube
+  // chmury albo mgła, a nie śnieg. Bierzemy najniższą temperaturę z czujników
+  // zewnętrznych (płytka stacji stoi w obudowie i potrafi pokazywać ciepło, gdy
+  // na dworze jest mróz), a brak jakiegokolwiek pomiaru nie blokuje wykrycia.
+  const float ambient = sensors.coldestOutdoorTemp();
+  const bool snowPossible = isnan(ambient) || ambient <= CAM_SNOW_MAX_TEMP;
+
   a.snowPct = a.rainPct = a.fogPct = -1;
   if (a.brightness < 40) {
     a.weather = "night";
-  } else if (whitePct >= 30.0f && a.brightness >= 110.0f) {
+  } else if (whitePct >= 30.0f && a.brightness >= 110.0f && snowPossible) {
     a.weather = "snow";
     a.snowPct = constrain(whitePct * 1.6f - 16.0f, 10.0f, 100.0f);
   } else if (contrast < 26.0f && a.brightness >= 55.0f &&
@@ -557,6 +762,17 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   } else if (a.cloudCover >= 40.0f && grayPct >= 45.0f && a.brightness < 125.0f) {
     a.weather = "rain";
     a.rainPct = constrain((a.cloudCover - 35.0f) * 1.8f, 5.0f, 100.0f);
+  } else if (whitePct >= 30.0f && a.brightness >= 110.0f) {
+    // Ta sama biała scena, ale bez mrozu - jasne, zlane chmury.
+    a.weather = "cloudy";
+    if (!isnan(ambient) && ambient > CAM_SNOW_MAX_TEMP) {
+      static uint32_t lastSnowReject = 0;
+      uint32_t now = millis();
+      if (now - lastSnowReject > 60000UL) {
+        lastSnowReject = now;
+        LOG_I("Kamera: biały kadr, ale %.1f °C - chmury, nie śnieg", ambient);
+      }
+    }
   } else if (a.cloudCover > 55.0f) {
     a.weather = "cloudy";
   } else {
@@ -570,6 +786,47 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   free(cur);
   lastAnalysis_ = a;
   return true;
+}
+
+// Wystawia wynik analizy zdjęcia jako kanały stacji. Dzięki temu informacja
+// "co widać na niebie" (pogoda, faza dnia, zachmurzenie, intensywność deszczu,
+// śniegu i mgły, natężenie światła) trafia na pulpit, do dziennika CSV, do
+// alertów i do Home Assistant razem z pozostałymi pomiarami - a nie tylko do
+// zakładki Kamera. Kod pogody: 0 = noc, 1 = bezchmurnie, 2 = pochmurno,
+// 3 = deszcz, 4 = śnieg, 5 = mgła. Faza dnia: 0 = noc, 1 = świt/zmierzch,
+// 2 = dzień. Kanały bez danych w danym zdjęciu są czyszczone, żeby nie
+// pokazywały starej wartości (np. deszczu sprzed godziny).
+void CameraManager::publishAnalysis() {
+  const CamAnalysis& a = lastAnalysis_;
+  if (!a.valid) return;
+
+  int code = -1;
+  if      (a.weather == "night")  code = 0;
+  else if (a.weather == "clear")  code = 1;
+  else if (a.weather == "cloudy") code = 2;
+  else if (a.weather == "rain")   code = 3;
+  else if (a.weather == "snow")   code = 4;
+  else if (a.weather == "fog")    code = 5;
+  if (code >= 0) sensors.publishExtra("cam_weather", (float)code);
+  else           sensors.clearExtra("cam_weather");
+
+  if (a.phase == "day")            sensors.publishExtra("cam_phase", 2);
+  else if (a.phase == "dawn/dusk") sensors.publishExtra("cam_phase", 1);
+  else if (a.phase == "night")     sensors.publishExtra("cam_phase", 0);
+  else                             sensors.clearExtra("cam_phase");
+
+  if (a.lux >= 0)        sensors.publishExtra("cam_lux",   a.lux);
+  // Nocne zdjęcie jest czarne niezależnie od zachmurzenia, więc szacunek
+  // zachmurzenia nie ma wtedy żadnej wartości - czyścimy kanał.
+  if (a.cloudCover >= 0 && a.phase != "night") sensors.publishExtra("cam_cloud", a.cloudCover);
+  else                                        sensors.clearExtra("cam_cloud");
+
+  if (a.rainPct >= 0) sensors.publishExtra("cam_rain", a.rainPct);
+  else                sensors.clearExtra("cam_rain");
+  if (a.snowPct >= 0) sensors.publishExtra("cam_snow", a.snowPct);
+  else                sensors.clearExtra("cam_snow");
+  if (a.fogPct >= 0)  sensors.publishExtra("cam_fog", a.fogPct);
+  else                sensors.clearExtra("cam_fog");
 }
 
 // Zapisuje obok zdjęcia plik .json z wynikiem analizy (do podglądu na www).
@@ -605,8 +862,12 @@ void CameraManager::writeAnalysisJson(const String& jpgPath) {
 // Zbiera rekurencyjnie ścieżki plików .jpg spod /photos (zdjęcia są w
 // podkatalogach /photos/YYYY-MM, więc listDir jednego poziomu nie wystarczy).
 static void collectPhotoFiles(const String& dir, std::vector<SdFileInfo>& out) {
+  // Katalogów miesięcznych jest kilka, ale w każdym mogą leżeć setki plików,
+  // a wpis katalogu na SPI kosztuje kilkadziesiąt milisekund. Bierzemy więc
+  // tylko ostatnie wpisy każdego katalogu - najstarszych zdjęć i tak nie ma
+  // po co liczyć, bo kasujemy zawsze od najstarszych.
   std::vector<SdFileInfo> entries;
-  if (!sdCard.listDir(dir, entries)) return;
+  if (!sdCard.listDir(dir, entries, 400, true, nullptr)) return;
   for (const auto& e : entries) {
     if (e.isDir) collectPhotoFiles(e.path, out);
     else if (e.path.endsWith(".jpg")) out.push_back(e);
@@ -620,6 +881,13 @@ void CameraManager::enforceQuota() {
   uint16_t maxMb = config.camMaxMb();
   if (maxPhotos == 0 && maxMb == 0) return;
 
+  const uint64_t maxBytes = (uint64_t)maxMb * 1024ULL * 1024ULL;
+  // Szybka ścieżka: skanowanie katalogu zdjęć jest drogie, a gdy cała karta
+  // zajmuje mniej niż limit rozmiaru zdjęć, limit na pewno nie został
+  // przekroczony. Bez tego każde zdjęcie z timelapse blokowało pętlę główną na
+  // dziesiątki sekund (setki wpisów katalogu po ~37 ms).
+  if (maxPhotos == 0 && maxMb > 0 && sdCard.usedBytes() < maxBytes) return;
+
   std::vector<SdFileInfo> files;
   collectPhotoFiles("/photos", files);
   if (files.empty()) return;
@@ -631,7 +899,6 @@ void CameraManager::enforceQuota() {
   uint32_t count = 0;
   for (const auto& f : files) { totalBytes += f.size; count++; }
 
-  uint64_t maxBytes = (uint64_t)maxMb * 1024ULL * 1024ULL;
   for (const auto& f : files) {
     bool overCount = (maxPhotos > 0 && count > maxPhotos);
     bool overBytes = (maxMb > 0 && totalBytes > maxBytes);
@@ -673,6 +940,7 @@ String CameraManager::toJson() const {
   d["cam_max_photos"] = config.camMaxPhotos();
   d["cam_max_mb"]     = config.camMaxMb();
   d["cam_remote_url"] = config.camRemoteUrl();
+  d["cam_rotate"]     = config.camRotate();
 
   // Wynik analizy ostatniego zdjęcia (jasność, luksy, RGB, ruch, chmury).
   JsonObject ana = d["last_analysis"].to<JsonObject>();
