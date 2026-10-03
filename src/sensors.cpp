@@ -1111,23 +1111,34 @@ void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float g
       changed = true;
     }
 
+    // Deszcz liczymy jako przyrost licznika VEVOR-a względem ostatniej
+    // "potwierdzonej" wartości (vevRainMax). Ważne: sniffer 868 MHz potrafi
+    // zdekodować pojedynczą ramkę z absurdalnie wysokim deszczem (błędna
+    // ramka / sąsiednia stacja VEVOR), a potem wrócić do poprawnej wartości.
+    // Dlatego przyrost większy niż VEV_RAIN_MAX_STEP (mm na ~20 s) traktujemy
+    // jako błąd odbioru i całkowicie ignorujemy - bez tego "dzisiaj" potrafiło
+    // urosnąć o 61,28 mm mimo braku opadów.
+    const float VEV_RAIN_MAX_STEP = 20.0f;
     if (config.state.vevRainMax < 0.0f) {
       // Pierwsza próbka (albo po wyczyszczeniu pamięci) - przyjmujemy bieżący
       // stan licznika jako punkt startu; nie wiemy, ile napadało wcześniej.
       config.state.vevRainMax = rainMm;
       changed = true;
-    } else if (rainMm >= config.state.vevRainMax) {
-      float delta = rainMm - config.state.vevRainMax;
-      config.state.vevRainDayAcc   += delta;
-      config.state.vevRainWeekAcc  += delta;
-      config.state.vevRainMonthAcc += delta;
-      config.state.vevRainMax = rainMm;
-      if (delta > 0.0f) changed = true;
     } else {
-      // Licznik cofnął się - historii NIE zerujemy. Nowe przyrosty liczymy
-      // od bieżącej, niższej wartości.
-      config.state.vevRainMax = rainMm;
-      changed = true;
+      float delta = rainMm - config.state.vevRainMax;
+      if (delta >= 0.0f && delta <= VEV_RAIN_MAX_STEP) {
+        config.state.vevRainDayAcc   += delta;
+        config.state.vevRainWeekAcc  += delta;
+        config.state.vevRainMonthAcc += delta;
+        config.state.vevRainMax = rainMm;
+        if (delta > 0.0f) changed = true;
+      } else if (delta < 0.0f) {
+        // Licznik cofnął się (reset stacji VEVOR, nowa doba, restart sniffera)
+        // - historii NIE zerujemy, przyjmujemy nową, niższą bazę.
+        config.state.vevRainMax = rainMm;
+        changed = true;
+      }
+      // delta > VEV_RAIN_MAX_STEP: podejrzany skok - ignorujemy próbkę w całości.
     }
     if (changed) config.saveState();
   }

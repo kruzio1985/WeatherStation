@@ -172,6 +172,7 @@ struct StationState {
   int   vevRainWeek = -1;            // rok*100 + numer tygodnia ISO
   float vevRainMonthAcc = 0.0f;      // suma miesiąca (mm)
   int   vevRainMonth = -1;           // rok*100 + miesiąc
+  int   vevRainVer = 0;              // wersja algorytmu - do jednorazowej migracji
 };
 
 // Kolory stanów pogody dla pierścienia LED RGB (0xRRGGBB).
