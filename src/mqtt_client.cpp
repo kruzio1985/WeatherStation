@@ -22,9 +22,10 @@ void MqttManager::begin(WiFiClient& client) {
   mqtt_ = new PubSubClient(client);
   configured_ = isConfigured();
   if (configured_) {
-    mqtt_->setServer(config.mqttHost().c_str(), config.mqttPort());
+    host_ = config.mqttHost();
+    mqtt_->setServer(host_.c_str(), config.mqttPort());
     mqtt_->setBufferSize(1024);
-    LOG_I("MQTT: skonfigurowano %s:%u, prefiks '%s'", config.mqttHost().c_str(),
+    LOG_I("MQTT: skonfigurowano %s:%u, prefiks '%s'", host_.c_str(),
           (unsigned)config.mqttPort(), config.mqttPrefix().c_str());
   } else {
     LOG_W("MQTT: brak adresu brokera - wysyłanie do Home Assistant wyłączone");
@@ -49,8 +50,11 @@ bool MqttManager::setLastWill() {
   // się wzajemnie rozłączać na brokerze.
   String clientId = "stacja-" + String((uint32_t)ESP.getEfuseMac(), HEX);
   String t = config.mqttPrefix() + "/status";
+  // user_/pass_ to pola trwałe - nie polegać na tymczasowym Stringu z config.
+  user_ = config.mqttUser();
+  pass_ = config.mqttPass();
   return mqtt_->connect(clientId.c_str(),
-                        config.mqttUser().c_str(), config.mqttPass().c_str(),
+                        user_.c_str(), pass_.c_str(),
                         t.c_str(), 0, true, "offline");
 }
 
@@ -85,7 +89,8 @@ bool MqttManager::reconnectWithConfig(String& info) {
     return false;
   }
 
-  mqtt_->setServer(config.mqttHost().c_str(), config.mqttPort());
+  host_ = config.mqttHost();
+  mqtt_->setServer(host_.c_str(), config.mqttPort());
   mqtt_->setBufferSize(1024);
 
   unsigned long t0 = millis();
