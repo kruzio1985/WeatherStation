@@ -2014,6 +2014,12 @@
     'Wykryto ruch': ['Motion detected', 'Bewegung erkannt'],
     'Bez ruchu': ['No motion', 'Keine Bewegung'],
     'Pozostałe czujniki wewnętrzne': ['Other indoor sensors', 'Weitere Innensensoren'],
+    'Pozostałe na zewnątrz': ['Other outdoor', 'Weitere außen'],
+    'Pozostałe (VEVOR)': ['Other (VEVOR)', 'Weitere (VEVOR)'],
+    'VEVOR 868 MHz': ['VEVOR 868 MHz', 'VEVOR 868 MHz'],
+    // Wskaźniki pogody na pulpicie (termometr, barometr, kropla, zlewka, wiatr)
+    'Wskaźniki pogody': ['Weather gauges', 'Wetteranzeigen'],
+    'Poryw': ['Gust', 'Böe'],
     // Nagłówki paneli z nazwami układów - tak jak na stronie stacji powietrza.
     'Cząsteczki (PMS7003)': ['Particulate matter (PMS7003)', 'Feinstaub (PMS7003)'],
     'Temperatura i wilgotność (DHT11)': ['Temperature and humidity (DHT11)', 'Temperatur und Luftfeuchtigkeit (DHT11)'],
