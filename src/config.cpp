@@ -1059,12 +1059,13 @@ bool ConfigManager::loadState() {
   state.rainTipsTotal = d["rainTipsTotal"] | 0;
   state.rainStartTips = d["rainStartTips"] | 0;
   state.rainDay       = d["rainDay"] | -1;
-  state.vevRainBaseDay   = d["vevRainBaseDay"] | 0.0f;
-  state.vevRainDay       = d["vevRainDay"] | -1;
-  state.vevRainBaseWeek  = d["vevRainBaseWeek"] | 0.0f;
-  state.vevRainWeek      = d["vevRainWeek"] | -1;
-  state.vevRainBaseMonth = d["vevRainBaseMonth"] | 0.0f;
-  state.vevRainMonth     = d["vevRainMonth"] | -1;
+  state.vevRainMax      = d["vevRainMax"] | -1.0f;
+  state.vevRainDayAcc   = d["vevRainDayAcc"] | 0.0f;
+  state.vevRainDay      = d["vevRainDay"] | -1;
+  state.vevRainWeekAcc  = d["vevRainWeekAcc"] | 0.0f;
+  state.vevRainWeek     = d["vevRainWeek"] | -1;
+  state.vevRainMonthAcc = d["vevRainMonthAcc"] | 0.0f;
+  state.vevRainMonth    = d["vevRainMonth"] | -1;
   return true;
 }
 
@@ -1073,12 +1074,13 @@ bool ConfigManager::saveState() {
   d["rainTipsTotal"] = state.rainTipsTotal;
   d["rainStartTips"] = state.rainStartTips;
   d["rainDay"]       = state.rainDay;
-  d["vevRainBaseDay"]   = state.vevRainBaseDay;
-  d["vevRainDay"]       = state.vevRainDay;
-  d["vevRainBaseWeek"]  = state.vevRainBaseWeek;
-  d["vevRainWeek"]      = state.vevRainWeek;
-  d["vevRainBaseMonth"] = state.vevRainBaseMonth;
-  d["vevRainMonth"]     = state.vevRainMonth;
+  d["vevRainMax"]      = state.vevRainMax;
+  d["vevRainDayAcc"]   = state.vevRainDayAcc;
+  d["vevRainDay"]      = state.vevRainDay;
+  d["vevRainWeekAcc"]  = state.vevRainWeekAcc;
+  d["vevRainWeek"]     = state.vevRainWeek;
+  d["vevRainMonthAcc"] = state.vevRainMonthAcc;
+  d["vevRainMonth"]    = state.vevRainMonth;
   String s;
   serializeJson(d, s);
 

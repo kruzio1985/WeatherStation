@@ -1087,36 +1087,53 @@ void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float g
   int weekKey  = (tmv.tm_year + 1900) * 100 + ((tmv.tm_yday - daysSinceMon) / 7);
   int monthKey = (tmv.tm_year + 1900) * 100 + (tmv.tm_mon + 1);
 
+  // Sumy deszczu liczymy narastająco i trzymamy w NVS, a nie jako różnicę
+  // względem "bazy". Poprzednia wersja zapisywała bazę = rain_mm na początku
+  // okresu, więc gdy licznik VEVOR-a cofnął się (reset stacji VEVOR, nowa
+  // doba albo restart sniffera), suma doby/miesiąca spadała do zera i po
+  // restarcie stacji "deszcz w tym miesiącu" znikał.
   bool changed = false;
-  if (config.state.vevRainDay != dayKey) {
-    config.state.vevRainDay = dayKey;
-    config.state.vevRainBaseDay = rainMm;
-    changed = true;
-  } else if (rainMm < config.state.vevRainBaseDay) {
-    config.state.vevRainBaseDay = rainMm;    // licznik VEVOR się zresetował
-    changed = true;
-  }
-  if (config.state.vevRainWeek != weekKey) {
-    config.state.vevRainWeek = weekKey;
-    config.state.vevRainBaseWeek = rainMm;
-    changed = true;
-  } else if (rainMm < config.state.vevRainBaseWeek) {
-    config.state.vevRainBaseWeek = rainMm;
-    changed = true;
-  }
-  if (config.state.vevRainMonth != monthKey) {
-    config.state.vevRainMonth = monthKey;
-    config.state.vevRainBaseMonth = rainMm;
-    changed = true;
-  } else if (rainMm < config.state.vevRainBaseMonth) {
-    config.state.vevRainBaseMonth = rainMm;
-    changed = true;
-  }
-  if (changed) config.saveState();
+  if (!isnan(rainMm)) {
+    if (config.state.vevRainDay != dayKey) {
+      config.state.vevRainDay = dayKey;
+      config.state.vevRainDayAcc = 0.0f;
+      changed = true;
+    }
+    if (config.state.vevRainWeek != weekKey) {
+      config.state.vevRainWeek = weekKey;
+      config.state.vevRainWeekAcc = 0.0f;
+      changed = true;
+    }
+    if (config.state.vevRainMonth != monthKey) {
+      config.state.vevRainMonth = monthKey;
+      config.state.vevRainMonthAcc = 0.0f;
+      changed = true;
+    }
 
-  float rainDay   = fmaxf(0.0f, rainMm - config.state.vevRainBaseDay);
-  float rainWeek  = fmaxf(0.0f, rainMm - config.state.vevRainBaseWeek);
-  float rainMonth = fmaxf(0.0f, rainMm - config.state.vevRainBaseMonth);
+    if (config.state.vevRainMax < 0.0f) {
+      // Pierwsza próbka (albo po wyczyszczeniu pamięci) - przyjmujemy bieżący
+      // stan licznika jako punkt startu; nie wiemy, ile napadało wcześniej.
+      config.state.vevRainMax = rainMm;
+      changed = true;
+    } else if (rainMm >= config.state.vevRainMax) {
+      float delta = rainMm - config.state.vevRainMax;
+      config.state.vevRainDayAcc   += delta;
+      config.state.vevRainWeekAcc  += delta;
+      config.state.vevRainMonthAcc += delta;
+      config.state.vevRainMax = rainMm;
+      if (delta > 0.0f) changed = true;
+    } else {
+      // Licznik cofnął się - historii NIE zerujemy. Nowe przyrosty liczymy
+      // od bieżącej, niższej wartości.
+      config.state.vevRainMax = rainMm;
+      changed = true;
+    }
+    if (changed) config.saveState();
+  }
+
+  float rainDay   = config.state.vevRainDayAcc;
+  float rainWeek  = config.state.vevRainWeekAcc;
+  float rainMonth = config.state.vevRainMonthAcc;
 
   // Intensywność "teraz" (mm/h) z różnicy dwóch ostatnich próbek
   float rainNow = 0.0f;

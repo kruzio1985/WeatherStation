@@ -88,6 +88,12 @@ String DataLogger::columnForMetric(const String& metric) {
   // Analiza zdjęcia z kamery (pogoda, faza dnia, zachmurzenie, deszcz, śnieg,
   // mgła, światło) - również bez kolumn w szerokim CSV, czyli dziennik długi.
   if (metric.startsWith("cam_")) return metric;
+  // Stacja VEVOR (sniffer 868 MHz): temperatura, wilgotność, wiatr, porywy,
+  // kierunek, deszcz (łącznie/dziś/tydzień/miesiąc/teraz), UV i światło
+  // zewnętrzne. Bez kolumn w szerokim CSV - trafiają do dziennika długiego
+  // /logs/extra-YYYY-MM.csv, z którego da się policzyć statystyki miesięczne
+  // bez ruszania szerokiego pliku.
+  if (metric.startsWith("vev_")) return metric;
   // Dodatkowe czujniki
   if (metric == "sht_t") return "sht_t";
   if (metric == "sht_h") return "sht_h";
