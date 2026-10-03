@@ -545,6 +545,25 @@ float SensorManager::valueByHaClass(const char* haClass, const char* zone) {
   return out;
 }
 
+// Najniższa potwierdzona temperatura w strefie zewnętrznej. Bierzemy minimum,
+// a nie pierwszy kanał z listy, bo obudowa stacji nagrzewa się od elektroniki
+// (kanał "temp" potrafi pokazywać +25 °C przy mrozie na dworze) - jeśli choć
+// jeden czujnik na zewnątrz mierzy poniżej progu, śnieg jest możliwy.
+// Zwracamy NAN, gdy żaden czujnik zewnętrzny nie podał sensownej temperatury.
+float SensorManager::coldestOutdoorTemp() {
+  float coldest = NAN;
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  for (auto& c : channels_) {
+    if (!c.enabled || !c.measured || c.zone != "out") continue;
+    if (c.haClass != "temperature") continue;
+    float v = c.value;
+    if (isnan(v) || isinf(v) || v < -60.0f || v > 80.0f) continue;
+    if (isnan(coldest) || v < coldest) coldest = v;
+  }
+  if (mutex_) xSemaphoreGive(mutex_);
+  return coldest;
+}
+
 // Zapisuje wartość kanału i oznacza go jako realnie zmierzony.
 void SensorManager::putValue(const String& id, float v, bool valid) {
   Channel* c = ch(id);
