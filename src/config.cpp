@@ -1066,6 +1066,20 @@ bool ConfigManager::loadState() {
   state.vevRainWeek     = d["vevRainWeek"] | -1;
   state.vevRainMonthAcc = d["vevRainMonthAcc"] | 0.0f;
   state.vevRainMonth    = d["vevRainMonth"] | -1;
+  state.vevRainVer      = d["vevRainVer"] | 0;
+
+  // Migracja do algorytmu v2 (próg przyrostu na próbkę): stare sumy mogły
+  // zawierać fałszywy deszcz z pojedynczych, błędnie zdekodowanych ramek
+  // (np. 61,28 mm "wyskakujące" między 0 a 0). Zerujemy je raz.
+  if (state.vevRainVer < 2) {
+    state.vevRainMax      = -1.0f;
+    state.vevRainDayAcc   = 0.0f;
+    state.vevRainWeekAcc  = 0.0f;
+    state.vevRainMonthAcc = 0.0f;
+    state.vevRainVer      = 2;
+    LOG_I("Deszcz VEVOR: migracja algorytmu do v2 - sumy wyzerowane");
+    saveState();
+  }
   return true;
 }
 
@@ -1081,6 +1095,7 @@ bool ConfigManager::saveState() {
   d["vevRainWeek"]     = state.vevRainWeek;
   d["vevRainMonthAcc"] = state.vevRainMonthAcc;
   d["vevRainMonth"]    = state.vevRainMonth;
+  d["vevRainVer"]      = state.vevRainVer;
   String s;
   serializeJson(d, s);
 
