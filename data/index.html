@@ -2160,17 +2160,31 @@ function wxCompass(deg) {
   const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
   return dirs[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
 }
+function wxScaleLabel(v) {
+  if (!isFinite(v)) return '';
+  if (Math.abs(v) >= 10000) return Math.round(v / 1000) + 'k';
+  if (Number.isInteger(v)) return String(v);
+  return v.toFixed(1);
+}
 
 function buildThermo(v, min, max) {
   const f = clamp01((v - min) / (max - min));
   const hue = Math.round(215 - f * 215);                 // niebieski -> czerwony
   const color = `hsl(${hue}, 85%, 45%)`;
   const svg = wxSvg(46, 115, '0 0 60 150');
+  let scale = '';
+  for (let i = 0; i <= 6; i++) {
+    const t = min + (max - min) * i / 6;
+    const y = (115 - clamp01((t - min) / (max - min)) * 103).toFixed(1);
+    scale += `<line x1="17" y1="${y}" x2="22" y2="${y}" stroke="#64748b" stroke-width="1"/>` +
+             `<text x="14" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="7">${Math.round(t)}</text>`;
+  }
   svg.innerHTML =
     `<rect x="22" y="8" width="16" height="96" rx="8" fill="none" stroke="#334155" stroke-width="2"/>` +
     `<circle cx="30" cy="124" r="13" fill="none" stroke="#334155" stroke-width="2"/>` +
     `<circle cx="30" cy="124" r="9" fill="${color}"/>` +
-    `<rect class="wx-fill" x="25" y="115" width="10" height="0" rx="4" fill="${color}"/>`;
+    `<rect class="wx-fill" x="25" y="115" width="10" height="0" rx="4" fill="${color}"/>` +
+    scale;
   const fill = svg.querySelector('.wx-fill');
   const y1 = (115 - f * 103).toFixed(2), h1 = Math.max(0.001, f * 103).toFixed(2);
   return { svg, settle: () => { fill.setAttribute('y', y1); fill.setAttribute('height', h1); } };
@@ -2192,6 +2206,13 @@ function buildDial(v, min, max) {
     const [x0, y0] = wxPolar(cx, cy, 30, a), [x1, y1] = wxPolar(cx, cy, 36, a);
     inner += `<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="#64748b" stroke-width="${i % 5 === 0 ? 2 : 1}"/>`;
   }
+  // Skala liczbowa (min .. max) na zewnątrz tarczy.
+  for (let i = 0; i <= 4; i++) {
+    const a = -135 + 270 * i / 4;
+    const [lx, ly] = wxPolar(cx, cy, 48, a);
+    const val = min + (max - min) * i / 4;
+    inner += `<text x="${lx.toFixed(1)}" y="${(ly + 2.5).toFixed(1)}" text-anchor="middle" fill="#94a3b8" font-size="8">${Math.round(val)}</text>`;
+  }
   inner += `<g class="wx-needle" style="transform:rotate(0deg);transform-origin:${cx}px ${cy}px">` +
            `<polygon points="${cx - 2.5},${cy + 4} ${cx + 2.5},${cy + 4} ${cx},${cy - 30}" fill="#e2e8f0"/>` +
            `<circle cx="${cx}" cy="${cy}" r="4" fill="#e2e8f0"/></g>`;
@@ -2205,11 +2226,19 @@ function buildDrop(v, min, max) {
   const f = clamp01((v - min) / (max - min));
   const id = 'wxDrop' + (++wxUid);
   const path = 'M35,6 C56,34 62,54 62,72 A27,27 0 0 1 8,72 C8,54 14,34 35,6 Z';
-  const svg = wxSvg(60, 100, '0 0 70 120');
+  const svg = wxSvg(74, 100, '0 0 84 120');
+  let scale = '';
+  for (let i = 0; i <= 4; i++) {
+    const val = min + (max - min) * i / 4;
+    const y = (104 - i * 23).toFixed(1);
+    scale += `<line x1="66" y1="${y}" x2="70" y2="${y}" stroke="#64748b" stroke-width="1"/>` +
+             `<text x="64" y="${(Number(y) + 2.5).toFixed(1)}" text-anchor="end" fill="#94a3b8" font-size="7">${Math.round(val)}</text>`;
+  }
   svg.innerHTML =
     `<defs><clipPath id="${id}"><path d="${path}"/></clipPath></defs>` +
     `<path d="${path}" fill="none" stroke="#334155" stroke-width="2"/>` +
-    `<rect class="wx-fill" clip-path="url(#${id})" x="0" y="118" width="70" height="112" fill="#4fc3f7"/>`;
+    `<rect class="wx-fill" clip-path="url(#${id})" x="0" y="118" width="70" height="112" fill="#4fc3f7"/>` +
+    scale;
   const fill = svg.querySelector('.wx-fill');
   const y1 = (118 - f * 112).toFixed(2);
   return { svg, settle: () => { fill.setAttribute('y', y1); } };
@@ -2222,14 +2251,16 @@ function buildBeaker(v, max) {
   const f = clamp01(v / m);
   const id = 'wxBeaker' + (++wxUid);
   const shape = 'M20,6 L16,14 L10,112 L60,112 L54,14 L50,6 Z';
-  const svg = wxSvg(60, 100, '0 0 70 120');
+  const svg = wxSvg(74, 100, '0 0 88 120');
   let inner =
     `<defs><clipPath id="${id}"><path d="${shape}"/></clipPath></defs>` +
     `<path d="${shape}" fill="none" stroke="#334155" stroke-width="2"/>` +
     `<rect class="wx-fill" clip-path="url(#${id})" x="0" y="112" width="70" height="112" fill="#3b82f6"/>`;
   for (let i = 0; i <= 4; i++) {
+    const val = m * i / 4;
     const yy = (112 - (i / 4) * 92).toFixed(1);
-    inner += `<line x1="60" y1="${yy}" x2="65" y2="${yy}" stroke="#64748b" stroke-width="1"/>`;
+    inner += `<line x1="60" y1="${yy}" x2="65" y2="${yy}" stroke="#64748b" stroke-width="1"/>` +
+             `<text x="67" y="${(Number(yy) + 2.5).toFixed(1)}" fill="#94a3b8" font-size="7">${wxScaleLabel(val)}</text>`;
   }
   svg.innerHTML = inner;
   const fill = svg.querySelector('.wx-fill');
@@ -2253,10 +2284,12 @@ function buildWind(dir) {
 
 function buildBar(v, min, max, color) {
   const f = clamp01((v - min) / (max - min));
-  const svg = wxSvg(110, 16, '0 0 120 16');
+  const svg = wxSvg(110, 24, '0 0 120 26');
   svg.innerHTML =
-    `<rect x="0" y="5" width="120" height="6" rx="3" fill="#273449"/>` +
-    `<rect class="wx-fillw" x="0" y="5" width="0" height="6" rx="3" fill="${color}"/>`;
+    `<rect x="0" y="5" width="120" height="6" rx="3" fill="#3b4a5f"/>` +
+    `<rect class="wx-fillw" x="0" y="5" width="0" height="6" rx="3" fill="${color}"/>` +
+    `<text x="0" y="21" fill="#94a3b8" font-size="7">${wxScaleLabel(min)}</text>` +
+    `<text x="120" y="21" text-anchor="end" fill="#94a3b8" font-size="7">${wxScaleLabel(max)}</text>`;
   const fill = svg.querySelector('.wx-fillw');
   return { svg, settle: () => { fill.setAttribute('width', (f * 120).toFixed(2)); } };
 }
@@ -2265,24 +2298,27 @@ function buildWeatherIcon(code) {
   const icons = { 0: '🌙', 1: '☀️', 2: '☁️', 3: '🌧️', 4: '🌨️', 5: '🌫️' };
   const d = document.createElement('div');
   d.className = 'bigico';
-  d.textContent = icons[code] || '❓';
+  const missing = code === null || code === undefined || !isFinite(code);
+  d.textContent = missing ? '—' : (icons[code] || '❓');
+  if (missing) d.style.opacity = '0.35';
   return { node: d, settle: () => {} };
 }
 
-// Specyfikacja wskaźników: id kanału, rodzaj, zakres i (opcjonalnie) kanały
-// pomocnicze (kierunek/poryw wiatru, intensywność deszczu "teraz").
+// Specyfikacja wskaźników: id kanału, rodzaj, etykieta/jednostka (na wypadek
+// braku kanału - wskaźnik pokazuje wtedy "—", ale zostaje na pulpicie), zakres
+// i (opcjonalnie) kanały pomocnicze (kierunek/poryw wiatru, deszcz "teraz").
 const WX_OUT_GAUGES = [
-  { id: 'temp',        kind: 'thermo', min: -20, max: 40 },
-  { id: 'press',       kind: 'dial',   min: 950, max: 1050 },
-  { id: 'hum',         kind: 'drop',   min: 0,   max: 100, alt: 'vev_hum' },
-  { id: 'uv',          kind: 'bar',    min: 0,   max: 11,   color: '#a78bfa' },
-  { id: 'light',       kind: 'bar',    min: 0,   max: 120000, color: '#fbbf24' },
-  { id: 'cam_weather', kind: 'icon' },
+  { id: 'temp',        kind: 'thermo', label: 'Temperatura',      unit: '°C',  min: -20, max: 40 },
+  { id: 'press',       kind: 'dial',   label: 'Ciśnienie',        unit: 'hPa', min: 950, max: 1050 },
+  { id: 'hum',         kind: 'drop',   label: 'Wilgotność',       unit: '%',   min: 0,   max: 100, alt: 'vev_hum' },
+  { id: 'uv',          kind: 'bar',    label: 'Indeks UV',        unit: '',    min: 0,   max: 11,   color: '#a78bfa' },
+  { id: 'light',       kind: 'bar',    label: 'Natężenie światła', unit: 'lx', min: 0,   max: 120000, color: '#fbbf24' },
+  { id: 'cam_weather', kind: 'icon',   label: 'Pogoda z kamery',  unit: '' },
 ];
 const WX_VEV_GAUGES = [
-  { id: 'vev_wind',     kind: 'wind',   dir: 'vev_vane', gust: 'vev_gust' },
-  { id: 'vev_rain_day', kind: 'beaker', max: 25, sub: 'vev_rain_now' },
-  { id: 'vev_temp',     kind: 'thermo', min: -20, max: 40 },
+  { id: 'vev_wind',     kind: 'wind',   label: 'Wiatr',            unit: 'km/h', dir: 'vev_vane', gust: 'vev_gust' },
+  { id: 'vev_rain_day', kind: 'beaker', label: 'Deszcz dziś',      unit: 'mm',   max: 25, sub: 'vev_rain_now' },
+  { id: 'vev_temp',     kind: 'thermo', label: 'Temperatura (VEVOR)', unit: '°C', min: -20, max: 40 },
 ];
 
 function renderWxGauges(grid, specs, byId) {
@@ -2292,12 +2328,12 @@ function renderWxGauges(grid, specs, byId) {
 
   for (const spec of specs) {
     const c = byId.get(spec.id) || (spec.alt ? byId.get(spec.alt) : null);
-    if (!c || !isFinite(Number(c.value))) continue;
-    used.add(c.id);
+    const v = c ? Number(c.value) : NaN;
+    if (c) used.add(c.id);
 
     let gauge, sub = '';
     if (spec.kind === 'icon') {
-      gauge = buildWeatherIcon(Number(c.value));
+      gauge = buildWeatherIcon(isFinite(v) ? v : null);
     } else if (spec.kind === 'wind') {
       const dirC = byId.get(spec.dir);
       const gustC = byId.get(spec.gust);
@@ -2308,20 +2344,20 @@ function renderWxGauges(grid, specs, byId) {
       if (isFinite(dirV)) sub = wxCompass(dirV) + ' ' + Math.round(dirV) + '°';
       if (gustC && isFinite(Number(gustC.value))) sub += (sub ? ' • ' : '') + t('Poryw') + ' ' + fmtNum(Number(gustC.value), 1) + ' km/h';
     } else if (spec.kind === 'beaker') {
-      gauge = buildBeaker(Number(c.value), spec.max);
+      gauge = buildBeaker(isFinite(v) ? v : 0, spec.max);
       const nowC = byId.get(spec.sub);
       if (nowC && isFinite(Number(nowC.value))) {
         used.add(nowC.id);
         sub = t('teraz') + ' ' + fmtNum(Number(nowC.value), 1) + ' mm/h';
       }
     } else if (spec.kind === 'thermo') {
-      gauge = buildThermo(Number(c.value), spec.min, spec.max);
+      gauge = buildThermo(isFinite(v) ? v : spec.min, spec.min, spec.max);
     } else if (spec.kind === 'dial') {
-      gauge = buildDial(Number(c.value), spec.min, spec.max);
+      gauge = buildDial(isFinite(v) ? v : spec.min, spec.min, spec.max);
     } else if (spec.kind === 'drop') {
-      gauge = buildDrop(Number(c.value), spec.min, spec.max);
+      gauge = buildDrop(isFinite(v) ? v : 0, spec.min, spec.max);
     } else if (spec.kind === 'bar') {
-      gauge = buildBar(Number(c.value), spec.min, spec.max, spec.color || '#fbbf24');
+      gauge = buildBar(isFinite(v) ? v : 0, spec.min, spec.max, spec.color || '#fbbf24');
     } else {
       continue;
     }
@@ -2330,14 +2366,15 @@ function renderWxGauges(grid, specs, byId) {
     card.className = 'wx-card';
     const lbl = document.createElement('div');
     lbl.className = 'lbl';
-    lbl.textContent = t(c.name);
+    lbl.textContent = t(spec.label);
     card.appendChild(lbl);
     if (gauge.node) card.appendChild(gauge.node);
     else card.appendChild(gauge.svg);
     const val = document.createElement('div');
     val.className = 'val';
-    val.innerHTML = escapeHtml(fmtChannelValue(c)) +
-      (c.unit ? ' <span class="unit">' + escapeHtml(t(c.unit)) + '</span>' : '');
+    const unit = c && c.unit ? c.unit : (spec.unit || '');
+    val.innerHTML = escapeHtml(c ? fmtChannelValue(c) : '—') +
+      (unit ? ' <span class="unit">' + escapeHtml(t(unit)) + '</span>' : '');
     card.appendChild(val);
     if (sub) {
       const sd = document.createElement('div');
@@ -2461,9 +2498,9 @@ async function loadStatus() {
   }
 
   // Sekcja zewnętrzna: wskaźniki pogody (termometr, barometr, kropla, paski
-  // UV/światła, ikona pogody z kamery), a pozostałe kanały zewnętrzne jako
-  // zwykłe kafelki. Gdy żaden wskaźnik nie ma danych, zostają same kafelki.
-  if (outList.length) {
+  // UV/światła, ikona pogody z kamery). Wskaźniki są zawsze widoczne - bez
+  // danych pokazują "—" - a pozostałe kanały zewnętrzne zostają kafelkami.
+  {
     const zh = document.createElement('div');
     zh.className = 'zone-head';
     zh.dataset.tone = 'out';
@@ -2472,11 +2509,9 @@ async function loadStatus() {
     const byId = new Map(chans.map(c => [c.id, c]));
     const used = renderWxGauges(grid, WX_OUT_GAUGES, byId);
     const rest = outList.filter(c => !used.has(c.id));
-    if (used.size && rest.length) {
+    if (rest.length) {
       addSubHead('📦', 'Pozostałe na zewnątrz');
       rest.forEach(c => addCard(c, 'out'));
-    } else if (!used.size) {
-      outList.forEach(c => addCard(c, 'out'));
     }
   }
 
@@ -2495,10 +2530,11 @@ async function loadStatus() {
     addZone(label || ('BT ' + mac), list, 'bt', '📶');
   });
 
-  // Stacja VEVOR (sniffer 868 MHz) - osobna sekcja z wskaźnikami wiatru
-  // i deszczu (tu jest ich źródło), reszta kanałów jako kafelki.
+  // Stacja VEVOR (sniffer 868 MHz) - zawsze widoczna sekcja z wskaźnikami
+  // wiatru i deszczu (tu jest ich źródło); bez danych pokazują "—".
+  // Pozostałe kanały VEVOR zostają kafelkami.
   const vevList = chans.filter(isVev);
-  if (vevList.length) {
+  {
     const zh = document.createElement('div');
     zh.className = 'zone-head';
     zh.dataset.tone = 'vev';
@@ -2507,11 +2543,9 @@ async function loadStatus() {
     const byId = new Map(chans.map(c => [c.id, c]));
     const used = renderWxGauges(grid, WX_VEV_GAUGES, byId);
     const rest = vevList.filter(c => !used.has(c.id));
-    if (used.size && rest.length) {
+    if (rest.length) {
       addSubHead('📻', 'Pozostałe (VEVOR)');
       rest.forEach(c => addCard(c, 'vev'));
-    } else if (!used.size) {
-      vevList.forEach(c => addCard(c, 'vev'));
     }
   }
 

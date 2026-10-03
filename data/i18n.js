@@ -2020,6 +2020,8 @@
     // Wskaźniki pogody na pulpicie (termometr, barometr, kropla, zlewka, wiatr)
     'Wskaźniki pogody': ['Weather gauges', 'Wetteranzeigen'],
     'Poryw': ['Gust', 'Böe'],
+    'Deszcz dziś': ['Rain today', 'Regen heute'],
+    'Temperatura (VEVOR)': ['Temperature (VEVOR)', 'Temperatur (VEVOR)'],
     // Nagłówki paneli z nazwami układów - tak jak na stronie stacji powietrza.
     'Cząsteczki (PMS7003)': ['Particulate matter (PMS7003)', 'Feinstaub (PMS7003)'],
     'Temperatura i wilgotność (DHT11)': ['Temperature and humidity (DHT11)', 'Temperatur und Luftfeuchtigkeit (DHT11)'],
