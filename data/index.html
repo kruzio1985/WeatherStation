@@ -2412,6 +2412,9 @@ const WX_VEV_GAUGES = [
   { id: 'vev_wind',     kind: 'wind',   label: 'Wiatr',            unit: 'km/h', dir: 'vev_vane', gust: 'vev_gust' },
   { id: 'vev_rain_day', kind: 'beaker', label: 'Deszcz dziś',      unit: 'mm',   max: 25, sub: 'vev_rain_now' },
   { id: 'vev_temp',     kind: 'thermo', label: 'Temperatura (VEVOR)', unit: '°C', min: -20, max: 40 },
+  { id: 'vev_hum',      kind: 'drop',   label: 'Wilgotność (VEVOR)', unit: '%',  min: 0,   max: 100 },
+  { id: 'vev_uv',       kind: 'bar',    label: 'UV (VEVOR)',      unit: '',    min: 0,   max: 11,   color: '#a78bfa' },
+  { id: 'vev_light',    kind: 'bar',    label: 'Lux (VEVOR)',    unit: 'lx',  min: 0,   max: 120000, color: '#fbbf24' },
 ];
 
 function renderWxGauges(grid, specs, byId) {

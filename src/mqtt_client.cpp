@@ -150,6 +150,9 @@ void MqttManager::announceDiscovery(const Channel& c) {
   // Tylko kanały z potwierdzonym sprzętowo czujnikiem (detected) trafiają do HA,
   // żeby w Home Assistant nie pojawiały się "widma" niepodłączonych czujników.
   if (!c.detected || !c.enabled) return;
+  // Kanały wewnętrzne (jakość powietrza) pomijamy - stacja powietrza
+  // publikuje je na swoim własnym brokerze, nie chcemy dublować w HA.
+  if (c.zone == "in") return;
 
   JsonDocument d;
   d["name"] = config.deviceName() + " " + c.name;
@@ -181,6 +184,9 @@ void MqttManager::publishReadings(const std::vector<Channel>& channels) {
 
   for (const auto& c : channels) {
     if (!c.enabled || !c.detected || isnan(c.value)) continue;
+    // Wewnątrz (jakość powietrza) wysyła stacja powietrza na swoim brokerze -
+    // tutaj tylko zewnątrz i VEVOR, żeby nie dublować w Home Assistant.
+    if (c.zone == "in") continue;
 
     if (announce) announceDiscovery(c);
 

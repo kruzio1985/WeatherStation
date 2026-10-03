@@ -2022,6 +2022,9 @@
     'Poryw': ['Gust', 'Böe'],
     'Deszcz dziś': ['Rain today', 'Regen heute'],
     'Temperatura (VEVOR)': ['Temperature (VEVOR)', 'Temperatur (VEVOR)'],
+    'Wilgotność (VEVOR)': ['Humidity (VEVOR)', 'Luftfeuchtigkeit (VEVOR)'],
+    'UV (VEVOR)': ['UV (VEVOR)', 'UV (VEVOR)'],
+    'Lux (VEVOR)': ['Lux (VEVOR)', 'Lux (VEVOR)'],
     // Karty jakości powietrza (wygląd jak stacja powietrza)
     'Największy wpływ': ['Main contributor', 'Hauptverursacher'],
     'czekam na dane…': ['waiting for data…', 'warte auf Daten…'],
