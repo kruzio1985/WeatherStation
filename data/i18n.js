@@ -2022,6 +2022,15 @@
     'Poryw': ['Gust', 'Böe'],
     'Deszcz dziś': ['Rain today', 'Regen heute'],
     'Temperatura (VEVOR)': ['Temperature (VEVOR)', 'Temperatur (VEVOR)'],
+    // Karty jakości powietrza (wygląd jak stacja powietrza)
+    'Największy wpływ': ['Main contributor', 'Hauptverursacher'],
+    'czekam na dane…': ['waiting for data…', 'warte auf Daten…'],
+    'rozgrzewanie…': ['warming up…', 'Aufheizphase…'],
+    'Ruch wykryty': ['Motion detected', 'Bewegung erkannt'],
+    'Rs/R0 (opór czujnika)': ['Rs/R0 (sensor resistance)', 'Rs/R0 (Sensorwiderstand)'],
+    'Korekcja wilgotności PM: OFF (RH poniżej progu)':
+      ['PM humidity correction: OFF (RH below threshold)',
+       'PM-Luftfeuchte-Korrektur: AUS (RH unter Schwelle)'],
     // Nagłówki paneli z nazwami układów - tak jak na stronie stacji powietrza.
     'Cząsteczki (PMS7003)': ['Particulate matter (PMS7003)', 'Feinstaub (PMS7003)'],
     'Temperatura i wilgotność (DHT11)': ['Temperature and humidity (DHT11)', 'Temperatur und Luftfeuchtigkeit (DHT11)'],
@@ -2065,6 +2074,10 @@
     // Piny: "Wiatrowskaz — tylko wejście ADC1" (funkcja analogowa na pinie bez ADC)
     [/^(.+) — tylko wejście ADC1$/, function (m) { return t(m[1]) + ' — ADC1 input only'; },
                                     function (m) { return t(m[1]) + ' — nur ADC1-Eingang'; }],
+    // Korekcja wilgotności PM: "Korekcja wilgotności PM: ON (RH 42%)"
+    [/^Korekcja wilgotności PM: ON \(RH (\d+)%\)$/,
+      function (m) { return 'PM humidity correction: ON (RH ' + m[1] + '%)'; },
+      function (m) { return 'PM-Luftfeuchte-Korrektur: AN (RH ' + m[1] + ' %)'; }],
     // Wykresy: "Punkty: 12 • Temperatura [°C]"
     [/^Punkty: (\d+) • (.+) \[(.*)\]$/, function (m) { return 'Points: ' + m[1] + ' • ' + t(m[2]) + ' [' + m[3] + ']'; },
                                      function (m) { return 'Punkte: ' + m[1] + ' • ' + t(m[2]) + ' [' + m[3] + ']'; }],
