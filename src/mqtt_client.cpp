@@ -201,7 +201,7 @@ void MqttManager::publishReadings(const std::vector<Channel>& channels) {
   if (announce) lastAnnounce_ = now;
 
   for (const auto& c : channels) {
-    if (!c.enabled || !c.detected || isnan(c.value)) continue;
+    if (!c.enabled || !c.detected || !isfinite(c.value)) continue;
     // Wewnątrz (jakość powietrza) wysyła stacja powietrza na swoim brokerze -
     // tutaj tylko zewnątrz i VEVOR, żeby nie dublować w Home Assistant.
     if (c.zone == "in") continue;

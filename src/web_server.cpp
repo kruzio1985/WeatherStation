@@ -506,6 +506,12 @@ void WebServerManager::registerRoutes() {
   });
 
   // --- Odbiór danych ze sniffera VEVOR (868 MHz) ---
+  // UWAGA: to jest kanał ZAPASOWY/legacy. Głównym kanałem danych VEVOR jest
+  // odpytywanie /json przez ExtDevManager (extdev.cpp) co `interval` sekund.
+  // NIE włączaj jednocześnie wysyłki POST ze sniffera - podwójne wywołanie
+  // ingestVevor() z dwóch dróg (poll + POST) powoduje zdublowane próbki, a
+  // POST ze sniffera blokował jego własną pętlę (wisiał na timeoutach stacji).
+  //
   // Sniffer wysyła JSON (POST) po każdej odebranej ramce. Akceptujemy zarówno
   // cały obiekt z /json (z kluczem "weather"), jak i sam obiekt "weather".
   onPost("/api/remote/weather", [](AsyncWebServerRequest* r) {
@@ -522,10 +528,12 @@ void WebServerManager::registerRoutes() {
 
     auto getf = [&](const char* key) -> float {
       JsonVariantConst v = w[key];
-      if (v.is<float>()) return v.as<float>();
-      if (v.is<int>())   return (float)v.as<int>();
-      if (v.is<unsigned int>()) return (float)v.as<unsigned int>();
-      return NAN;
+      float f = NAN;
+      if (v.is<float>()) f = v.as<float>();
+      else if (v.is<int>()) f = (float)v.as<int>();
+      else if (v.is<unsigned int>()) f = (float)v.as<unsigned int>();
+      // NaN/Inf nie mogą iść dalej (do ingestVevor, MQTT ani na SD).
+      return isfinite(f) ? f : NAN;
     };
 
     float tempC = getf("temperature_C");
