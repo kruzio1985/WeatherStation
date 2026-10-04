@@ -1094,7 +1094,7 @@ void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float g
   // doba albo restart sniffera), suma doby/miesiąca spadała do zera i po
   // restarcie stacji "deszcz w tym miesiącu" znikał.
   bool changed = false;
-  if (!isnan(rainMm)) {
+  if (isfinite(rainMm)) {
     if (config.state.vevRainDay != dayKey) {
       config.state.vevRainDay = dayKey;
       config.state.vevRainDayAcc = 0.0f;
@@ -1159,24 +1159,25 @@ void SensorManager::ingestVevor(float tempC, float humPct, float windMs, float g
 
   if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
   auto pub = [&](const char* id, float val, bool have) {
-    if (!have || isnan(val)) return;
+    // isfinite, a nie isnan - Infinity też nie może trafić do kanałów/MQTT.
+    if (!have || !isfinite(val)) return;
     setPresent(id, true);
     setDetected(id, true);
     putValue(id, val, true);
   };
-  pub("vev_temp",       tempC,          !isnan(tempC));
-  pub("vev_hum",        humPct,         !isnan(humPct));
-  pub("vev_wind",       windMs * 3.6f,  !isnan(windMs));
-  pub("vev_wind_ms",    windMs,         !isnan(windMs));
-  pub("vev_gust",       gustMs * 3.6f,  !isnan(gustMs));
-  pub("vev_vane",       dirDeg,         !isnan(dirDeg));
-  pub("vev_rain_total", rainMm,         !isnan(rainMm));
-  pub("vev_rain_day",   rainDay,        !isnan(rainMm));
-  pub("vev_rain_week",  rainWeek,       !isnan(rainMm));
-  pub("vev_rain_month", rainMonth,      !isnan(rainMm));
-  pub("vev_rain_now",   rainNow,        !isnan(rainMm));
-  pub("vev_uv",         uv,             !isnan(uv));
-  pub("vev_light",      lux,            !isnan(lux));
+  pub("vev_temp",       tempC,          isfinite(tempC));
+  pub("vev_hum",        humPct,         isfinite(humPct));
+  pub("vev_wind",       windMs * 3.6f,  isfinite(windMs));
+  pub("vev_wind_ms",    windMs,         isfinite(windMs));
+  pub("vev_gust",       gustMs * 3.6f,  isfinite(gustMs));
+  pub("vev_vane",       dirDeg,         isfinite(dirDeg));
+  pub("vev_rain_total", rainMm,         isfinite(rainMm));
+  pub("vev_rain_day",   rainDay,        isfinite(rainMm));
+  pub("vev_rain_week",  rainWeek,       isfinite(rainMm));
+  pub("vev_rain_month", rainMonth,      isfinite(rainMm));
+  pub("vev_rain_now",   rainNow,        isfinite(rainMm));
+  pub("vev_uv",         uv,             isfinite(uv));
+  pub("vev_light",      lux,            isfinite(lux));
   if (mutex_) xSemaphoreGive(mutex_);
 
   LOG_I("VEVOR: %.1f°C %.0f%% wiatr %.1f km/h (poryw %.1f) kier %.0f° deszcz %.1f mm (dziś %.1f, teraz %.1f mm/h)",

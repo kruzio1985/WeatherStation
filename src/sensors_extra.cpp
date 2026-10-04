@@ -561,12 +561,22 @@ void SensorManager::beginTuya() {
 void SensorManager::serviceTuya() {
   if (!tuyStarted_) return;
 
+  // Limit bajtów na jedno wywołanie: gdy czujnik nie jest podłączony (albo
+  // na linii jest śmieć), bufor UART potrafi zawierać dziesiątki kilobajtów
+  // śmieci - "while (available())" wysysał wszystko naraz i blokował pętlę
+  // główną na sekundy (log: "Pętla główna: obieg trwał 3334 ms"). Reszta
+  // bufora jest dozbierana w kolejnych obiegach pętli - kilka obiegów na
+  // sekundę wystarcza na zwykłą linię co ~2 s.
+  const int TUYA_MAX_READ = 256;
+  int read = 0;
+
   // Jedno wspólne czytanie dla UART2 sprzętowego i SoftwareSerial.
   int c;
 #if SOC_UART_NUM > 2
   if (tuyHwUart_) {
-    while (Serial2.available()) {
+    while (read < TUYA_MAX_READ && Serial2.available()) {
       c = Serial2.read();
+      read++;
       tuyRawBytes_++;
       tuyLastByte_ = c;
       tuyLastRxMs_ = millis();
@@ -594,8 +604,9 @@ void SensorManager::serviceTuya() {
   {
     SoftwareSerial* ss = (SoftwareSerial*)tuySerial_;
     if (!ss) return;
-    while (ss->available()) {
+    while (read < TUYA_MAX_READ && ss->available()) {
       c = ss->read();
+      read++;
       tuyRawBytes_++;
       tuyLastByte_ = c;
       tuyLastRxMs_ = millis();
