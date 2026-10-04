@@ -193,6 +193,15 @@ powershell -File tools\build_release.ps1   # buduje wszystkie bin + kamera → d
   Używać `curl.exe` (nie `Invoke-WebRequest`).
 - **Seriale w tym środowisku** — po kompilacji `Serial` mastera to USB-CDC;
   zapis do Serial przy odpiętym hoście USB jest bezpieczny (core odrzuca bufor).
+- **VEVOR 868 MHz — JEDEN kanał danych** — głównym kanałem jest odpytywanie
+  `/json` sniffera przez `ExtDevManager` (co `interval` s). Endpoint
+  `POST /api/remote/weather` to kanał zapasowy/legacy — **nie włączaj
+  jednocześnie wysyłki POST po stronie sniffera**: podwójne `ingestVevor()`
+  zdwaja próbki, a POST blokował pętlę sniffera (wisiał na timeoutach stacji).
+- **Sniffer VEVOR — diagnostyka zdalna** — do automatycznego monitoringu używać
+  wyłącznie lekkich `/json` i `/status`. Ciężkie `/log`, `/errors`, `/health`
+  potrafią odpowiadać 2,8–12 s, co samo z siebie wywołuje timeouty po stronie
+  stacji (backoff ExtDev). Sniffer: kod w `HISTORIA\PROJEKTY\HOME_ASSISTANT\WMBUS\WMBUS_WeatherSniffer`.
 
 ---
 

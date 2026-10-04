@@ -20,10 +20,14 @@ ExtDevManager extdev;
 
 // Prosty HTTP GET zwracający treść (max 8 KB). Krótkie timeouty, żeby
 // NIE przekroczyć limitu 5 s watchdoga zadania (connect + read < 5 s).
+// Uwaga: łącze Wi-Fi do sniffera bywa wolne (skoki > 1 s, straty pakietów),
+// a pojedynczy zgubiony SYN przekraczał stare 1,5 s na connect - stąd w logu
+// "brak odpowiedzi" po 1502 ms mimo działającego sniffera. Podniesiono
+// connect do 2,2 s (read 1,8 s), żeby mieć zapas bez grzebania w watchdoga.
 static bool httpGetJson(const String& url, String& body) {
   HTTPClient h;
-  h.setConnectTimeout(1500);   // max 1,5 s na połączenie
-  h.setTimeout(2000);          // max 2 s na odpowiedź
+  h.setConnectTimeout(2200);   // max 2,2 s na połączenie
+  h.setTimeout(1800);          // max 1,8 s na odpowiedź
   if (!h.begin(url)) return false;
   const int code = h.GET();
   if (code != HTTP_CODE_OK) {
@@ -187,10 +191,12 @@ void ExtDevManager::pollOne(ExtDevice& d) {
   else w = doc.as<JsonObjectConst>();
   auto getf = [&](const char* key) -> float {
     JsonVariantConst v = w[key];
-    if (v.is<float>()) return v.as<float>();
-    if (v.is<int>())   return (float)v.as<int>();
-    if (v.is<unsigned int>()) return (float)v.as<unsigned int>();
-    return NAN;
+    float f = NAN;
+    if (v.is<float>()) f = v.as<float>();
+    else if (v.is<int>()) f = (float)v.as<int>();
+    else if (v.is<unsigned int>()) f = (float)v.as<unsigned int>();
+    // NaN/Inf nie mogą iść dalej (do ingestVevor, MQTT ani na SD).
+    return isfinite(f) ? f : NAN;
   };
   float uvi = getf("uvi");
   if (isnan(uvi)) uvi = getf("uv");
@@ -205,9 +211,13 @@ void ExtDevManager::loop() {
   if (!devs_.size()) return;
   const unsigned long now = millis();
   for (auto& d : devs_) {
-    // Backoff: po 3 kolejnych błędach odpytuj martwe urządzenie co 5 min,
-    // żeby nie wisieć w pętli i nie męczyć watchdoga zadania.
-    unsigned long gap = (d.failCount >= 3) ? 300000UL : (unsigned long)d.interval * 1000UL;
+    // Backoff: po 3 kolejnych błędach zwalniamy do 60 s, a dopiero po 10
+    // błędach do 5 min. Poprzednio 3 błędy od razu dawały 5 min przerwy,
+    // więc przy chwilowej niedostępności (np. wolne łącze do sniffera)
+    // stacja traciła dane na 6 minut, choć urządzenie cały czas działało.
+    unsigned long gap = (d.failCount >= 10) ? 300000UL
+                      : (d.failCount >= 3)  ? 60000UL
+                      : (unsigned long)d.interval * 1000UL;
     if (now - d.lastMs < gap) continue;
     LOG_I("ExtDev: poll %s", d.url.c_str());
     d.lastMs = now;
@@ -216,5 +226,11 @@ void ExtDevManager::loop() {
     else if (d.failCount < 10) d.failCount++;
     LOG_I("Urządzenie %s (%s): %s", d.name.c_str(), d.url.c_str(),
           d.ok ? "OK" : d.lastErr.c_str());
+
+    // Budżet czasu na jedno wywołanie: przy kilku martwych urządzeniach
+    // sumaryczny connect+read (2,2+1,8 s) mógłby przekroczyć 5 s watchdoga
+    // zadania. Przerywamy, gdy tylko minie ~4 s - reszta urządzeń zostaje
+    // odpyta w kolejnych obiegach pętli.
+    if (millis() - now > 4000UL) break;
   }
 }
