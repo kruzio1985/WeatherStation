@@ -29,6 +29,10 @@ public:
   bool reconnectWithConfig(String& info);
   String serverDescription();
 
+  // Stabilny identyfikator urządzenia w Home Assistant (na bazie MAC) - ten
+  // sam dla wszystkich encji stacji, więc HA grupuje je w jedno urządzenie.
+  String deviceId();
+
 private:
   void announceDiscovery(const Channel& c);
   void announceCompassDiscovery();

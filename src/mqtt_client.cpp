@@ -151,6 +151,13 @@ void MqttManager::loop() {
   }
 }
 
+String MqttManager::deviceId() {
+  // Stabilny identyfikator urządzenia w Home Assistant (na bazie MAC) - ten
+  // sam dla wszystkich encji tej stacji, dzięki czemu HA grupuje je w jedno
+  // urządzenie "Stacja Pogody".
+  return "stacja-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+}
+
 void MqttManager::announceDiscovery(const Channel& c) {
   // Tylko kanały z potwierdzonym sprzętowo czujnikiem (detected) trafiają do HA,
   // żeby w Home Assistant nie pojawiały się "widma" niepodłączonych czujników.
@@ -159,21 +166,25 @@ void MqttManager::announceDiscovery(const Channel& c) {
   // publikuje je na swoim własnym brokerze, nie chcemy dublować w HA.
   if (c.zone == "in") return;
 
+  // Pełne (nie skrócone) nazwy kluczy discovery - skrócone formy (stat_t,
+  // uniq_id itd.) nie są rozpoznawane przez starsze Home Assistant.
   JsonDocument d;
   d["name"] = config.deviceName() + " " + c.name;
-  d["uniq_id"] = config.mqttPrefix() + "_" + c.id;
-  d["stat_t"] = stateTopic(c);
-  d["avty_t"] = config.mqttPrefix() + "/status";
-  if (c.haClass.length()) d["dev_cla"] = c.haClass;
-  if (c.haUnit.length()) d["unit_of_meas"] = c.haUnit;
-  if (c.haIcon.length()) d["ic"] = c.haIcon;
-  d["exp_aft"] = 600;
+  d["unique_id"] = config.mqttPrefix() + "_" + c.id;
+  d["state_topic"] = stateTopic(c);
+  d["availability_topic"] = config.mqttPrefix() + "/status";
+  if (c.haClass.length()) d["device_class"] = c.haClass;
+  if (c.haUnit.length()) d["unit_of_measurement"] = c.haUnit;
+  if (c.haIcon.length()) d["icon"] = c.haIcon;
+  d["expire_after"] = 600;
 
-  JsonObject dev = d["dev"].to<JsonObject>();
+  JsonObject dev = d["device"].to<JsonObject>();
   dev["name"] = config.deviceName();
-  dev["mdl"] = "Stacja Pogody ESP32-S3";
-  dev["sw"] = FW_VERSION_FULL;
-  dev["mf"] = config.companyName().length() ? config.companyName() : "DIY";
+  JsonArray ids = dev["identifiers"].to<JsonArray>();
+  ids.add(deviceId());
+  dev["model"] = "Stacja Pogody ESP32-S3";
+  dev["sw_version"] = FW_VERSION_FULL;
+  dev["manufacturer"] = config.companyName().length() ? config.companyName() : "DIY";
 
   String payload;
   serializeJson(d, payload);
@@ -184,7 +195,9 @@ void MqttManager::publishReadings(const std::vector<Channel>& channels) {
   if (!connected()) return;
 
   unsigned long now = millis();
-  bool announce = (now - lastAnnounce_ > 300000); // co 5 min
+  // lastAnnounce_ == 0 oznacza "ogłoś discovery przy najbliższej okazji"
+  // (start stacji albo ponowne połączenie z brokerem - patrz connectNow()).
+  bool announce = (lastAnnounce_ == 0) || (now - lastAnnounce_ > 300000);
   if (announce) lastAnnounce_ = now;
 
   for (const auto& c : channels) {
@@ -216,17 +229,19 @@ void MqttManager::publishReadings(const std::vector<Channel>& channels) {
 void MqttManager::announceCompassDiscovery() {
   JsonDocument d;
   d["name"] = config.deviceName() + " Kierunek wiatru (N/E/S/W)";
-  d["uniq_id"] = config.mqttPrefix() + "_vane_dir";
-  d["stat_t"] = config.mqttPrefix() + "/vane_dir/state";
-  d["avty_t"] = config.mqttPrefix() + "/status";
-  d["ic"] = "mdi:compass";
-  d["exp_aft"] = 600;
+  d["unique_id"] = config.mqttPrefix() + "_vane_dir";
+  d["state_topic"] = config.mqttPrefix() + "/vane_dir/state";
+  d["availability_topic"] = config.mqttPrefix() + "/status";
+  d["icon"] = "mdi:compass";
+  d["expire_after"] = 600;
 
-  JsonObject dev = d["dev"].to<JsonObject>();
+  JsonObject dev = d["device"].to<JsonObject>();
   dev["name"] = config.deviceName();
-  dev["mdl"] = "Stacja Pogody ESP32-S3";
-  dev["sw"] = FW_VERSION_FULL;
-  dev["mf"] = config.companyName().length() ? config.companyName() : "DIY";
+  JsonArray ids = dev["identifiers"].to<JsonArray>();
+  ids.add(deviceId());
+  dev["model"] = "Stacja Pogody ESP32-S3";
+  dev["sw_version"] = FW_VERSION_FULL;
+  dev["manufacturer"] = config.companyName().length() ? config.companyName() : "DIY";
 
   String payload;
   serializeJson(d, payload);

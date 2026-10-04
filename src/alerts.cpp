@@ -64,18 +64,20 @@ void publishAlert(const char* id, bool on) {
 void announceAlertDiscovery(const char* id, const char* name) {
   JsonDocument d;
   d["name"] = config.deviceName() + " Alert: " + String(name);
-  d["uniq_id"] = config.mqttPrefix() + "_alert_" + id;
-  d["stat_t"] = alertTopic(id);
-  d["avty_t"] = config.mqttPrefix() + "/status";
-  d["ic"] = "mdi:alert";
+  d["unique_id"] = config.mqttPrefix() + "_alert_" + id;
+  d["state_topic"] = alertTopic(id);
+  d["availability_topic"] = config.mqttPrefix() + "/status";
+  d["icon"] = "mdi:alert";
   d["payload_on"] = "ON";
   d["payload_off"] = "OFF";
 
-  JsonObject dev = d["dev"].to<JsonObject>();
+  JsonObject dev = d["device"].to<JsonObject>();
   dev["name"] = config.deviceName();
-  dev["mdl"] = "Stacja Pogody ESP32-S3";
-  dev["sw"] = FW_VERSION_FULL;
-  dev["mf"] = config.companyName().length() ? config.companyName() : "DIY";
+  JsonArray ids = dev["identifiers"].to<JsonArray>();
+  ids.add(mqtt.deviceId());
+  dev["model"] = "Stacja Pogody ESP32-S3";
+  dev["sw_version"] = FW_VERSION_FULL;
+  dev["manufacturer"] = config.companyName().length() ? config.companyName() : "DIY";
 
   String payload;
   serializeJson(d, payload);
