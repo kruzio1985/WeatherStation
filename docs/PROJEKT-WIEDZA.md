@@ -198,6 +198,12 @@ powershell -File tools\build_release.ps1   # buduje wszystkie bin + kamera → d
   `POST /api/remote/weather` to kanał zapasowy/legacy — **nie włączaj
   jednocześnie wysyłki POST po stronie sniffera**: podwójne `ingestVevor()`
   zdwaja próbki, a POST blokował pętlę sniffera (wisiał na timeoutach stacji).
+- **Budżet watchdoga pętli głównej (5 s)** — timeouty ExtDev (connect 2200 +
+  read 1800 ms) + budżet 4 s na wywołanie mieszczą się z zapasem ~1 s. Ten
+  zapas wystarcza **tylko dopóki** zostają dwa znane blokery: RS485 (węzeł 2
+  nie odpowiada, ~3 s) i zdjęcie z kamery (HTTP ~3 s). Przed dodaniem kolejnej
+  wolnej operacji w tej samej ścieżce **zmierz realny czas obiegu** (log
+  „Pętla główna: obieg trwał … ms"), zamiast liczyć teoretycznie.
 - **Sniffer VEVOR — diagnostyka zdalna** — do automatycznego monitoringu używać
   wyłącznie lekkich `/json` i `/status`. Ciężkie `/log`, `/errors`, `/health`
   potrafią odpowiadać 2,8–12 s, co samo z siebie wywołuje timeouty po stronie
