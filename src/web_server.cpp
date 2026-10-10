@@ -18,6 +18,7 @@
 #include "logger.h"
 #include "analysis.h"
 #include "alerts.h"
+#include "watchdog.h"
 #include "report.h"
 #include "openmeteo.h"
 #include "ota.h"
@@ -949,6 +950,24 @@ void WebServerManager::registerRoutes() {
       return;
     }
     LOG_I("Progi alertów zapisane ze strony www (%u B)", (unsigned)b.length());
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  // --- Restart dobowy + impuls życia (watchdog zewnętrzny) ---
+  server.on("/api/watchdog", HTTP_GET, [](AsyncWebServerRequest* r) {
+    r->send(200, "application/json", watchdog.json());
+  });
+  onPost("/api/watchdog", [](AsyncWebServerRequest* r) {
+    String b = bodyOf(r);
+    if (b.length() == 0) {
+      r->send(400, "application/json", jsonError("Brak danych"));
+      return;
+    }
+    if (!watchdog.applyJson(b.c_str(), b.length())) {
+      r->send(400, "application/json", jsonError("Nieprawidłowy JSON watchdog"));
+      return;
+    }
+    LOG_I("Watchdog: ustawienia zapisane ze strony www (%u B)", (unsigned)b.length());
     r->send(200, "application/json", "{\"ok\":true}");
   });
 

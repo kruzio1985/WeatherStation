@@ -766,6 +766,28 @@
       <div id="mqttMsg"></div>
     </div>
 
+    <div class="box">
+      <h3>Automatyczny restart</h3>
+      <div class="form-grid">
+        <label class="chk"><input type="checkbox" id="wdAutoRestart"> Restart dobowy w nocy</label>
+        <label>Godzina restartu
+          <select id="wdHour"></select>
+        </label>
+        <label class="chk"><input type="checkbox" id="wdHeartbeat"> Impuls życia (watchdog zewnętrzny)</label>
+      </div>
+      <p class="muted">Restart dobowy czyści fragmentację sterty i stan stosu Wi-Fi po dniach pracy.
+        Wykonywany jest w oknie <b>00–09 minut</b> wybranej godziny i dopiero po <b>15 min</b> pracy od startu
+        (zabezpieczenie przed pętlą restartów) — nie przerywa też aktualizacji OTA. Impuls życia to
+        sygnał ~1 Hz na pinie <b>Watchdog — impuls życia</b> (zakładka <i>Piny</i>) dla zewnętrznego
+        modułu z przekaźnikiem odcinającym zasilanie przy twardym zawieszeniu.</p>
+      <div class="muted" id="wdInfo">—</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" onclick="saveWatchdog()">Zapisz</button>
+        <button class="btn ghost" onclick="loadWatchdog()">Odśwież</button>
+      </div>
+      <div id="wdMsg"></div>
+    </div>
+
     <div class="row" style="margin-top:14px">
       <button class="btn" onclick="saveConfig()">Zapisz konfigurację</button>
       <button class="btn ghost" onclick="loadConfig()">Odśwież</button>
@@ -5262,6 +5284,7 @@ async function loadConfig() {
   document.getElementById('cfg_mqtt_prefix').value = c.mqtt_prefix ?? 'stacja';
   document.getElementById('mqttPreview').innerHTML = mqttPreviewText(c);
   loadTimeInfo();
+  loadWatchdog();
 }
 async function loadTimeInfo() {
   try {
@@ -5304,6 +5327,43 @@ async function saveAndTestMqtt() {
   m.textContent = (r.ok ? 'Zapisano i połączono: ' : 'Zapisano, ale brak połączenia: ') +
     (r.info || '') + (r.topic_example ? ' · przykład tematu: ' + r.topic_example : '');
   loadTimeInfo();
+}
+async function loadWatchdog() {
+  // Wypełnij listę godzin 00:00–23:00 raz
+  const sel = document.getElementById('wdHour');
+  if (!sel.options.length) {
+    for (let h = 0; h < 24; h++) {
+      const o = document.createElement('option');
+      o.value = String(h);
+      o.textContent = ('0' + h).slice(-2) + ':00';
+      sel.appendChild(o);
+    }
+  }
+  try {
+    const w = await api('/api/watchdog');
+    document.getElementById('wdAutoRestart').checked = !!w.auto_restart;
+    document.getElementById('wdHour').value = String(w.auto_restart_hour ?? 4);
+    document.getElementById('wdHeartbeat').checked = !!w.wd_heartbeat;
+    document.getElementById('wdInfo').textContent =
+      (w.auto_restart_info || '') +
+      (w.wd_heartbeat_pin >= 0
+        ? ' · impuls życia: GPIO ' + w.wd_heartbeat_pin + (w.wd_heartbeat ? '' : ' (wyłączony)')
+        : ' · impuls życia: brak przypisanego pinu (zakładka Piny)');
+  } catch (e) { /* endpoint opcjonalny */ }
+}
+async function saveWatchdog() {
+  const m = document.getElementById('wdMsg');
+  m.className = 'msg';
+  m.textContent = 'Zapisuję...';
+  const body = {
+    auto_restart: document.getElementById('wdAutoRestart').checked ? 1 : 0,
+    auto_restart_hour: parseInt(document.getElementById('wdHour').value) || 0,
+    wd_heartbeat: document.getElementById('wdHeartbeat').checked ? 1 : 0
+  };
+  const r = await post('/api/watchdog', body);
+  m.className = 'msg ' + (r.ok ? 'ok' : 'err');
+  m.textContent = r.ok ? 'Zapisano.' : ((r && r.error) || 'Błąd zapisu');
+  if (r.ok) loadWatchdog();
 }
 async function reboot() { if (confirm('Zrestartować stację?')) await post('/api/reboot'); }
 async function factoryReset() {
