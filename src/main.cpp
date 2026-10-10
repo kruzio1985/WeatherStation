@@ -34,6 +34,7 @@
 #include "recovery_ap.h"
 #include "extdev.h"
 #include "retention.h"
+#include "watchdog.h"
 #if !STACJA_HEADLESS
 // Firmware węzła bez sieci (STACJA_HEADLESS) nie zawiera Wi-Fi, serwera www,
 // MQTT, serwisów pogodowych ani OTA - dane z jego czujników czyta master po
@@ -303,6 +304,9 @@ void setup() {
   if (ledPin >= 0) pinMode(ledPin, OUTPUT);
   if (buttonPin >= 0) pinMode(buttonPin, INPUT_PULLUP);
 
+  // Impuls życia dla zewnętrznego watchdoga + restart dobowy
+  watchdog.begin();
+
 #if !STACJA_HEADLESS
   setupWiFi();
 #endif
@@ -388,6 +392,11 @@ void loop() {
 #endif
 
   unsigned long now = millis();
+
+  // Impuls życia (~1 Hz) musi iść także w trakcie aktualizacji - zewnętrzny
+  // watchdog odciąłby wtedy zasilanie i ubił OTA w połowie zapisu.
+  watchdog.heartbeat();
+
 #if !STACJA_HEADLESS
   manageAp(now);
   if (!asNode) logWifiChanges();
@@ -401,6 +410,10 @@ void loop() {
     return;
   }
 #endif
+
+  // Restart dobowy (opcjonalny) - sprawdzany w normalnym obiegu, z guardem
+  // na OTA w środku watchdog.cpp.
+  watchdog.maybeDailyRestart();
 
   sensors.serviceDiscovery();
   sensors.serviceTuya();   // Tuya UART (T=...;RH=...) - bufor obsługiwany co obieg

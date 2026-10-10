@@ -49,6 +49,7 @@ static const PinRole ROLES[] = {
   {"led",        "LED statusu",        "Płytka", "Miga 1 Hz gdy stacja działa; -1 wyłącza", PIN_LED,    false},
   {"button",     "Przycisk",           "Płytka", "Przytrzymanie 3 s = reset do ustawień fabrycznych", PIN_BUTTON, false},
   {"rgb",        "Pierścień LED RGB",  "Płytka", "WS2812B / RGBIC 36 px - jeden przewód danych; 5V i GND z płytki",  PIN_RGB,  false},
+  {"wd_heartbeat","Watchdog - impuls życia", "Płytka", "Impulsy ~1 Hz dla zewnętrznego modułu watchdog (przekaźnik odcinający zasilanie, gdy impulsy znikną); włącz checkboxem w Konfiguracja", PIN_WD, false},
 
   // --- GPS (odbiornik NMEA 0183 na UART1) ---
   {"gps_rx",     "GPS - RX",           "GPS", "RX ESP32 <- TX odbiornika (NEO-6M/7M/8M, ATGM336H, L76K); NMEA 0183, 9600 Bd; -1 wyłącza GPS", PIN_GPS_RX, false},

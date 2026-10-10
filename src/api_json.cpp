@@ -27,6 +27,7 @@
 #include "nvs_store.h"
 #include "app_info.h"
 #include "aqi.h"
+#include "watchdog.h"
 #if !STACJA_HEADLESS
 #include <WiFi.h>
 #include "mqtt_client.h"
@@ -109,6 +110,13 @@ static String buildStatus() {
   time_t now = time(nullptr);
   o["time_synced"] = now >= 1000000000;
   o["datetime"] = datetimeString();
+
+  // Restart dobowy + impuls życia dla zewnętrznego watchdoga
+  o["autoRestart"] = watchdog.autoRestartEnabled();
+  o["autoRestartHour"] = (uint8_t)watchdog.autoRestartHour();
+  o["autoRestartInfo"] = watchdog.autoRestartInfo();
+  o["wdHeartbeat"] = watchdog.heartbeatEnabled();
+  o["wdHeartbeatPin"] = watchdog.heartbeatPin();
 
   // Wi-Fi
 #if !STACJA_HEADLESS

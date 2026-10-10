@@ -76,6 +76,12 @@
 #define PIN_LED             -1
 #define PIN_BUTTON          0
 
+// --- Watchdog zewnętrzny (impuls życia ~1 Hz) ---
+//     Domyślnie wyłączony (-1): wymaga zewnętrznego modułu watchdog
+//     z przekaźnikiem odcinającym zasilanie, gdy impulsy znikną (twarde
+//     zawieszenie). Włącz pin w zakładce "Piny" i checkbox w "Konfiguracja".
+#define PIN_WD              -1
+
 // --- Pierścień LED RGB (WS2812B / RGBIC, 36 diod, 48 mm) ---
 //     Zasilanie: 5V i GND z płytki, jeden przewód danych na GPIO.
 //     Kolejność: DIN płytka -> DOUT pierścienia.
