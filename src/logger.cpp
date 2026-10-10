@@ -291,47 +291,80 @@ static bool seriesFromLong(const String& metric, long from, time_t now,
   sdCard.listDir("/logs", files);
 
   std::map<long, Aggregate> buckets;
+
+  // Parsuje jedną linię dziennika długiego "timestamp,datetime,id,value"
+  // i dodaje wartość do koszyków, gdy kanał pasuje i linia mieści się w oknie.
+  auto parseLongLine = [&](const char* line) {
+    const char* c1 = strchr(line, ',');
+    if (!c1) return;
+    long ts = atol(line);
+    if (ts < from || ts > now) return;
+    const char* c2 = strchr(c1 + 1, ',');   // koniec daty/godziny
+    if (!c2) return;
+    const char* c3 = strchr(c2 + 1, ',');   // koniec id kanału
+    if (!c3) return;
+    // Porównanie dokładne - metric nie może być prefiksem innego id.
+    if (c3 - (c2 + 1) != (int)metric.length()) return;
+    if (strncmp(c2 + 1, metric.c_str(), (size_t)(c3 - (c2 + 1))) != 0) return;
+
+    float v = atof(c3 + 1);
+    if (!isfinite(v)) return;
+    long b = bucketStart(ts, period);
+    Aggregate& a = buckets[b];
+    a.sum += v; a.n++;
+    if (v < a.mn) a.mn = v;
+    if (v > a.mx) a.mx = v;
+  };
+
   for (auto& fi : files) {
     String name = fi.path;
     int slash = name.lastIndexOf('/');
     if (slash >= 0) name = name.substring(slash + 1);
     if (!name.startsWith("extra-") || !name.endsWith(".csv")) continue;
     // Ten sam filtr miesięcy co dla szerokiego CSV - bez niego dziennik długi
-    // czytał do RAM-u również pliki spoza żądanego okresu.
+    // czytał pliki spoza żądanego okresu.
     if (!fileInRange(name.substring(6), from, now, period)) continue;
 
-    String content;
-    if (!sdCard.readFile(fi.path, content, 2 * 1024 * 1024)) continue;
+    // Strumieniowe czytanie pliku (bez wczytywania całości do RAM-u). Plik
+    // extra-*.csv rośnie ~1,5 MB dziennie, a wcześniejsza wersja czytała go
+    // w całości do Stringu - przy 15,8 MB blokowała zadanie www > 5 s i
+    // kończyła się resetem "watchdog zadania".
+    File f = sdCard.openRead(fi.path);
+    if (!f) continue;
 
-    int pos = 0;
+    char buf[512];
+    char line[256];
+    size_t lineLen = 0;
     bool header = true;
-    while (pos < (int)content.length()) {
-      int nl = content.indexOf('\n', pos);
-      if (nl < 0) nl = content.length();
-      String line = content.substring(pos, nl);
-      pos = nl + 1;
-      line.trim();
-      if (line.length() == 0) continue;
-      if (header) { header = false; continue; } // pomiń nagłówek
-
-      int c1 = line.indexOf(',');
-      if (c1 < 0) continue;
-      long ts = atol(line.substring(0, c1).c_str());
-      if (ts < from || ts > now) continue;
-
-      int c2 = line.indexOf(',', c1 + 1);   // koniec daty/godziny
-      if (c2 < 0) continue;
-      int c3 = line.indexOf(',', c2 + 1);   // koniec id kanału
-      if (c3 < 0) continue;
-      if (line.substring(c2 + 1, c3) != metric) continue;
-
-      float v = atof(line.substring(c3 + 1).c_str());
-      long b = bucketStart(ts, period);
-      Aggregate& a = buckets[b];
-      a.sum += v; a.n++;
-      if (v < a.mn) a.mn = v;
-      if (v > a.mx) a.mx = v;
+    int lines = 0;
+    while (f.available()) {
+      int n = f.read((uint8_t*)buf, sizeof(buf));
+      if (n <= 0) break;
+      for (int i = 0; i < n; i++) {
+        char c = buf[i];
+        if (c == '\n') {
+          if (lineLen && line[lineLen - 1] == '\r') lineLen--;
+          if (lineLen) {
+            line[lineLen] = 0;
+            if (header) header = false;
+            else parseLongLine(line);
+          }
+          lineLen = 0;
+          if ((++lines & 0x3F) == 0) { yield(); esp_task_wdt_reset(); }
+        } else if (lineLen < sizeof(line) - 1) {
+          line[lineLen++] = c;
+        }
+      }
     }
+    // ostatnia linia bez znaku nowej linii
+    if (lineLen) {
+      if (line[lineLen - 1] == '\r') lineLen--;
+      if (lineLen) {
+        line[lineLen] = 0;
+        if (!header) parseLongLine(line);
+      }
+    }
+    f.close();
   }
 
   if (buckets.empty()) { err = "Brak danych dla tego okresu"; return false; }
