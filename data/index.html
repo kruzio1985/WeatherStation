@@ -2599,12 +2599,13 @@ async function loadStatus() {
   const isVev = c => c.id.startsWith('vev_');
   const isBtgw = c => c.id.startsWith('btgw_');
   const isNet = c => c.id.startsWith('net_');
+  const isC3 = c => c.id.startsWith('c3_');   // zewnętrzna stacja powietrza (C3)
 
   // Odczyt z kamery (pogoda, faza dnia, zachmurzenie, światło, deszcz, śnieg,
   // mgła) traktujemy jak zwykłe pomiary zewnętrzne i pokazujemy razem z
   // pozostałymi czujnikami na zewnątrz - kamera patrzy na to samo niebo.
-  const inList  = chans.filter(c => isIn(c)  && !c.remote && !isVev(c) && !isBtgw(c) && !isNet(c));
-  const outList = chans.filter(c => !isIn(c) && !c.remote && !isVev(c) && !isBtgw(c) && !isNet(c));
+  const inList  = chans.filter(c => isIn(c)  && !c.remote && !isVev(c) && !isBtgw(c) && !isNet(c) && !isC3(c));
+  const outList = chans.filter(c => !isIn(c) && !c.remote && !isVev(c) && !isBtgw(c) && !isNet(c) && !isC3(c));
 
   // Sekcja wewnętrzna: panele jakości powietrza w układzie strony stacji
   // jakości powietrza (patrz AQ_PANELS - grupy, kolorowane wartości, progi),
@@ -2682,6 +2683,13 @@ async function loadStatus() {
       addSubHead('📻', 'Pozostałe (VEVOR)');
       rest.forEach(c => addCard(c, 'vev'));
     }
+  }
+
+  // Zewnętrzna stacja powietrza (C3, kanały c3_*) - osobna sekcja, żeby nie
+  // mylić jej z wewnętrznym PM stacji .141 ani własnymi czujnikami stacji.
+  const c3List = chans.filter(isC3);
+  if (c3List.length) {
+    addZone('Stacja powietrza zewnątrz', c3List, 'out', '🌬️');
   }
 
   // Pogoda z internetu (Open-Meteo) - do bezpośredniego porównania z naszymi

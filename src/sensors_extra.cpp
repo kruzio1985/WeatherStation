@@ -142,6 +142,25 @@ static const AirImportRow AIR_IMPORT[] = {
                "", "", "mdi:motion-sensor"},
 };
 
+// -------------------------------------------------------------
+//  Import ze ZEWNĘTRZNEJ stacji powietrza (C3, urządzenie typu "outaq").
+//  Kanały dostają prefiks c3_ i strefę "out", więc na pulpicie są osobną
+//  sekcją "Stacja powietrza zewnątrz" i nie mieszają się z wewnętrznym PM.
+// -------------------------------------------------------------
+static const AirImportRow OUTC3_IMPORT[] = {
+  {"pm1",      "c3_pm1",      1.0f, 0, "PM 1.0 (zewnątrz)", "µg/m³", 0, "pm1", "µg/m³", "mdi:air-filter"},
+  {"pm25",     "c3_pm25",     1.0f, 0, "PM 2.5 (zewnątrz)", "µg/m³", 0, "pm25", "µg/m³", "mdi:air-filter"},
+  {"pm10",     "c3_pm10",     1.0f, 0, "PM 10 (zewnątrz)", "µg/m³", 0, "pm10", "µg/m³", "mdi:air-filter"},
+  {"temp",     "c3_temp",     1.0f, 0, "Temperatura (C3)", "°C", 1, "temperature", "°C", "mdi:thermometer"},
+  {"hum",      "c3_hum",      1.0f, 0, "Wilgotność (C3)", "%", 1, "humidity", "%", "mdi:water-percent"},
+  {"press",    "c3_press",    1.0f, 0, "Ciśnienie (C3)", "hPa", 1, "atmospheric_pressure", "hPa", "mdi:gauge"},
+  {"dew",      "c3_dew",      1.0f, 0, "Punkt rosy (C3)", "°C", 1, "temperature", "°C", "mdi:water-thermometer"},
+  {"heat",     "c3_heat",     1.0f, 0, "Odczuwalna (C3)", "°C", 1, "temperature", "°C", "mdi:thermometer-lines"},
+  {"alt",      "c3_alt",      1.0f, 0, "Wysokość (C3)", "m", 0, "", "m", "mdi:image-filter-hdr"},
+  {"aqi",      "c3_aqi",      1.0f, 0, "AQI EPA (C3)", "", 0, "aqi", "", "mdi:air-filter"},
+  {"pm25_60m", "c3_pm25_60m", 1.0f, 0, "PM 2.5 · 60 min (zewnątrz)", "µg/m³", 0, "pm25", "µg/m³", "mdi:air-filter"},
+};
+
 // Czy na pinie wisi wolny przewód? Pin bez podłączonego czujnika "pływa",
 // więc podciągnięcie do masy i do VCC daje skrajnie różne odczyty.
 static bool analogPinFloating(int pin) {
@@ -221,6 +240,16 @@ void SensorManager::registerExtraChannels() {
   for (const auto& row : AIR_IMPORT) {
     if (!row.name) continue;
     channels_.push_back(mkChan(row.chan, row.name, row.unit, row.dec, "in",
+                               row.haClass ? row.haClass : "",
+                               row.haUnit ? row.haUnit : "",
+                               row.haIcon ? row.haIcon : ""));
+  }
+
+  // Zewnętrzna stacja powietrza (C3, urządzenie typu "outaq"): osobne kanały
+  // strefy "out" z prefiksem c3_ - pulpit pokazuje je jako osobną sekcję
+  // "Stacja powietrza zewnątrz", nie mieszając z wewnętrznym PM stacji .141.
+  for (const auto& row : OUTC3_IMPORT) {
+    channels_.push_back(mkChan(row.chan, row.name, row.unit, row.dec, "out",
                                row.haClass ? row.haClass : "",
                                row.haUnit ? row.haUnit : "",
                                row.haIcon ? row.haIcon : ""));
@@ -827,6 +856,28 @@ void SensorManager::ingestAirStation(const AirStationData& d) {
           (double)d.get("co2"),
           (double)(isnan(d.get("tvoc")) ? NAN : d.get("tvoc") * 1000.0f),
           (double)d.get("aqi"), (double)d.get("mics_co"));
+  }
+}
+
+// Import ze zewnętrznej stacji powietrza (C3, strefa "out"). Brak logiki
+// "własny czujnik ma pierwszeństwo" - te kanały są wyłącznie z C3.
+void SensorManager::ingestOutdoorAir(const AirStationData& d) {
+  int imported = 0;
+  for (const auto& row : OUTC3_IMPORT) {
+    const float v = d.get(row.src);
+    if (isnan(v)) continue;
+    publishExtra(row.chan, v * row.scale);
+    imported++;
+  }
+
+  static unsigned long lastLog = 0;
+  if (millis() - lastLog >= 300000UL) {
+    lastLog = millis();
+    LOG_I("Stacja C3 (zewnątrz): %d odczytów (PM2.5 %.0f, temp %.1f°C, "
+          "wilg. %.0f%%, ciśn. %.1f hPa, AQI %.0f)",
+          imported,
+          (double)d.get("pm25"), (double)d.get("temp"), (double)d.get("hum"),
+          (double)d.get("press"), (double)d.get("aqi"));
   }
 }
 

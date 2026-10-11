@@ -116,7 +116,6 @@ void setupWiFi() {
 
   // --- Połączenie z routerem (STA) ---
   String ssid = config.wifiSsid();
-  if (ssid.length() == 0) return;
 
   if (config.wifiStatic()) {
     IPAddress ip;
@@ -132,6 +131,14 @@ void setupWiFi() {
     } else {
       LOG_W("Błędny statyczny adres IP '%s' - używam DHCP", config.wifiIp().c_str());
     }
+  }
+
+  if (ssid.length() == 0) {
+    // Brak SSID w ustawieniach (np. po wyzerowaniu konfiguracji) - łączymy się
+    // poświadczeniami zapisanymi przez sterownik Wi-Fi w NVS.
+    LOG_I("Wi-Fi: brak SSID w ustawieniach - używam zapisanych poświadczeń");
+    WiFi.begin();
+    return;
   }
 
   WiFi.begin(ssid.c_str(), config.wifiPass().c_str());
