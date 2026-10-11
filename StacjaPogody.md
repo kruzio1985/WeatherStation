@@ -1,22 +1,20 @@
 # StacjaPogody — Pamięć sesji (do wznowienia w nowym czacie)
 
-> Ten plik to pełna kopia wiedzy z sesji zakończonej **2026-10-11 ~04:50**.
+> Ten plik to pełna kopia wiedzy z sesji zakończonej **2026-10-11 ~06:25**.
 > Aby kontynuować pracę w nowym czacie, powiedz agentowi:
 > **„Przeczytaj `StacjaPogody.md` w głównym katalogu repo i kontynuuj od sekcji STAN OBECNY i DO ZROBIENIA."**
 
 ---
 
-## 1. STAN OBECNY (najważniejsze — 2026-10-11 04:49)
+## 1. STAN OBECNY (najważniejsze — 2026-10-11 06:25)
 
 | Urządzenie | IP | Stan |
 |---|---|---|
-| **Master** (ESP32-S3 WROOM-1 N16R8) | 192.168.1.143 | ❌ **NIE ODPOWIADA** (HTTP 000, brak ARP) — padł po wgraniu filesystemu. **Potrzebny power-cycle (odłącz zasilanie na ~10 s i podłącz).** Firmware z kodem c3_ działał wcześniej (C3 był odpytywany jako `outaq`, 14 odczytów ok). |
-| **C3 air node** (ESP32-C3 SuperMini) | 192.168.1.147 | ✅ DZIAŁA — PM 7/8/9 µg/m³, T ~30 °C, RH ~66 %, p ~981 hPa, MQTT połączone, metryki pochodne publikowane. |
-| Air station (zewnętrzna, wmbus) | 192.168.1.141 | ✅ DZIAŁA (prefix MQTT `stacja_powietrza`, user `wmbus`/`1234`). |
+| **Master** (ESP32-S3 WROOM-1 N16R8) | **192.168.1.143 (statyczne)** | ✅ **DZIAŁA** — `/` → 200, `/api/status` → 200. MAC `80:b5:4e:c6:52:a8`. Podłączony kablem USB do PC (COM9, USB-Serial/JTAG). |
+| **C3 air node** (ESP32-C3 SuperMini) | 192.168.1.147 | ✅ DZIAŁA — master odpytuje go jako ExtDev (`outaq`) → kanały `c3_*` w `/api/status`. |
+| Air station (zewnętrzna, wmbus) | 192.168.1.141 | ✅ DZIAŁA — master odpytuje ją jako ExtDev (`aq`) → kanały `in_*`. |
 | Broker MQTT (HA) | 192.168.1.14:1883 | ✅ user `StacjaP` (hasło w pliku sekretów — nie drukować, nie commitować). |
-| Sniffer VEVOR 868 MHz | 192.168.1.130 | Serwuje `/json`; **nie modyfikować**. |
-
-**Sieć i router działają** (C3 i .141 odpowiadają HTTP 200). Problem dotyczy wyłącznie mastera.
+| Sniffer VEVOR 868 MHz | 192.168.1.130 | ✅ Serwuje `/json`; **nie modyfikować**. |
 
 ---
 
@@ -42,9 +40,27 @@ Do tego nowy samodzielny węzeł **c3air** (ESP32-C3): AHT20 + BMP280 + PMS7003,
 - Narzędzia esptool (penv): `C:\Users\kruse\.platformio\penv\Scripts\python.exe`
 - Sesja (checkpointy): `c:\Users\kruse\.copilot\session-state\56ba0763-9ea4-4a10-bc7a-5eac5128c367\` (checkpoints/ + files/)
 
-**Stan git:** HEAD lokalny `9055602` (c3air). GitHub HEAD `98e5aaa`.
-Nieza-commitowane zmiany (praca nad sekcją „powietrze zewnątrz", master padł przed commitem):
-`data/index.html`, `src/extdev.cpp`, `src/sensors.h`, `src/sensors_extra.cpp`.
+**Stan git:** lokal `main` — commit z **11.10 23:50** (bez pusha), GitHub `98e5aaa` — **nic nie wypchnięte** (życzenie użytkownika
+z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, ale **treść identyczna**
+(`git diff 9055602 98e5aaa` = pusto — GitHub ma squashowaną historię), więc push wymaga
+`--force-with-lease` albo merge.
+
+---
+
+## AKTUALIZACJA (11.10, 23:50) — MQTT + porządki
+
+- **MQTT mastera: było WYŁĄCZONE**, jest **WŁĄCZONE**. `POST /api/mqtt/test` (przyjmuje ustawienia
+  w treści, robi `applyJson` + `reconnectWithConfig`) z danymi z `SEKRETY\mqtt pogoda.txt`:
+  `ok:true`, „Połączono z 192.168.1.14:1883 (27 ms)", prefix `stacja_pogody`, user `StacjaP`.
+  **Bez restartu i bez flashowania.** Weryfikacja u brokera (paho z PC): **41 stanów** + **41 discovery**.
+- **Sekcja „Stacja powietrza zewnątrz": ZWERYFIKOWANA** — serwowany `index.html` = lokalny co do bajtu
+  (349 251 B, MD5 `FA6BE41110B499FB66F83D7F4AA6DA09`), 11 kanałów `c3_*` z wartościami.
+- **Build `esp32s3-master`: 2× SUCCESS** (RAM 26,7 %, Flash 56,5 %, 0 ostrzeżeń, 0 błędów).
+- **Backup:** `C:\Projects\NOWY BACKUP\ESP\StacjaPogody.zip` — 44,6 MB, **bez `.pio`**, **z `.git`**,
+  jeden plik (nadpisywany). Uwaga na przyszłość: `Compress-Archive` **gubi pliki ukryte** (czyli `.git`)
+  i zapisuje backslashe w nazwach — używać `tar.exe -a -c -f …` (bsdtar).
+- **Git: nadal nic nie wypchnięte** (życzenie użytkownika). Zmiany **zacommitowane lokalnie**
+  (11.10 23:50): „Stacja: import powietrza zewnętrznego z C3 (c3_*) + fix Wi-Fi przy pustym SSID".
 
 ---
 
@@ -107,6 +123,8 @@ C:\Users\kruse\.platformio\penv\Scripts\python.exe C:\Users\kruse\.platformio\pa
 8. **extdev JSON bez BOM:** `Set-Content -Encoding UTF8` dodaje BOM → „Błędny JSON". Używać `[System.IO.File]::WriteAllText` z `UTF8Encoding($false)`.
 9. **Daily restart:** okno minut **0–9** wybranej godziny (inaczej pętla restartów), min. 15 min uptime, ważny czas NTP (`time() >= 1e9`), **nigdy podczas OTA**, `config.saveState()` przed `ESP.restart()`.
 10. **C3 `Serial`=USB CDC** (ARDUINO_USB_CDC_ON_BOOT=1).
+11. **Awaria 2026-10-11 — przyczyna ustalona (to NIE była kasacja NVS):** po `uploadfs` konfiguracja aplikacji w NVS (namespace `stacja`, klucze `cfg_0`/`cfg_c`/`cfg_ok`) miała **puste `wifi_ssid` i `wifi_pass`**, więc `setupWiFi()` wykonywało `return` **przed** `WiFi.begin()` → master wstawał tylko jako AP (`192.168.4.1`), bez STA → brak go w sieci domowej (HTTP 000, brak ARP). NVS **nie było skasowane** (obecne m.in. `boots`, `sta.ssid`/`sta.pswd` sterownika Wi-Fi). **Fix:** w `src/main.cpp` sprawdzenie pustego SSID przeniesione **za** blok statycznego IP + fallback `WiFi.begin()` (bez argumentów = poświadczenia z NVS sterownika Wi-Fi). Następnie `POST /api/config`: `wifi_static=true, wifi_ip=192.168.1.143, wifi_gw/wifi_dns=192.168.1.1, wifi_mask=255.255.255.0`.
+12. **Ręczne patchowanie NVS odpada:** CRC wpisu NVS nie udało się odtworzyć standardowym CRC32 (0/122 trafień) — **nie patchować NVS z ręki**. Ustawienia zmieniać wyłącznie przez API urządzenia (`POST /api/config`).
 
 ---
 
@@ -122,11 +140,16 @@ Lokalny `git log` (od najnowszego):
 - `c12a6bf` Fix fałszywego deszczu VEVOR ze złych ramek 868 MHz.
 - Wcześniej (sesja sprzed): panele jakości powietrza `82efae0`, kamera `cf260a2`, WU/deszcz/gauges `e7ef5b8`/`4a9cd96`.
 
+### Sesja 2026-10-11 (kontynuacja) — ratowanie mastera
+- Diagnoza przez USB (COM9: esptool `read_flash` + odczyt logu bootowania): master **wstawał**, ale bez STA (tylko AP) — przyczyna: puste Wi-Fi w konfiguracji aplikacji (pkt 6.11).
+- **Fix w `src/main.cpp`** (jedyny plik kodu zmieniony w tej sesji): pusty SSID → `WiFi.begin()` na poświadczeniach z NVS sterownika Wi-Fi; statyczny IP stosowany w obu ścieżkach. Build 2× SUCCESS → flash przez USB (`pio run -e esp32s3-master -t upload --upload-port COM9`, app @0x10000; **NVS i LittleFS nietknięte**).
+- `POST /api/config` → stały adres `192.168.1.143`. Weryfikacja: `/` → 200, `/api/status` → 200, 11 kanałów `c3_*`.
+
 ### Funkcje mastera (z tej sesji)
 - **ExtDev/VEVOR:** backoff 60 s po 3 błędach / 300 s po 10, timeouts connect 2200 ms / read 1800 ms, budżet 4 s na wywołanie, `serviceTuya` czyta max 256 B, filtr `isfinite` przed ingestem/publikacją.
 - **Daily restart** (opcjonalny): checkbox + godzina 00–23 na stronie Config, NVS (`extra.auto_restart`, `extra.auto_restart_hour`), warunki z pkt 9 powyżej. Endpoint `GET/POST /api/watchdog`.
 - **Heartbeat ~1 Hz** na pinie `wd_heartbeat` (domyślnie −1) dla zewnętrznego modułu odcinającego zasilanie; działa też podczas OTA.
-- **Sekcja „Stacja powietrza zewnątrz"** (c3_*) na pulpicie — kod zrobiony, **niezweryfikowany** (master padł przed weryfikacją).
+- **Sekcja „Stacja powietrza zewnątrz"** (c3_*) na pulpicie — kod zrobiony. W `/api/status` potwierdzone 11 kanałów: `c3_pm1, c3_pm25, c3_pm10, c3_temp, c3_hum, c3_press, c3_dew, c3_heat, c3_alt, c3_aqi, c3_pm25_60m`. **Grep sekcji w serwowanej stronie niedokończony** (patrz pkt 9).
 
 ### Funkcje c3air (węzeł C3)
 WiFi static 192.168.1.147 + AP fallback `stacja-c3-XXXXXX`/`12345678`; web UI (dashboard z kolorami AQI/legendą/ostrzeżeniami, kalibracja, ustawienia WiFi/MQTT/geo/p0, OTA, diagnostyka, logi); MQTT→HA prefix `stacja_c3`; `/api/status` z `channels[]`; OTA dwubankowe z rollbackiem; log trwały LittleFS `/logs.txt` (flush co 5 min, trim ~12 KB); konfiguracja przez serial `wifi SSID PASS`.
@@ -156,12 +179,12 @@ C3 (`c3air/`):
 
 ## 9. DO ZROBIENIA (kolejność)
 
-1. **Uratować mastera (.143):** power-cycle (odłącz zasilanie ~10 s). Po wstaniu sprawdzić `curl http://192.168.1.143/api/status`.
-   - Jeśli wstanie → pkt 2–4.
-   - Jeśli pętla bootowania → podejrzenia: (a) uszkodzony LittleFS po uploadfs → ponowny `uploadfs`; (b) crash nowego firmware — diagnoza tylko przez USB (COM9), jeśli OTA niemożliwy.
-2. **Zweryfikować kanały c3_*** w `/api/status` mastera (powinny się pojawić, gdy master odpytuje C3 jako `outaq`).
-3. **Zweryfikować sekcję „Stacja powietrza zewnątrz"** — `curl http://192.168.1.143/ | grep` (bez screenshotów!).
-4. **Commit + push** nieza-commitowanych zmian (c3_ outdoor) do gita i GitHub; zsynchronizować z `C:\Projects\OnlineWorkspace\StacjaPogody\`; zweryfikować online build `esp32s3-master`.
+1. **Master działa na 192.168.1.143** — nie ruszać bez potrzeby.
+2. ✅ **ZROBIONE (11.10, 06:15)** — sekcja „Stacja powietrza zewnątrz" zweryfikowana: serwowany `index.html` **co do bajtu** równy lokalnemu (349 251 B, MD5 `FA6BE41110B499FB66F83D7F4AA6DA09`), `addZone('🌬️ Stacja powietrza zewnątrz', c3List, 'out')`, 11 kanałów `c3_*` z wartościami. **Bez screenshotów.**
+3. ✅ **MQTT mastera WŁĄCZONE (11.10, 23:50)** — `POST /api/mqtt/test` (ustawienia w treści → `applyJson` + `reconnectWithConfig`) → `ok:true`, „Połączono z 192.168.1.14:1883 (27 ms)"; u brokera **41 stanów** + **41 discovery** HA. Bez restartu, bez flash.
+4. ✅ **Build `esp32s3-master` — 2× SUCCESS** (RAM 26,7 %, Flash 56,5 %, 0 ostrzeżeń/błędów); backup `C:\Projects\NOWY BACKUP\ESP\StacjaPogody.zip` (44,6 MB, bez `.pio`, z `.git`).
+5. ⏸️ **Push — WSTRZYMANY NA ŻYCZENIE UŻYTKOWNIKA** („nic na githuba niewgrywaj"). Zmiany **zacommitowane lokalnie** (11.10 23:50); lokal **ahead 20 / behind 8** vs `98e5aaa` — treść identyczna, push wymaga `--force-with-lease` albo merge. Sync z `C:\Projects\OnlineWorkspace\StacjaPogody\` **niewykonany**.
+6. (opcjonalnie) Ustawić `wifi_ssid`/`wifi_pass` w konfiguracji mastera przez `POST /api/config`, żeby zakładka „Sieć" pokazywała realne dane (teraz puste — działa fallback na poświadczenia z NVS sterownika Wi-Fi).
 
 ---
 
@@ -169,11 +192,20 @@ C3 (`c3air/`):
 
 - Komunikacja **po polsku**, zwięźle — użytkownik jest niecierpliwy.
 - **ŻADNYCH screenshotów / podglądów strony** — to najdroższe w tokenach. Weryfikacja tylko przez `curl` + `grep` / kod.
+- **ZAKAZ drogich operacji** (oszczędność tokenów): brak screenshotów/`readPage`/przeglądarki, brak wczytywania i przeliczania całych wielkich plików „na wszelki wypadek" (czytać wąskie zakresy), brak dublowania komend.
+- **ZAKAZ grzebania bez powodu i „głupiego" psucia:** działa → nie ruszać; najpierw przeczytać kod, potem działać; nie poprawiać „przy okazji".
+- **OTA/FLASH — obowiązkowa kolejność:** najpierw sprawdzić firmware/kod i błędy, **dopiero potem** OTA. Build **dwukrotnie** (SUCCESS) + przegląd `git diff` + sprawdzenie, co i gdzie leci. Domyślnie wgrywać **tylko partycję aplikacji**; `uploadfs` bez wyraźnej potrzeby — NIE. Po wgraniu sprawdzić log bootowania.
+- **ZAKAZ wgrywania czegokolwiek bez uprzedniego sprawdzenia kodu i przejścia buildu** (upload/uploadfs/flash). Najpierw czytaj kod + `pio run`, dopiero potem flash.
+- **Przed OTA/uploadfs weryfikuj firmware DWUKROTNIE** (build SUCCESS + przejrzenie logu/zmian), zanim cokolwiek wgrasz. Zawsze sprawdzaj, co robisz, zanim to zrobisz.
 - Nie przeliczać bez potrzeby setek tysięcy linii kodu; pracować minimalnie i celnie.
 - Nowy czat na nowy temat/projekt (oszczędność tokenów); ten plik + checkpointy umożliwiają wznowienie.
-- Mastera **nie** ma pod USB — aktualizacje przez OTA.
+- Mastera **nie** ma pod USB — aktualizacje przez OTA. (2026-10-11: master był tymczasowo podłączony pod USB na COM9.)
+- **Kategoryczny zakaz kasowania / psucia NVS** i jakichkolwiek partycji danych. Nie wolno używać `erase_flash`, `factoryreset`, `nvs_flash_erase`. Ustawienia zmieniać **wyłącznie** przez `POST /api/config`.
+- Nie wgrywać `uploadfs` bez wyraźnej potrzeby — użytkownik wiąże z nim awarię mastera.
 
 ## 11. SEKRETY
 
 - Hasło MQTT (user `StacjaP`) i hasła WiFi są w pliku sekretów projektu — **nie drukować w czacie, nie commitować do gita**. Broker: 192.168.1.14:1883.
 - WiFi mastera: SSID „SGC", static 192.168.1.143, brama .1.
+- Poświadczenia Wi-Fi są też zapisane w NVS sterownika Wi-Fi (`sta.ssid`, `sta.pswd`) — firmware używa ich jako fallbacku.
+- **Nie zapisywać haseł w plikach na PC** (użytkownik zabronił). Zrzuty NVS trzymać wyłącznie w `%TEMP%` i **usuwać natychmiast** po użyciu.

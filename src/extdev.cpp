@@ -80,7 +80,9 @@ void ExtDevManager::save() {
 bool ExtDevManager::add(const String& name, const String& url, const String& type, int interval) {
   String u = url; u.trim();
   if (!u.startsWith("http://") && !u.startsWith("https://")) return false;
-  String t = (type == "ble") ? "ble" : ((type == "aq") ? "aq" : "vevor");
+  String t = (type == "ble") ? "ble"
+           : ((type == "aq") ? "aq"
+           : ((type == "outaq") ? "outaq" : "vevor"));
   int iv = interval;
   if (iv < 5) iv = 20;
   for (auto& d : devs_) {
@@ -150,12 +152,12 @@ void ExtDevManager::pollOne(ExtDevice& d) {
     return;
   }
 
-  if (d.type == "aq") {
+  if (d.type == "aq" || d.type == "outaq") {
     // Stacja jakości powietrza: {"channels":[{"id":"pm25","value":22,"valid":true}, ...]}
+    // "aq"  -> kanały WEWNĘTRZNE (AIR_IMPORT, strefa "in", np. stacja .141)
+    // "outaq" -> kanały ZEWNĘTRZNE (OUTC3_IMPORT, strefa "out", prefiks c3_)
     // Bierzemy WSZYSTKIE kanały liczbowe, jakie stacja poda - które z nich
-    // trafią do pomiarów wewnętrznych, decyduje tabela AIR_IMPORT
-    // (sensors_extra.cpp). Dzięki temu nowy czujnik po stronie stacji
-    // powietrza nie wymaga zmian w tym miejscu.
+    // trafią do pomiarów, decydują tabele importu (sensors_extra.cpp).
     // Wartości bez flagi "valid" traktujemy jako poprawne (format bywa różny).
     AirStationData aq;
     int n = 0;
@@ -178,7 +180,10 @@ void ExtDevManager::pollOne(ExtDevice& d) {
         n++;
       }
     }
-    if (n) sensors.ingestAirStation(aq);
+    if (n) {
+      if (d.type == "outaq") sensors.ingestOutdoorAir(aq);
+      else sensors.ingestAirStation(aq);
+    }
     d.ok = n > 0;
     d.lastErr = n ? String(n) + " odczytów" : "brak rozpoznanych kanałów";
     return;

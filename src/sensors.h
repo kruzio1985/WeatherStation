@@ -154,6 +154,7 @@ public:
   // Wciąga pył i gazy jako odczyty wewnętrzne. Wartości trafiają tylko do
   // kanałów, których nie obsługuje własny czujnik stacji.
   void ingestAirStation(const AirStationData& d);
+  void ingestOutdoorAir(const AirStationData& d);   // C3: powietrze ZEWNĄTRZ
 
   // Zapis potwierdzonego pomiaru do dowolnego kanału (present + detected +
   // wartość z korektą kalibracji) oraz wyczyszczenie nieaktualnej wartości.
