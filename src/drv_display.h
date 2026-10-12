@@ -71,6 +71,9 @@ public:
   // Pozwala wczytać grafiki z karty od nowa (np. po wgraniu pliku BMP przez
   // /api/sd/upload) - bez ponownej inicjalizacji panelu.
   void reloadIcons();
+  // Test polskich znaków: rysuje napis z diakrytykami i bez nich do bufora
+  // i liczy zapalone piksele (więcej = znaki naprawdę się rysują).
+  String plTest();
 
   String json();                                   // GET /api/display
   bool applyJson(const char* json, size_t len);    // POST /api/display

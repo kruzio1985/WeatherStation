@@ -90,7 +90,7 @@ analysis, a VEVOR 868 MHz station sniffer, air-quality panels and animated weath
 | Group | Models (✅ = driver already in code, 🟡 = ready to add) |
 |---|---|
 | Temperature | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ thermocouples K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614 (via `drv_motion`) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080, TMP117, MCP9808 · 🟡 BME680/688, NTC, MLX90632/90640/90641, Si7051 |
-| Humidity | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080 · 🟡 HDC3020 |
+| Humidity | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · ✅ SHT30/31/35/85, AHT10/20/21/25/30, HDC1080/2010/2080 · 🟡 HDC3020 |
 | Pressure | ✅ BME280 · ✅ BMP581 · ✅ BMP280 · ✅ BMP388/390 · ✅ DPS310/368 · ✅ LPS22HB/LPS25HB/LPS28DFW · ✅ MPL3115A2 · ✅ MS5611 · 🟡 BMP180 |
 | Rain | ✅ tipping-bucket (reed switch) + Hall/reed · ✅ HX711 (weighing gauge) · 🟡 FC-37/YL-83, optical |
 | Wind (speed) | ✅ pulse/reed anemometer · 🟡 ultrasonic, differential pressure (Pitot) |
@@ -424,7 +424,7 @@ znajduje się w osobnym dokumencie: **[docs/CZUJNIKI.md](docs/CZUJNIKI.md)**.
 | Grupa | Modele (✅ = sterownik już w kodzie, 🟡 = gotowy do dopisania) |
 |---|---|
 | Temperatura | ✅ BME280 · ✅ SHT40/41/45 (SHT4x) · ✅ BMP581 · ✅ DS18B20 ×8 · ✅ termopary K/J/T (MAX6675/MAX31855) · ✅ PT100/PT1000 (MAX31865) · ✅ MLX90614 (przez `drv_motion`) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080, TMP117, MCP9808 · 🟡 BME680/688, NTC, MLX90632/90640/90641, Si7051 |
-| Wilgotność | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · ✅ SHT30/31/35/85, AHT10/20/21/25, HDC1080/2010/2080 · 🟡 HDC3020 |
+| Wilgotność | ✅ BME280 · ✅ SHT40/41/45 · ✅ DHT11/22, AM2301/2320 (GPIO 42) · ✅ SHT30/31/35/85, AHT10/20/21/25/30, HDC1080/2010/2080 · 🟡 HDC3020 |
 | Ciśnienie | ✅ BME280 · ✅ BMP581 · ✅ BMP280 · ✅ BMP388/390 · ✅ DPS310/368 · ✅ LPS22HB/LPS25HB/LPS28DFW · ✅ MPL3115A2 · ✅ MS5611 · 🟡 BMP180 |
 | Deszcz | ✅ przechyłowy (bąbelkowy) + Hall/kontaktron · ✅ HX711 (wagowy) · 🟡 FC-37/YL-83, optyczny |
 | Wiatr (prędkość) | ✅ anemometr impulsowy/contactron · 🟡 ultradźwiękowy, różnica ciśnień (Pitot) |

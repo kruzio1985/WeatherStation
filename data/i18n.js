@@ -154,8 +154,10 @@
     // --- Nazwy kanałów modułu temperatury, wilgotności i ciśnienia (drv_ths) ---
     'Temperatura (SHT3x)': ['Temperature (SHT3x)', 'Temperatur (SHT3x)'],
     'Wilgotność (SHT3x)': ['Humidity (SHT3x)', 'Luftfeuchtigkeit (SHT3x)'],
-    'Temperatura (AHT2x)': ['Temperature (AHT2x)', 'Temperatur (AHT2x)'],
-    'Wilgotność (AHT2x)': ['Humidity (AHT2x)', 'Luftfeuchtigkeit (AHT2x)'],
+    'Temperatura (AHT30)': ['Temperature (AHT30)', 'Temperatur (AHT30)'],
+    'Wilgotność (AHT30)': ['Humidity (AHT30)', 'Luftfeuchtigkeit (AHT30)'],
+    'Punkt rosy (AHT30)': ['Dew point (AHT30)', 'Taupunkt (AHT30)'],
+    'Punkt rosy (stacja powietrza)': ['Dew point (air station)', 'Taupunkt (Luftstation)'],
     'Temperatura (HDC1080)': ['Temperature (HDC1080)', 'Temperatur (HDC1080)'],
     'Wilgotność (HDC1080)': ['Humidity (HDC1080)', 'Luftfeuchtigkeit (HDC1080)'],
     'Temperatura (Si7021)': ['Temperature (Si7021)', 'Temperatur (Si7021)'],

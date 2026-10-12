@@ -95,7 +95,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | **BME680 / BME688** 🟡 | T + RH + ciśnienie + gaz (TVOC/IAQ) | I²C `0x76`/`0x77` | −40…+85 °C, ±0,5 °C; gaz: 0…500 kΩ | jak wyżej + 48 h wygrzewania czujnika gazu | `temp`, `press`, `tvoc` |
 | **SHT30 / SHT31 / SHT35** ✅ | dokładniejsza T/RH (SHT35 ±0,1 °C) | I²C `0x44`/`0x45` | −40…+125 °C, 2,4…5,5 V | offset; wzorzec solny dla RH | `temp`, `hum` |
 | **SHT40 / SHT41 / SHT45** ✅ | T/RH nowej generacji, mały pobór | I²C `0x44`/`0x45`/`0x46` | −40…+125 °C, ±0,1 °C (SHT45) | jak SHT3x; offset kanału w *Kalibracja* | `sht_t` / `sht_h` → kolumny `sht_t`, `sht_h` |
-| **AHT10 / AHT20 / AHT21** ✅ | tani T/RH | I²C `0x38` | −40…+85 °C, ±0,3 °C | offset, RH × korekta liniowa | `temp`, `hum` |
+| **AHT10 / AHT20 / AHT21 / AHT30** ✅ | tani T/RH | I²C `0x38` | −40…+120 °C, ±0,3 °C | offset, RH × korekta liniowa | `temp`, `hum` |
 | **HDC1080 / HDC2010 / HDC2080** ✅ | T/RH niski pobór (bateria) | I²C `0x40`/`0x41` | −40…+125 °C, ±0,2 °C | offset | `temp`, `hum` |
 | **TMP117 / MCP9808 / Si7021 / HTU21D / SHT21** ✅ | precyzyjna T (TMP117 ±0,1 °C, wzorzec NIST) | I²C `0x48…0x4F` | −55…+125 °C | wzorcowanie jednopunktowe w lodzie | `temp` |
 | **DS18B20 ×N** ✅ | temperatura w wielu punktach (gleba, woda, grunt) | 1-Wire `GPIO 4` | −55…+125 °C, ±0,5 °C | offset per kanał (`DS18B20 #n`) | `ds_0…ds_7` → `ds0…ds7` |
@@ -112,7 +112,7 @@ Karta SD, GPS, PMS5003, AS3935, pyranometr, radar, DHT, HX711, I²S: GPIO −1 (
 | Czujnik | Co daje | Podłączenie | Parametry | Kalibracja | Wykres / log |
 |---|---|---|---|---|---|
 | **BME280** ✅ | RH bazowa | I²C | 0…100 % RH, ±3 % | sól: NaCl 75 %, MgCl₂ 33 %, K₂CO₃ 43 % | `hum` |
-| **SHT3x / SHT4x / AHT2x / HDC2xxx** ✅ | alternatywa dla T/RH: wszystkie wymienione działają (szczegóły — rozdział 1) | I²C | ±1,5…2 % RH | komora solna, 2 punkty → offset + nachylenie | `hum` (SHT4x: `sht_h`) |
+| **SHT3x / SHT4x / AHT2x / AHT3x / HDC2xxx** ✅ | alternatywa dla T/RH: wszystkie w ymienione działają (szczegóły — rozdział 1) | I²C | ±1,5…2 % RH | komora solna, 2 punkty → offset + nachylenie | `hum` (SHT4x: `sht_h`) |
 | **DHT11 / DHT22 / AM2301 / AM2320** ✅ | tanie T/RH (DHT11 tylko ±5 % RH, 1 Hz) | 1-Wire-like `GPIO 42` (+ 4,7 kΩ do 3V3) | DHT22: 0…100 % RH, ±2 % | offset, wymaga 2 s odstępu między odczytami | `temp`, `hum` |
 | **SHT85 (sonda kablowa)** ✅ | RH w kanale pomiarowym stacji | I²C / napięciowy | ±1,5 % RH | jak SHT3x | `hum` |
 | **Czujnik punktu rosy (obliczany)** ✅ | dew point z T i RH (Magnus) | — | z `temp` + `hum` | pośrednio przez kalibrację T i RH | `dew` (MQTT), `hum` w CSV |

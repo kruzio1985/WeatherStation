@@ -4689,7 +4689,7 @@ async function addExtDev() {
 }
 
 async function removeExtDev(index) {
-  await post('/api/extdev/remove', { index });
+  await post('/api/extdev-del', { index });
   loadExtDev();
 }
 

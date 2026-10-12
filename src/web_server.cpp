@@ -524,7 +524,10 @@ void WebServerManager::registerRoutes() {
     r->send(ok ? 200 : 400, "application/json", s);
   });
 
-  onPost("/api/extdev/remove", [](AsyncWebServerRequest* r) {
+  // Usunięcie urządzenia z listy. UWAGA: ścieżka nie może być zagnieżdżona
+  // pod POST /api/extdev - router dopasowuje po prefiksie i żądanie trafiłoby
+  // do handlera dodawania (objaw: zawsze {"ok":false}).
+  onPost("/api/extdev-del", [](AsyncWebServerRequest* r) {
     String b = bodyOf(r);
     JsonDocument doc;
     if (deserializeJson(doc, b)) {
@@ -1248,6 +1251,15 @@ void WebServerManager::registerRoutes() {
   // --- Diagnostyka magistrali I2C (skan z ostatniego startu) ---
   server.on("/api/i2c", HTTP_GET, [](AsyncWebServerRequest* r) {
     r->send(200, "application/json", sensors.i2cScanJson());
+  });
+
+  // Kontrola polskich znaków na wyświetlaczu (bez patrzenia na ekran):
+  // napis z diakrytykami musi zapalić więcej pikseli niż ten sam bez nich.
+  // UWAGA: ścieżka NIE może być zagnieżdżona pod /api/display - router
+  // AsyncWebServer dopasowuje po prefiksie i wtedy żądanie przechwytuje
+  // handler /api/display (sprawdzone).
+  server.on("/api/pltest", HTTP_GET, [](AsyncWebServerRequest* r) {
+    r->send(200, "application/json", display.plTest());
   });
 
   // Zlecenie skanu bez restartu - właściwy skan robi pętla główna (readAll),

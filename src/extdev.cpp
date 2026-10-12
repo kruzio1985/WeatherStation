@@ -10,7 +10,6 @@
 #include "syslog.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
 #include <math.h>
 
 static const char* EV_NS = "extdev";
@@ -18,24 +17,77 @@ static const char* EV_KEY = "list";
 
 ExtDevManager extdev;
 
-// Prosty HTTP GET zwracający treść (max 8 KB). Krótkie timeouty, żeby
-// NIE przekroczyć limitu 5 s watchdoga zadania (connect + read < 5 s).
-// Uwaga: łącze Wi-Fi do sniffera bywa wolne (skoki > 1 s, straty pakietów),
-// a pojedynczy zgubiony SYN przekraczał stare 1,5 s na connect - stąd w logu
-// "brak odpowiedzi" po 1502 ms mimo działającego sniffera. Podniesiono
-// connect do 2,2 s (read 1,8 s), żeby mieć zapas bez grzebania w watchdoga.
+// Prosty HTTP GET zwracający treść (max 8 KB).
+//
+// UWAGA (naprawa 12.10): wcześniej użyty HTTPClient potrafił ZAWIESIĆ PĘTLĘ
+// GŁÓWNĄ bez końca. Objaw: węzeł C3 odpowiadał na ping, ale nie na HTTP;
+// log kończył się na "ExtDev: poll http://192.168.1.147/api/status" i stacja
+// przestawała cokolwiek mierzyć (czujniki zamrożone, ekran nie odświeżał się,
+// OTA nie odpowiadało) - bo ESP.restart() z /api/reboot też czeka na pętlę.
+// Limity HTTPClient (connect/read) nie zadziałały w tym przypadku.
+//
+// Dlatego łączymy się własnym gniazdem i nie ma tu ANI JEDNEGO blokującego
+// oczekiwania: czytamy tylko to, co już przyszło (available()), a po przekroczonym
+// budżecie czasu zamykamy gniazdo. Czas jednego odczytu jest więc zawsze
+// ograniczony z góry, niezależnie od stanu drugiej strony.
 static bool httpGetJson(const String& url, String& body) {
-  HTTPClient h;
-  h.setConnectTimeout(2200);   // max 2,2 s na połączenie
-  h.setTimeout(1800);          // max 1,8 s na odpowiedź
-  if (!h.begin(url)) return false;
-  const int code = h.GET();
-  if (code != HTTP_CODE_OK) {
-    h.end();
+  const uint32_t CONNECT_MS = 1200;   // max na nawiązanie połączenia TCP
+  const uint32_t BUDGET_MS  = 1800;   // max na całość (nagłówki + treść)
+  const size_t   MAX_BYTES  = 9000;   // 8 KB treści + nagłówki
+
+  if (!url.startsWith("http://")) {
+    // https:// wymagało TLS - tego po surowym gnieździe nie zrobimy.
     return false;
   }
-  body = h.getString();
-  h.end();
+  String rest = url.substring(7);            // bez "http://"
+  int slash = rest.indexOf('/');
+  String hostPort = (slash < 0) ? rest : rest.substring(0, slash);
+  String path     = (slash < 0) ? "/" : rest.substring(slash);
+
+  String host = hostPort;
+  uint16_t port = 80;
+  int colon = hostPort.indexOf(':');
+  if (colon > 0) {
+    host = hostPort.substring(0, colon);
+    int p = hostPort.substring(colon + 1).toInt();
+    if (p > 0 && p < 65536) port = (uint16_t)p;
+  }
+
+  IPAddress ip;
+  if (!ip.fromString(host)) {                // nazwa zamiast adresu - zapytaj DNS
+    if (!WiFi.hostByName(host.c_str(), ip)) return false;
+  }
+
+  WiFiClient c;
+  c.setTimeout(0);                           // zero = żadne czytanie nie czeka
+  if (!c.connect(ip, port, CONNECT_MS)) return false;
+
+  c.printf("GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path.c_str(), host.c_str());
+
+  String raw;
+  raw.reserve(1024);
+  const uint32_t t0 = millis();
+  while (millis() - t0 < BUDGET_MS) {
+    bool got = false;
+    while (c.available()) {
+      const int ch = c.read();
+      if (ch < 0) break;
+      raw += (char)ch;
+      got = true;
+      if (raw.length() >= MAX_BYTES) break;
+    }
+    if (raw.length() >= MAX_BYTES) break;
+    if (!got && !c.connected()) break;       // serwer zamknął połączenie
+    if (!got) delay(2);                      // nic nie ma - oddaj czas innym zadaniom
+  }
+  c.stop();
+
+  const int sep = raw.indexOf("\r\n\r\n");
+  if (sep < 0) return false;
+  if (raw.indexOf(" 200 ") < 0 && !raw.startsWith("HTTP/1.1 200") && !raw.startsWith("HTTP/1.0 200")) {
+    return false;
+  }
+  body = raw.substring(sep + 4);
   if (body.length() > 8192) body = body.substring(0, 8192);
   return body.length() > 0;
 }
@@ -216,26 +268,34 @@ void ExtDevManager::loop() {
   if (!devs_.size()) return;
   const unsigned long now = millis();
   for (auto& d : devs_) {
-    // Backoff: po 3 kolejnych błędach zwalniamy do 60 s, a dopiero po 10
-    // błędach do 5 min. Poprzednio 3 błędy od razu dawały 5 min przerwy,
-    // więc przy chwilowej niedostępności (np. wolne łącze do sniffera)
-    // stacja traciła dane na 6 minut, choć urządzenie cały czas działało.
-    unsigned long gap = (d.failCount >= 10) ? 300000UL
+    // Backoff: chwilowa przerwa (np. zgubiony pakiet do sniffera) nie może
+    // odbierać danych na długo, ale urządzenie, które naprawdę nie odpowiada,
+    // musi być odpytywane coraz rzadziej - inaczej każde nieudane połączenie
+    // kosztuje czas pętli głównej. Progi: 3 błędy -> 1 min, 6 -> 5 min,
+    // 10 -> 30 min (wcześniej 5 min, co przy martwym węźle C3 dawało
+    // niekończące się serie nieudanych prób).
+    unsigned long gap = (d.failCount >= 10) ? 1800000UL
+                      : (d.failCount >= 6)  ? 300000UL
                       : (d.failCount >= 3)  ? 60000UL
                       : (unsigned long)d.interval * 1000UL;
     if (now - d.lastMs < gap) continue;
     LOG_I("ExtDev: poll %s", d.url.c_str());
+    const unsigned long t0 = millis();
     d.lastMs = now;
     pollOne(d);
     if (d.ok) d.failCount = 0;
     else if (d.failCount < 10) d.failCount++;
-    LOG_I("Urządzenie %s (%s): %s", d.name.c_str(), d.url.c_str(),
-          d.ok ? "OK" : d.lastErr.c_str());
+    LOG_I("Urządzenie %s (%s): %s (%lu ms)", d.name.c_str(), d.url.c_str(),
+          d.ok ? "OK" : d.lastErr.c_str(), (unsigned long)(millis() - t0));
+    // Po 10 nieudanych próbach odpytywanie tego urządzenia jest zawieszone na
+    // pół godziny - zgłaszamy to raz, żeby nie zaśmiecać logu.
+    if (d.failCount == 10) {
+      LOG_W("ExtDev: %s nie odpowiada - odpytywanie zawieszone na 30 min", d.name.c_str());
+    }
 
     // Budżet czasu na jedno wywołanie: przy kilku martwych urządzeniach
-    // sumaryczny connect+read (2,2+1,8 s) mógłby przekroczyć 5 s watchdoga
-    // zadania. Przerywamy, gdy tylko minie ~4 s - reszta urządzeń zostaje
-    // odpyta w kolejnych obiegach pętli.
+    // sumaryczny czas mógłby wydłużyć obieg pętli. Przerywamy po ~4 s -
+    // reszta urządzeń zostaje odpyta w kolejnych obiegach.
     if (millis() - now > 4000UL) break;
   }
 }
