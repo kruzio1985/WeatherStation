@@ -1076,6 +1076,16 @@ void SensorManager::readBH1750() {
         LOG_I("BH1750: pierwszy odczyt raw=%u -> %.1f lx", (unsigned)raw, (double)lux);
         firstLogged = true;
       }
+      // Raw 65535 to sufit przetwornika (54612 lx przy domyślnym MTreg) - przy
+      // pełnym słońcu czujnik nasyca się i pokazuje mniej niż czujnik VEVOR.
+      // Zgłaszamy to, żeby było jasne, że odczyt jest dolny, a nie błędny;
+      // zwiększenie zakresu wymaga obniżenia MTreg (mniejsza rozdzielczość).
+      static unsigned long satLogMs = 0;
+      if (raw >= 65000 && millis() - satLogMs > 300000UL) {
+        satLogMs = millis();
+        LOG_W("BH1750: nasycony (%u/65535 -> %.0f lx) - to dolne oszacowanie, "
+              "przy pelnym sloncu czujnik nie widzi wiecej", (unsigned)raw, (double)lux);
+      }
       ChannelConfig c = config.channelCfg("light");
       if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
       putValue("light", lux + c.offset);

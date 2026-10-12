@@ -750,6 +750,15 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
   const bool snowPossible = isnan(ambient) || ambient <= CAM_SNOW_MAX_TEMP;
 
   a.snowPct = a.rainPct = a.fogPct = -1;
+  // Deszcz: sama "szara, pochmurna" scena to za mało. Przy pełnym zachmurzeniu
+  // i brightness ~120 klasyfikator ogłaszał deszcz 100 %, choć deszczomierze
+  // pokazywały 0,0 mm/h (fałszywy alarm zgłoszony 12.10). Prawdziwy opad mocno
+  // przygasza obraz, dlatego wymagamy ALBO ciemnego kadru, ALBO potwierdzenia
+  // z deszczomierza (VEVOR podaje intensywność w mm/h - suma dobowa nie nadaje
+  // się do tego, bo pozostaje niezerowa przez resztę dnia).
+  const float rainNow = sensors.valueOf("vev_rain_now");
+  const bool rainConfirmed = (!isnan(rainNow) && rainNow > 0.0f);
+
   if (a.brightness < 40) {
     a.weather = "night";
   } else if (whitePct >= 30.0f && a.brightness >= 110.0f && snowPossible) {
@@ -759,7 +768,8 @@ bool CameraManager::analyzeRgb565(const uint8_t* buf, uint16_t w, uint16_t h) {
              a.brightness <= 160.0f && grayPct >= 55.0f) {
     a.weather = "fog";
     a.fogPct = constrain((grayPct - 50.0f) * 3.0f, 5.0f, 100.0f);
-  } else if (a.cloudCover >= 40.0f && grayPct >= 45.0f && a.brightness < 125.0f) {
+  } else if (a.cloudCover >= 40.0f && grayPct >= 45.0f &&
+             (a.brightness < 100.0f || rainConfirmed)) {
     a.weather = "rain";
     a.rainPct = constrain((a.cloudCover - 35.0f) * 1.8f, 5.0f, 100.0f);
   } else if (whitePct >= 30.0f && a.brightness >= 110.0f) {
