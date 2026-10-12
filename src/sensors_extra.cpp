@@ -34,7 +34,13 @@
 #define KEY_SOIL_WET  "soil_wet_v"     // napięcie czujnika gleby w wodzie [V]
 #define KEY_MAG_DECL  "mag_decl"       // deklinacja magnetyczna [°]
 #define KEY_SOLAR_MV  "solar_mv_wm2"   // mV na W/m² - bez niego pyranometr nie startuje
-#define KEY_UV_MV     "uv_mv_uvi"      // mV na 1 UVI (GUVA-S12SD: 100 mV/UVI)
+// Czułość modułu UV w mV na 1 UVI.
+// GUVA-S12SD ma typowo 100 mV/UVI, ale moduły z własnym wzmacniaczem bywają
+// ~10x czulsze (1 V/UVI) - taki okazał się moduł w tej stacji: przy 100 mV/UVI
+// w południe wskaźnik wchodził na sufit przetwornika (31,8), a po przeliczeniu
+// 1 V/UVI wartości zgadzają się z czujnikiem VEVOR (3 vs 3) i z porą dnia.
+#define KEY_UV_MV        "uv_mv_uvi"
+#define UV_MV_PER_UVI_DEF 1000.0f
 
 #define SOIL_MAX_DRY_V 2.6f            // typowe dla czujników pojemnościowych
 #define SOIL_MAX_WET_V 1.2f
@@ -337,8 +343,8 @@ bool SensorManager::beginExtra() {
   } else if (pinMap.pin("uv_adc") >= 0) {
     // Analogowy czujnik UV (GUVA-S12SD i podobne): napięcie 0-1 V -> UVI
     setPresent("uv", true);
-    LOG_I("UV analogowy: pin ADC %d (GUVA-S12SD, %d mV/UVI)",
-          pinMap.pin("uv_adc"), (int)config.extraF(KEY_UV_MV, 100.0f));
+    LOG_I("UV analogowy: pin ADC %d (%d mV/UVI)",
+          pinMap.pin("uv_adc"), (int)config.extraF(KEY_UV_MV, UV_MV_PER_UVI_DEF));
   }
   if (s_mmc.begin()) {
     setPresent("mmc_hdg", true);
@@ -426,24 +432,37 @@ void SensorManager::readExtra() {
     if (s_ltr.read(uv)) publishExtra("uv", uv);
   }
 
-  // --- Analogowy czujnik UV (GUVA-S12SD): UVI = mV / kalibracja ---
+  // --- Analogowy czujnik UV: UVI = mV / czułość (mV na 1 UVI) ---
   if (!s_ltr.ok()) {
     const int uvPin = pinMap.pin("uv_adc");
     if (uvPin >= 0 && !analogPinFloating(uvPin)) {
-      float mvPerUvi = config.extraF(KEY_UV_MV, 100.0f);
-      if (mvPerUvi < 1.0f) mvPerUvi = 100.0f;
+      float mvPerUvi = config.extraF(KEY_UV_MV, UV_MV_PER_UVI_DEF);
+      if (mvPerUvi < 1.0f) mvPerUvi = UV_MV_PER_UVI_DEF;
+
+      const int raw = analogRead(uvPin);
       float mv = analogVolts(uvPin) * 1000.0f;
       float uvi = mv / mvPerUvi;
       if (uvi < 0.0f) uvi = 0.0f;
 
-      // Diagnostyka: surowy odczyt ADC pozwala odróżnić przesterowanie
-      // przetwornika (raw 4095) od realnego napięcia z modułu.
-      static unsigned long uvDiagMs = 0;
-      if (millis() - uvDiagMs > 300000UL) {
-        uvDiagMs = millis();
-        int raw = analogRead(uvPin);
-        LOG_I("UV analogowy: raw=%d/4095, %.0f mV, kalibracja %.0f mV/UVI",
-              raw, (double)mv, (double)mvPerUvi);
+      // Ostrzeżenie, gdy przetwornik jest na maksimum: przy słonecznej pogodzie
+      // bardzo czuły moduł może dojść do 3,3 V i wtedy wszystko powyżej jest
+      // ucinane (odczyt jest wtedy dolnym oszacowaniem). Publikujemy mimo to -
+      // znikać kanału nie ma sensu, bo użytkownik nie widzi wtedy nic.
+      if (raw >= 4090) {
+        static unsigned long uvSatMs = 0;
+        if (millis() - uvSatMs > 300000UL) {
+          uvSatMs = millis();
+          LOG_W("UV analogowy: wejscie na maksimum (raw 4095/4095) - odczyt to dolne oszacowanie. "
+                "Zmniejsz wzmocnienie modulu albo zwieksz kalibracje (mV/UVI, teraz %.0f)",
+                (double)mvPerUvi);
+        }
+      } else {
+        static unsigned long uvDiagMs = 0;
+        if (millis() - uvDiagMs > 300000UL) {
+          uvDiagMs = millis();
+          LOG_I("UV analogowy: raw=%d/4095, %.0f mV, kalibracja %.0f mV/UVI",
+                raw, (double)mv, (double)mvPerUvi);
+        }
       }
       publishExtra("uv", uvi);
     }
