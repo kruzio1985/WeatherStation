@@ -108,6 +108,10 @@ void setFontById(lgfx::LovyanGFX* d, uint8_t id) {
   }
 }
 
+// Szerokość napisu z polskimi znakami (definicja niżej - potrzebna już przy
+// dobieraniu rozmiaru czcionki).
+static int plWidth(lgfx::LovyanGFX* d, const String& s);
+
 // Największa czcionka, w której tekst zmieści się na szerokość maxW.
 void setBigFont(lgfx::LovyanGFX* d, const String& text, int maxW, uint8_t fontMode) {
   if (fontMode != 0) {
@@ -117,8 +121,174 @@ void setBigFont(lgfx::LovyanGFX* d, const String& text, int maxW, uint8_t fontMo
   static const uint8_t kTry[] = { 3, 2, 1, 5 };   // Font8 -> Font6 -> Font4 -> Font2
   for (uint8_t i = 0; i < sizeof(kTry); i++) {
     setFontById(d, kTry[i]);
-    if ((int)d->textWidth(text) <= maxW) return;
+    if (plWidth(d, text) <= maxW) return;
   }
+}
+
+// =============================================================
+//  Polskie znaki na wyświetlaczu
+//
+//  Czcionki wbudowane w LovyanGFX (Font2/4/6/8, a także DejaVu z tej paczki -
+//  zakres tylko 0x20-0x7E) nie mają liter ą/ć/ę/ł/ń/ó/ś/ź/ż, więc na ekranie
+//  wychodziły puste miejsca ("Wilgotno  (AHT30)"). Pełna czcionka Unicode
+//  (IPA/efont) to dziesiątki megabajtów źródła, dlatego rysujemy literę bazową
+//  i dokładamy do niej znak diakrytyczny. Ta sama droga obsługuje °, µ, ², ³.
+// =============================================================
+enum : uint8_t { PL_NONE = 0, PL_ACUTE, PL_DOT, PL_OGONEK, PL_STROKE, PL_DEG, PL_MICRO, PL_SUP2, PL_SUP3 };
+
+struct PlChar { uint16_t cp; char base; uint8_t mark; };
+
+static const PlChar kPlTable[] = {
+  {0x0104, 'A', PL_OGONEK}, {0x0105, 'a', PL_OGONEK},   // Ą ą
+  {0x0106, 'C', PL_ACUTE},  {0x0107, 'c', PL_ACUTE},    // Ć ć
+  {0x0118, 'E', PL_OGONEK}, {0x0119, 'e', PL_OGONEK},   // Ę ę
+  {0x0141, 'L', PL_STROKE}, {0x0142, 'l', PL_STROKE},   // Ł ł
+  {0x0143, 'N', PL_ACUTE},  {0x0144, 'n', PL_ACUTE},    // Ń ń
+  {0x00D3, 'O', PL_ACUTE},  {0x00F3, 'o', PL_ACUTE},    // Ó ó
+  {0x015A, 'S', PL_ACUTE},  {0x015B, 's', PL_ACUTE},    // Ś ś
+  {0x0179, 'Z', PL_ACUTE},  {0x017A, 'z', PL_ACUTE},    // Ź ź
+  {0x017B, 'Z', PL_DOT},    {0x017C, 'z', PL_DOT},      // Ż ż
+  {0x00B0, ' ', PL_DEG},                                // °
+  {0x00B5, 'u', PL_MICRO},                              // µ
+  {0x00B2, ' ', PL_SUP2},                               // ²
+  {0x00B3, ' ', PL_SUP3},                               // ³
+};
+
+// Kolejny znak UTF-8 (1-3 bajty; dłuższych nie używamy). Zawsze przesuwa "i".
+static uint16_t plUtf8Next(const String& s, size_t& i) {
+  const uint8_t c0 = (uint8_t)s[i];
+  if (c0 < 0x80) { i++; return c0; }
+  if ((c0 & 0xE0) == 0xC0 && i + 1 < s.length()) {
+    const uint16_t cp = ((uint16_t)(c0 & 0x1F) << 6) | ((uint8_t)s[i + 1] & 0x3F);
+    i += 2;
+    return cp;
+  }
+  if ((c0 & 0xF0) == 0xE0 && i + 2 < s.length()) {
+    const uint16_t cp = ((uint16_t)(c0 & 0x0F) << 12) | (((uint8_t)s[i + 1] & 0x3F) << 6) |
+                        ((uint8_t)s[i + 2] & 0x3F);
+    i += 3;
+    return cp;
+  }
+  i++;
+  return '?';
+}
+
+// Rysuje (albo tylko mierzy - rysujW = false) jeden znak i zwraca jego
+// szerokość. "x/y" to lewy górny róg pola tekstowego.
+static int plGlyph(lgfx::LovyanGFX* d, int x, int y, uint16_t cp,
+                   uint16_t fg, uint16_t bg, bool draw) {
+  char base = 0;
+  uint8_t mark = PL_NONE;
+  if (cp < 0x80) {
+    base = (char)cp;
+  } else {
+    for (uint8_t i = 0; i < sizeof(kPlTable) / sizeof(kPlTable[0]); i++) {
+      if (kPlTable[i].cp == cp) { base = kPlTable[i].base; mark = kPlTable[i].mark; break; }
+    }
+    if (!base) base = '?';
+  }
+
+  const int h = d->fontHeight();
+  d->setTextDatum(lgfx::textdatum_t::top_left);
+
+  // Znaki bez litery bazowej (stopień, indeksy górne): własny kształt.
+  if (mark == PL_DEG || mark == PL_SUP2 || mark == PL_SUP3) {
+    const int w = d->textWidth("o");
+    if (mark == PL_DEG) {
+      int r = h / 14;
+      if (r < 1) r = 1;
+      if (r > 4) r = 4;
+      if (draw) d->fillCircle(x + w / 2, y + h / 5, r, fg);
+      return w;
+    }
+    const char* digit = (mark == PL_SUP2) ? "2" : "3";
+    const int wd = d->textWidth(digit);
+    if (draw) {
+      d->setTextColor(fg, bg);
+      d->drawString(digit, x, y - h * 28 / 100);   // indeks górny
+    }
+    return wd;
+  }
+
+  const int w = d->textWidth(String(base).c_str());
+  if (draw) {
+    d->setTextColor(fg, bg);
+    d->drawString(String(base).c_str(), x, y);
+  }
+  if (!draw || mark == PL_NONE) return w;
+
+  // Znak diakrytyczny nad literą albo pod nią.
+  const int lx  = x;
+  const int ly  = y;
+  const int lw  = w;
+  const int lh  = h;
+  switch (mark) {
+    case PL_ACUTE:                      // ć ń ó ś ź - kreska nad literą
+      d->drawLine(lx + lw * 62 / 100, ly + lh * 16 / 100,
+                  lx + lw * 88 / 100, ly + lh * 3 / 100, fg);
+      d->drawLine(lx + lw * 62 / 100, ly + lh * 17 / 100,
+                  lx + lw * 88 / 100, ly + lh * 4 / 100, fg);
+      break;
+    case PL_DOT: {                      // ż - kropka nad literą
+      int s = lh / 9;
+      if (s < 2) s = 2;
+      d->fillRect(lx + lw * 52 / 100, ly + lh * 4 / 100, s, s, fg);
+      break;
+    }
+    case PL_OGONEK:                     // ą ę - ogonek pod literą
+      d->drawLine(lx + lw * 60 / 100, ly + lh * 78 / 100,
+                  lx + lw * 66 / 100, ly + lh * 93 / 100, fg);
+      d->drawLine(lx + lw * 66 / 100, ly + lh * 93 / 100,
+                  lx + lw * 88 / 100, ly + lh * 90 / 100, fg);
+      break;
+    case PL_STROKE:                     // ł - kreska przez literę
+      d->drawLine(lx + lw * 5 / 100, ly + lh * 66 / 100,
+                  lx + lw * 95 / 100, ly + lh * 32 / 100, fg);
+      break;
+    case PL_MICRO:                      // µ - "u" z ogonkiem po lewej
+      d->drawLine(lx, ly + lh * 72 / 100, lx, ly + lh * 92 / 100, fg);
+      d->drawLine(lx, ly + lh * 92 / 100, lx + lw * 25 / 100, ly + lh * 78 / 100, fg);
+      break;
+    default:
+      break;
+  }
+  return w;
+}
+
+// Szerokość napisu z polskimi znakami.
+static int plWidth(lgfx::LovyanGFX* d, const String& s) {
+  int w = 0;
+  for (size_t i = 0; i < s.length(); ) {
+    w += plGlyph(d, 0, 0, plUtf8Next(s, i), 0, 0, false);
+  }
+  return w;
+}
+
+// Napis z polskimi znakami z wyrównaniem jak w drawString (datum).
+static void plDraw(lgfx::LovyanGFX* d, int x, int y, const String& s,
+                   uint16_t fg, uint16_t bg, lgfx::textdatum_t datum) {
+  const int w = plWidth(d, s);
+  const int h = d->fontHeight();
+  int x0 = x, y0 = y;
+  switch (datum) {
+    case lgfx::textdatum_t::top_center:    x0 = x - w / 2;            break;
+    case lgfx::textdatum_t::top_right:     x0 = x - w;                break;
+    case lgfx::textdatum_t::middle_left:   y0 = y - h / 2;            break;
+    case lgfx::textdatum_t::middle_center: x0 = x - w / 2; y0 = y - h / 2; break;
+    case lgfx::textdatum_t::middle_right:  x0 = x - w;     y0 = y - h / 2; break;
+    case lgfx::textdatum_t::bottom_left:   y0 = y - h;                break;
+    case lgfx::textdatum_t::bottom_center: x0 = x - w / 2; y0 = y - h; break;
+    case lgfx::textdatum_t::bottom_right:  x0 = x - w;     y0 = y - h; break;
+    default: break;                                                   // top_left
+  }
+  for (size_t i = 0; i < s.length(); ) {
+    x0 += plGlyph(d, x0, y0, plUtf8Next(s, i), fg, bg, true);
+  }
+}
+
+static void plDraw(lgfx::LovyanGFX* d, int x, int y, const char* s,
+                   uint16_t fg, uint16_t bg, lgfx::textdatum_t datum) {
+  plDraw(d, x, y, String(s), fg, bg, datum);
 }
 
 // Ścieżki grafik pogody (klucze w konfiguracji) - kolejność jak DISP_IC_*.
@@ -131,11 +301,11 @@ const char* const kIconNames[DISP_IC_COUNT] = {
 
 const char* weatherStateName(uint8_t st) {
   switch (st) {
-    case DISP_IC_SUN:   return "Slonecznie";
+    case DISP_IC_SUN:   return "Słonecznie";
     case DISP_IC_CLOUD: return "Zachmurzenie";
     case DISP_IC_RAIN:  return "Deszcz";
-    case DISP_IC_SNOW:  return "Snieg";
-    case DISP_IC_FOG:   return "Mgla";
+    case DISP_IC_SNOW:  return "Śnieg";
+    case DISP_IC_FOG:   return "Mgła";
     default:            return "Noc";
   }
 }
@@ -229,6 +399,50 @@ void DisplayManager::setIntervalS(uint32_t seconds) {
 // (np. po wgraniu pliku BMP przez /api/sd/upload). Bez reinicjalizacji panelu.
 void DisplayManager::reloadIcons() {
   freeIcons();
+}
+
+// Kontrola polskich znaków bez patrzenia na ekran: ten sam napis rysujemy
+// z diakrytykami i bez nich, po czym liczymy zapalone piksele. Jeśli wersja
+// z diakrytykami ma ich więcej, znaki faktycznie się dokładają.
+String DisplayManager::plTest() {
+  JsonDocument o;
+  if (!gfx_) {
+    o["error"] = "wyświetlacz nieaktywny";
+    String s; serializeJson(o, s); return s;
+  }
+  lgfx::LGFX_Sprite sp(static_cast<lgfx::LGFX_Device*>(gfx_));
+  sp.setPsram(true);
+  sp.setColorDepth(16);
+
+  const int W = 320, H = 40;
+  auto countPixels = [&](uint8_t font, const char* txt) -> int {
+    if (!sp.createSprite(W, H)) return -1;
+    sp.fillScreen(0x0000);
+    setFontById(&sp, font);
+    plDraw(&sp, 2, 2, txt, 0xFFFF, 0x0000, lgfx::textdatum_t::top_left);
+    int n = 0;
+    for (int y = 0; y < H; y++)
+      for (int x = 0; x < W; x++)
+        if (sp.readPixel(x, y) != 0) n++;
+    sp.deleteSprite();
+    return n;
+  };
+
+  const int plain  = countPixels(1, "Wilgotnosc");
+  const int accent = countPixels(1, "Wilgotność");
+  const int plain2 = countPixels(1, "Slonecznie Mgla O");
+  const int acc2   = countPixels(1, "Słonecznie Mgła Ó");
+  o["font"]         = 1;
+  o["plain"]        = plain;
+  o["accent"]       = accent;
+  o["extra_px"]     = accent - plain;
+  o["plain2"]       = plain2;
+  o["accent2"]      = acc2;
+  o["extra_px2"]    = acc2 - plain2;
+  o["ok"]           = (accent > plain && acc2 > plain2);
+  String s;
+  serializeJson(o, s);
+  return s;
 }
 
 bool DisplayManager::pinsOk() {
@@ -479,10 +693,8 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
   // --- Nagłówek (wspólny) ---
   d->setFont(&lgfx::fonts::Font2);
   d->setTextColor(dim, bg);
-  d->setTextDatum(lgfx::textdatum_t::top_left);
-  d->drawString("Stacja Pogody", 8, 6);
-  d->setTextDatum(lgfx::textdatum_t::top_right);
-  d->drawString(hhmm, right, 6);
+  plDraw(d, 8, 6, "Stacja Pogody", dim, bg, lgfx::textdatum_t::top_left);
+  plDraw(d, right, 6, hhmm, dim, bg, lgfx::textdatum_t::top_right);
   d->drawFastHLine(8, 26, W - 16, dim);
 
   if (W >= H) {
@@ -491,51 +703,39 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
     d->drawFastVLine(colX, 32, H - 60, dim);
 
     // Lewa kolumna: duża temperatura + wilgotność i wiatr pod nią
-    d->setTextDatum(lgfx::textdatum_t::top_left);
     d->setTextColor(fg, bg);
     d->setFont(&lgfx::fonts::Font6);
-    d->drawString(num(t, 1).c_str(), 12, 34);
+    plDraw(d, 12, 34, num(t, 1), fg, bg, lgfx::textdatum_t::top_left);
     d->setFont(&lgfx::fonts::Font2);
-    d->setTextColor(acc, bg);
-    d->drawString("stopnie C", 12, 88);
+    plDraw(d, 12, 88, "°C", acc, bg, lgfx::textdatum_t::top_left);
 
     auto leftRow = [&](int y, const char* label, const String& value) {
       d->setFont(&lgfx::fonts::Font2);
-      d->setTextColor(dim, bg);
-      d->setTextDatum(lgfx::textdatum_t::top_left);
-      d->drawString(label, 12, y);
+      plDraw(d, 12, y, label, dim, bg, lgfx::textdatum_t::top_left);
       d->setFont(&lgfx::fonts::Font4);
-      d->setTextColor(fg, bg);
-      d->drawString(value.c_str(), 12, y + 18);
+      plDraw(d, 12, y + 18, value, fg, bg, lgfx::textdatum_t::top_left);
     };
-    leftRow(116, "Wilgotnosc", num(h, 0) + " %");
+    leftRow(116, "Wilgotność", num(h, 0) + " %");
     leftRow(166, "Wiatr",      num(w, 1) + " km/h");
 
     // Prawa kolumna: ciśnienie, pył i AQI z C3
     auto rightRow = [&](int y, const char* label, const String& value, uint16_t color) {
       d->setFont(&lgfx::fonts::Font2);
-      d->setTextColor(dim, bg);
-      d->setTextDatum(lgfx::textdatum_t::top_left);
-      d->drawString(label, colX + 10, y);
+      plDraw(d, colX + 10, y, label, dim, bg, lgfx::textdatum_t::top_left);
       d->setFont(&lgfx::fonts::Font4);
-      d->setTextColor(color, bg);
-      d->setTextDatum(lgfx::textdatum_t::top_right);
-      d->drawString(value.c_str(), right, y + 16);
+      plDraw(d, right, y + 16, value, color, bg, lgfx::textdatum_t::top_right);
     };
-    rightRow(40,  "Cisnienie",  num(p, 1) + " hPa",   fg);
-    rightRow(86,  "PM2.5 (C3)", num(pm, 0) + " ug/m3", acc);
-    rightRow(132, "AQI (C3)",   num(aqi, 0),           acc);
+    rightRow(40,  "Ciśnienie",   num(p, 1) + " hPa",   fg);
+    rightRow(86,  "PM2.5 (C3)",  num(pm, 0) + " µg/m³", acc);
+    rightRow(132, "AQI (C3)",    num(aqi, 0),           acc);
   } else {
     // ---------------- UKŁAD PIONOWY (240x320) ----------------
     const int cx = W / 2;
 
-    d->setTextDatum(lgfx::textdatum_t::top_center);
-    d->setTextColor(fg, bg);
     d->setFont(&lgfx::fonts::Font6);
-    d->drawString(num(t, 1).c_str(), cx, 40);
+    plDraw(d, cx, 40, num(t, 1), fg, bg, lgfx::textdatum_t::top_center);
     d->setFont(&lgfx::fonts::Font2);
-    d->setTextColor(acc, bg);
-    d->drawString("stopnie C", cx, 92);
+    plDraw(d, cx, 92, "°C", acc, bg, lgfx::textdatum_t::top_center);
     d->drawFastHLine(8, 112, W - 16, dim);
 
     const int rowTop  = 140;
@@ -543,26 +743,20 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
     auto row = [&](int idx, const char* label, const String& value, uint16_t color) {
       const int y = rowTop + idx * rowStep;
       d->setFont(&lgfx::fonts::Font2);
-      d->setTextColor(dim, bg);
-      d->setTextDatum(lgfx::textdatum_t::middle_left);
-      d->drawString(label, 12, y);
+      plDraw(d, 12, y, label, dim, bg, lgfx::textdatum_t::middle_left);
       d->setFont(&lgfx::fonts::Font4);
-      d->setTextColor(color, bg);
-      d->setTextDatum(lgfx::textdatum_t::middle_right);
-      d->drawString(value.c_str(), right, y);
+      plDraw(d, right, y, value, color, bg, lgfx::textdatum_t::middle_right);
     };
-    row(0, "Wilgotnosc",  num(h, 0) + " %",        fg);
-    row(1, "Cisnienie",   num(p, 1) + " hPa",      fg);
+    row(0, "Wilgotność",  num(h, 0) + " %",        fg);
+    row(1, "Ciśnienie",   num(p, 1) + " hPa",      fg);
     row(2, "Wiatr",       num(w, 1) + " km/h",     fg);
-    row(3, "PM2.5 (C3)",  num(pm, 0) + " ug/m3",   acc);
+    row(3, "PM2.5 (C3)",  num(pm, 0) + " µg/m³",   acc);
     row(4, "AQI (C3)",    num(aqi, 0),             acc);
   }
 
   // --- Stopka (wspólna) ---
   d->setFont(&lgfx::fonts::Font2);
-  d->setTextColor(dim, bg);
-  d->setTextDatum(lgfx::textdatum_t::bottom_center);
-  d->drawString(foot.c_str(), W / 2, H - 4);
+  plDraw(d, W / 2, H - 4, foot, dim, bg, lgfx::textdatum_t::bottom_center);
 }
 
 // ---------------- Widoki 1 i 2: duże wskazania ----------------
@@ -585,9 +779,9 @@ void DisplayManager::drawBig(void* dv, int W, int H, uint16_t bg, uint16_t fg, u
   d->drawFastHLine(8, 26, W - 16, dim);
 
   if (n == 0) {
-    d->setTextColor(dim, bg);
     d->setTextDatum(lgfx::textdatum_t::middle_center);
-    d->drawString("Brak kanalow w disp_ch", W / 2, H / 2);
+    plDraw(d, W / 2, H / 2, "Brak kanałów w disp_ch", dim, bg,
+           lgfx::textdatum_t::middle_center);
     return;
   }
 
@@ -602,22 +796,18 @@ void DisplayManager::drawBig(void* dv, int W, int H, uint16_t bg, uint16_t fg, u
 
   // Nazwa kanału
   d->setFont(&lgfx::fonts::Font4);
-  d->setTextColor(acc, bg);
-  d->setTextDatum(lgfx::textdatum_t::middle_center);
-  d->drawString(name.c_str(), W / 2, H * 28 / 100);
+  plDraw(d, W / 2, H * 28 / 100, name, acc, bg, lgfx::textdatum_t::middle_center);
 
   // Wartość - największa czcionka, jaka się zmieści
   setBigFont(d, val, W - 20, fontMode_);
   const int valY = H * 55 / 100;
-  d->setTextColor(fg, bg);
-  d->setTextDatum(lgfx::textdatum_t::middle_center);
-  d->drawString(val.c_str(), W / 2, valY);
+  plDraw(d, W / 2, valY, val, fg, bg, lgfx::textdatum_t::middle_center);
 
   // Jednostka pod wartością
   if (unit.length()) {
     d->setFont(&lgfx::fonts::Font4);
-    d->setTextColor(acc, bg);
-    d->drawString(unit.c_str(), W / 2, valY + d->fontHeight() * 3 / 4 + 22);
+    plDraw(d, W / 2, valY + d->fontHeight() * 3 / 4 + 22, unit, acc, bg,
+           lgfx::textdatum_t::middle_center);
   }
 
   // Kropki pokazujące pozycję w cyklu
@@ -648,11 +838,8 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
   }
 
   d->setFont(&lgfx::fonts::Font2);
-  d->setTextColor(dim, bg);
-  d->setTextDatum(lgfx::textdatum_t::top_left);
-  d->drawString(hhmm, 8, 6);
-  d->setTextDatum(lgfx::textdatum_t::top_right);
-  d->drawString(weatherStateName(st), W - 8, 6);
+  plDraw(d, 8, 6, hhmm, dim, bg, lgfx::textdatum_t::top_left);
+  plDraw(d, W - 8, 6, weatherStateName(st), dim, bg, lgfx::textdatum_t::top_right);
   d->drawFastHLine(8, 26, W - 16, dim);
 
   void* isp = iconSprite(st);
@@ -667,16 +854,13 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
   if (wide && n == 0) {
     // Bez wybranych kanałów: sama grafika + nazwa stanu na środku
     d->setFont(&lgfx::fonts::Font4);
-    d->setTextColor(fg, bg);
-    d->setTextDatum(lgfx::textdatum_t::middle_left);
-    d->drawString(weatherStateName(st), ix + side + 14, iy + side / 2);
+    plDraw(d, ix + side + 14, iy + side / 2, weatherStateName(st), fg, bg,
+           lgfx::textdatum_t::middle_left);
     return;
   }
   if (!wide) {
     d->setFont(&lgfx::fonts::Font4);
-    d->setTextColor(fg, bg);
-    d->setTextDatum(lgfx::textdatum_t::top_center);
-    d->drawString(weatherStateName(st), W / 2, ty);
+    plDraw(d, W / 2, ty, weatherStateName(st), fg, bg, lgfx::textdatum_t::top_center);
     ty += 34;
   }
   const int tx = wide ? (ix + side + 14) : 12;
@@ -686,19 +870,14 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
     uint8_t dec = 1;
     if (!sensors.channelMeta(id, name, unit, dec)) continue;
     d->setFont(&lgfx::fonts::Font2);
-    d->setTextColor(dim, bg);
-    d->setTextDatum(lgfx::textdatum_t::top_left);
-    d->drawString(name.c_str(), tx, ty);
+    plDraw(d, tx, ty, name, dim, bg, lgfx::textdatum_t::top_left);
     d->setFont(&lgfx::fonts::Font4);
-    d->setTextColor(acc, bg);
-    d->setTextDatum(lgfx::textdatum_t::top_right);
-    d->drawString(num(sensors.valueOf(id), dec).c_str(), W - 8, ty);
+    plDraw(d, W - 8, ty, num(sensors.valueOf(id), dec), acc, bg,
+           lgfx::textdatum_t::top_right);
     if (unit.length()) {
       d->setFont(&lgfx::fonts::Font2);
-      d->setTextColor(dim, bg);
-      d->drawString(unit.c_str(), tx, ty + 22);
+      plDraw(d, tx, ty + 22, unit, dim, bg, lgfx::textdatum_t::top_left);
     }
-    d->setTextDatum(lgfx::textdatum_t::top_left);
     ty += 40;
   }
 }
@@ -980,6 +1159,7 @@ DisplayManager display;
 bool DisplayManager::enabled() { return false; }
 void DisplayManager::setEnabled(bool) {}
 void DisplayManager::reloadIcons() {}
+String DisplayManager::plTest() { return String("{\"error\":\"wyświetlacz nieobsługiwany\"}"); }
 uint32_t DisplayManager::intervalS() { return 10; }
 void DisplayManager::setIntervalS(uint32_t) {}
 bool DisplayManager::pinsOk() { return false; }

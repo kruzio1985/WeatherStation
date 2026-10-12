@@ -216,7 +216,7 @@ static String probe038() {
 
   bool i1 = i2cuWrite3(0x38, 0xE1, 0x08, 0x00);   // inicjalizacja AHT10
   delay(20);
-  bool i2 = i2cuWrite3(0x38, 0xBE, 0x08, 0x00);   // inicjalizacja AHT20/21/25
+  bool i2 = i2cuWrite3(0x38, 0xBE, 0x08, 0x00);   // inicjalizacja AHT20/21/25/30/31
   delay(20);
   if (i2cuReadReg(0x38, 0x71, &st, 1)) s += " po-init=" + String(st, HEX);
   s += " init(E1=" + String(i1 ? 1 : 0) + ",BE=" + String(i2 ? 1 : 0) + ")";

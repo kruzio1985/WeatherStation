@@ -245,6 +245,13 @@ void SensorManager::registerExtraChannels() {
                                row.haIcon ? row.haIcon : ""));
   }
 
+  // Punkt rosy dla pary temperatura/wilgotność ze stacji powietrza (.141).
+  // Liczony lokalnie, bo tamta stacja nie publikuje punktu rosy - dzięki temu
+  // w Home Assistant wilgotności różnych czujników porównuje się po jednakowej
+  // wielkości (punkt rosy nie zależy od temperatury czujnika).
+  channels_.push_back(mkChan("in_air_dp", "Punkt rosy (stacja powietrza)", "°C", 1, "in",
+                             "temperature", "°C", "mdi:water-thermometer"));
+
   // Zewnętrzna stacja powietrza (C3, urządzenie typu "outaq"): osobne kanały
   // strefy "out" z prefiksem c3_ - pulpit pokazuje je jako osobną sekcję
   // "Stacja powietrza zewnątrz", nie mieszając z wewnętrznym PM stacji .141.
@@ -844,6 +851,10 @@ void SensorManager::ingestAirStation(const AirStationData& d) {
     publishExtra(row.chan, v * row.scale);
     imported++;
   }
+
+  // Punkt rosy z pary T/RH tej stacji (ona sama go nie publikuje).
+  const float dp = dewPointMagnusC(d.get("temp"), d.get("hum"));
+  if (!isnan(dp)) publishExtra("in_air_dp", dp);
 
   static unsigned long lastLog = 0;
   if (millis() - lastLog >= 300000UL) {

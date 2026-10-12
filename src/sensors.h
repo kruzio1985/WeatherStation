@@ -15,11 +15,20 @@
 #include <vector>
 #include "pins.h"
 
+// Punkt rosy ze wzoru Magnusa (t w °C, rh w %). Wilgotność procentowa zależy
+// od temperatury czujnika, więc przy porównywaniu różnych czujników (np. AHT30
+// w komorze i stacja powietrza w pokoju) porównuje się właśnie punkt rosy -
+// on zależy wyłącznie od ilości wody w powietrzu.
+inline float dewPointMagnusC(float t, float rh) {
+  if (isnan(t) || isnan(rh) || rh <= 0.0f || rh > 100.0f) return NAN;
+  const float g = logf(rh / 100.0f) + 17.27f * t / (237.7f + t);
+  return 237.7f * g / (17.27f - g);
+}
+
 // =============================================================
 //  Pojedynczy kanał pomiarowy (jeden wskaźnik na stronie / w HA)
 // =============================================================
-struct Channel {
-  String id;          // unikalny identyfikator (temp, hum, ds_0, ...)
+struct Channel {  String id;          // unikalny identyfikator (temp, hum, ds_0, ...)
   String name;        // nazwa wyświetlana (PL)
   String unit;        // jednostka na stronie ("°C", "%", "hPa", ...)
   // strefa czujnika: "in" = wewnątrz, "out" = na zewnątrz. Strona www dzieli
@@ -117,7 +126,6 @@ public:
   // wyświetlacz TFT przy dużych wskazaniach (tryby "cykl" i "pogoda").
   // false = nie ma takiego kanału (albo jest wyłączony).
   bool channelMeta(const String& id, String& name, String& unit, uint8_t& decimals);
-
   // Diagnostyka magistrali I2C: skan adresów (przy starcie, osobno dla każdego
   // kanału PCA9548A) + wynik w JSON dla GET /api/i2c.
   void i2cScanLog();

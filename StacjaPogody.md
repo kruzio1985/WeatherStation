@@ -78,8 +78,9 @@ z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, al
 - **Kanał 7 rozdzielacza, adres 0x38 — DZIAŁA.** To **nie jest SHT3x** (Sensirion ma sztywno
   0x44/0x45), a klon **AHT2x** w obudowie opisanej „SHT3X": CRC Sensiriona nie pasuje, odpowiedź ma
   układ *status + 5 bajtów* (`18` + RH[19:0] + T[19:0]). Odczyt: **27,3 °C / 28,0 %** →
-  `ths_aht_t`/`ths_aht_h` → MQTT `stacja_pogody/sensor/ths_aht_*`. Nazwy encji zostają „AHT2x"
-  (decyzja użytkownika).
+  `ths_aht_t`/`ths_aht_h` → MQTT `stacja_pogody/sensor/ths_aht_*`. Nazwy encji: **AHT30** (użytkownik
+  zidentyfikował moduł; ten sam sterownik obsługuje całą rodzinę AHT10/20/21/25/30/31 — identyczny
+  protokół, różni się tylko dokładność i zakres temperatury).
 - **Naprawione w `drv_ths.cpp`:** komenda pomiaru AHT szła jako **4 bajty** (`00 AC 33 00`) zamiast
   3 (`AC 33 00`) — dodany `i2cuWrite3()` w `i2c_util.h`; `ahtRead()` **kasowało wynik po 1 s**
   (pętla czyta rzadziej) → kanały zostawały wiecznie puste — teraz czeka na bit „busy" w bajcie
@@ -88,6 +89,62 @@ z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, al
   ch6 —, ch7 `0x38` (AHT2x). Multiplekser `0x70`, razem 5 układów.
 - **Nadal nie wgrane:** `uploadfs` (strona z zakładką „Wyświetlacz TFT" i mapą I2C — serwowany
   `index.html` jest starszy niż lokalny).
+
+---
+
+## AKTUALIZACJA (12.10, 09:50) — AWARIA: stacja zamarzła na ExtDev + punkt rosy + polskie znaki
+
+### 1. AWARIA (najważniejsze): pętla główna zawieszona przez martwy węzeł C3
+- **Objaw:** „dziwne odczyty" — wszystkie kanały zamrożone (UV 31,84 · światło 20474 · temp 27,18),
+  `draws` ekranu stał w miejscu, OTA przestało odpowiadać (`No response from the ESP`, 3 próby),
+  a `POST /api/reboot` zwracało `{"ok":true}` i **nic się nie działo**.
+- **Przyczyna:** log kończył się na `ExtDev: poll http://192.168.1.147/api/status` (węzeł C3).
+  C3 odpowiadał na ping (466/109 ms), ale **nie na HTTP** — a `HTTPClient` potrafi zablokować
+  wątek bez końca, mimo ustawionych limitów (2,2 s connect / 1,8 s read). Pętla główna czekała
+  w nieskończoność → `ESP.restart()` z `/api/reboot` (deferred do pętli, `main.cpp:535`) nigdy nie
+  został wykonany. Wcześniej ten sam błąd dawał „obieg trwał 9821 ms".
+- **Fix (`extdev.cpp`):** własne gniazdo `WiFiClient` zamiast `HTTPClient`, **bez ani jednego
+  blokującego oczekiwania** — czytamy tylko to, co już przyszło (`available()`), z twardym budżetem
+  (connect 1,2 s + całość 1,8 s) i zamknięciem gniazda po przekroczeniu. Backoff wydłużony:
+  3 błędy → 1 min, 6 → 5 min, **10 → 30 min** (było 5 min). Log pokazuje czas każdego odczytu.
+- **Dowód po naprawie:** przy martwym C3 `brak odpowiedzi (1838 ms)` i pętla szła dalej;
+  po restarcie C3: VEVOR **97 ms**, stacja powietrza **312 ms**, C3 **721 ms**, pętla żyje.
+
+### 2. Punkt rosy (porównywanie wilgotności różnych czujników)
+- Nowe kanały: **`ths_aht_dp`** (AHT30, z jego własnych T/RH) i **`in_air_dp`** (stacja powietrza .141).
+- Wspólny wzór Magnusa: `dewPointMagnusC()` w `sensors.h`. Wilgotność % zależy od temperatury
+  czujnika, więc porównuje się **punkt rosy** — on zależy tylko od ilości wody w powietrzu.
+- Zmierzone 12.10 ~09:45: AHT30 `26,86 °C / 26,88 %` → punkt rosy **6,21 °C**;
+  stacja powietrza `25,41 °C / 46,29 %` → punkt rosy **13,03 °C**. Różnica 6,8 °C punktu rosy
+  w tym samym pomieszczeniu to **nie** błąd zaokrągleń i nie dokładność czujnika (±3 % RH = 3 pkt proc.).
+- Do MQTT idą **tylko kanały strefy „out"** — `in_air_dp` jest widoczny na pulpicie, ale nie w HA
+  (zamierzone: dane wewnętrzne publikuje sama stacja powietrza).
+
+### 3. Polskie znaki na wyświetlaczu TFT
+- **Czcionki wbudowane nie mają polskich liter:** `DejaVu18` z paczki LovyanGFX ma zakres tylko
+  `0x20–0x7E`, a IPA/efont to pliki źródłowe po 25–33 MB. Dlatego `drv_display.cpp` **rysuje znaki
+  diakrytyczne sam**: litera bazowa + kreska (ć ń ó ś ź), kropka (ż), ogonek (ą ę), kreska przez
+  literę (ł); obsłużone też `°`, `µ`, `²`, `³`. Wszystkie napisy idą przez `plDraw()`
+  (z wyrównaniem jak `drawString`).
+- **Test bez patrzenia na ekran:** `GET /api/pltest` renderuje napis do bufora i liczy piksele —
+  wynik: `plain=713 → accent=725`, `plain2=1145 → accent2=1162`, `ok:true` (diakrytyki się rysują).
+
+### 4. PUŁAPKA: router AsyncWebServer dopasowuje po PREFIKSIE
+- `GET /api/display/pltest` **przechwytywał handler `/api/display`**, a `POST /api/extdev/remove`
+  trafiał do `POST /api/extdev` (dlatego usuwanie urządzenia zawsze zwracało `{"ok":false}`).
+- **Zasada na przyszłość:** nie zagnieżdżać nowych ścieżek pod istniejącymi trasami.
+  Zmienione: `/api/display/pltest` → **`/api/pltest`**, `/api/extdev/remove` → **`/api/extdev-del`**
+  (plus `data/index.html`).
+
+### 5. UV = 31,8 → to NIE błąd przeliczenia
+- `uv` = analogowy GUVA-S12SD na `uv_adc` (GPIO4), `UVI = mV / 100`. Odczyt 31,84 = **3184 mV**,
+  czyli pin na sufcie ADC. Sprawny GUVA-S12SD daje maks. ~1,1 V (11 UVI), więc wejście jest nasycone.
+- Historia z karty SD pokazuje narastanie od wschodu słońca: 05:00 → 0,17; 07:00 → 2,7 (max 7,3);
+  08:00 → 15,3 (max 31,4); 09:00 → 23,9 (max 31,84). To sygnatura nasyconego stopnia wejściowego.
+- Do sprawdzenia multimetrem: **VCC modułu = 3,3 V** (nie 5 V), napięcie na OUT ≤ 1,1 V,
+  po zakryciu czujnika spadek do ~0.
+- Światło: BH1750 20 474 lx (patrzy na horyzont) vs VEVOR 2 157 lx (w osłonie, do góry) —
+  ta różnica jest normalna przy pełnym słońcu.
 
 ---
 

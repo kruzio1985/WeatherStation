@@ -12,6 +12,7 @@
 
 #include "config.h"
 #include "i2c_util.h"
+#include "sensors.h"      // dewPointMagnusC() - wspólny wzór na punkt rosy
 #include "syslog.h"
 
 // =============================================================
@@ -19,7 +20,7 @@
 //
 //  Obsługiwane układy (bez bibliotek zewnętrznych - tylko Wire):
 //    * SHT3x (SHT30/31/35/85)          0x44/0x45  komenda 0x2400, CRC8
-//    * AHT10/20/21/25                   0x38      0xE1/0xBE + 0xAC
+//  * AHT10/20/21/25/30/31             0x38      0xE1/0xBE + 0xAC
 //    * HDC1080/HDC2010/HDC2080          0x40/0x41 ID 0xFE = 0x5449 ("TI")
 //                                                 HDC10xx: rejestr 0x00, HDC2080: 0x0F
 //    * Si7021/HTU21D/SHT21              0x40      komenda 0xE3/0xF5/0xE0
@@ -42,7 +43,7 @@
 // ---------- Kanały ----------
 enum {
   CH_SHT_T = 0, CH_SHT_H,
-  CH_AHT_T, CH_AHT_H,
+  CH_AHT_T, CH_AHT_H, CH_AHT_DP,
   CH_HDC_T, CH_HDC_H,
   CH_SI70_T, CH_SI70_H,
   CH_TMP117,
@@ -61,8 +62,9 @@ enum {
 static const ChanDef CHANS[] = {
   { "ths_sht_t",    "Temperatura (SHT3x)",          "°C",   1, "out", "temperature", "°C", "mdi:thermometer" },
   { "ths_sht_h",    "Wilgotność (SHT3x)",           "%",    1, "out", "humidity",    "%",  "mdi:water-percent" },
-  { "ths_aht_t",    "Temperatura (AHT2x)",          "°C",   1, "out", "temperature", "°C", "mdi:thermometer" },
-  { "ths_aht_h",    "Wilgotność (AHT2x)",           "%",    1, "out", "humidity",    "%",  "mdi:water-percent" },
+  { "ths_aht_t",    "Temperatura (AHT30)",         "°C",   1, "out", "temperature", "°C", "mdi:thermometer" },
+  { "ths_aht_h",    "Wilgotność (AHT30)",          "%",    1, "out", "humidity",    "%",  "mdi:water-percent" },
+  { "ths_aht_dp",   "Punkt rosy (AHT30)",          "°C",   1, "out", "temperature", "°C", "mdi:water-thermometer" },
   { "ths_hdc_t",    "Temperatura (HDC1080)",        "°C",   1, "out", "temperature", "°C", "mdi:thermometer" },
   { "ths_hdc_h",    "Wilgotność (HDC1080)",         "%",    1, "out", "humidity",    "%",  "mdi:water-percent" },
   { "ths_si70_t",   "Temperatura (Si7021)",         "°C",   1, "out", "temperature", "°C", "mdi:thermometer" },
@@ -105,7 +107,7 @@ static const uint16_t NCHANS = sizeof(CHANS) / sizeof(CHANS[0]);
 #define THS_AHT_ADDR      0x38
 #define THS_AHT_REG_STAT  0x71     // rejestr statusu
 #define THS_AHT_CMD_INIT1 0xE1     // inicjalizacja (AHT10): 0xE1 0x08 0x00
-#define THS_AHT_CMD_INIT2 0xBE     // inicjalizacja (AHT20/21/25): 0xBE 0x08 0x00
+#define THS_AHT_CMD_INIT2 0xBE     // inicjalizacja (AHT20/21/25/30/31): 0xBE 0x08 0x00
 #define THS_AHT_CMD_MEAS  0xAC     // pomiar: 0xAC 0x33 0x00
 #define THS_AHT_ARG_INIT  0x08     // 2. bajt inicjalizacji (3. = 0x00)
 #define THS_AHT_ARG_MEAS  0x33     // 2. bajt pomiaru     (3. = 0x00)
@@ -262,7 +264,7 @@ struct ThsDev {
   // SHT3x
   bool     shtOk;
   uint8_t  shtAddr;
-  // AHT1x/2x
+  // AHT1x/2x/3x
   bool     ahtOk;
   uint8_t  ahtAddr;
   uint8_t  ahtPhase;      // 0 = bezczynny, 1 = pomiar w toku
@@ -394,7 +396,7 @@ static void shtRead() {
 }
 
 // =============================================================
-//  AHT10/AHT20/AHT21/AHT25 - 0x38.
+//  AHT10/AHT20/AHT21/AHT25/AHT30/AHT31 - 0x38.
 //  Wynik pomiaru to 6 bajtów bez CRC - pewność daje bit "calibrated"
 //  w rejestrze statusu sprawdzony przy wykrywaniu.
 // =============================================================
@@ -402,12 +404,12 @@ static bool ahtProbe(uint8_t addr) {
   uint8_t st = 0;
   // Układ musi w ogóle odpowiadać na rejestr statusu.
   if (!i2cuReadReg(addr, THS_AHT_REG_STAT, &st, 1)) return false;
-  // Świeży AHT10/20/21 NIE ma jeszcze bitu kalibracji (0x08) - dlatego
+  // Świeży AHT1x/2x/3x NIE ma jeszcze bitu kalibracji (0x08) - dlatego
   // najpierw próbujemy inicjalizacji, a status sprawdzamy po niej.
   // (Wcześniej wymagaliśmy bitu od razu, przez co nieinitowany układ, a także
   // klony "SHT3X" siedzące pod 0x38, były odrzucane.)
   if (!(st & 0x08)) {
-    // AHT10 używa 0xE1, AHT20/21/25 - 0xBE; próbujemy oba warianty.
+    // AHT10 używa 0xE1, reszta (20/21/25/30/31) - 0xBE; próbujemy oba warianty.
     if (!i2cuWrite3(addr, THS_AHT_CMD_INIT1, THS_AHT_ARG_INIT, 0x00)) return false;
     delay(20);
     if (!i2cuReadReg(addr, THS_AHT_REG_STAT, &st, 1)) return false;
@@ -427,6 +429,7 @@ static bool ahtProbe(uint8_t addr) {
 static void ahtClear() {
   clearCh(CH_AHT_T);
   clearCh(CH_AHT_H);
+  clearCh(CH_AHT_DP);
 }
 
 // Pomiar AHT trwa ~80 ms. Wynik jest ważny aż do następnego pomiaru, więc
@@ -448,6 +451,11 @@ static void ahtRead() {
   float t  = ((float)((((uint32_t)b[3] & 0x0F) << 16) | ((uint32_t)b[4] << 8) | b[5])) * 200.0f / 1048576.0f - 50.0f;
   pubT(CH_AHT_T, t);
   pubH(CH_AHT_H, rh);
+  // Punkt rosy z TEJ SAMEJ pary T/RH (spójny fizycznie) - dzięki niemu można
+  // porównać ten czujnik z innymi, mimo różnych temperatur obudów.
+  const float dp = dewPointMagnusC(t, rh);
+  if (isnan(dp)) clearCh(CH_AHT_DP);
+  else           publishCh(CH_AHT_DP, dp);
 }
 
 // =============================================================
@@ -1186,13 +1194,14 @@ static void beginImpl(const DrvSink& s) {
     foundCh(CH_SHT_H);
   }
 
-  // --- AHT10/20/21/25: 0x38 ---
+  // --- AHT10/20/21/25/30/31: 0x38 ---
   if (ahtProbe(THS_AHT_ADDR)) {
     s_dev.ahtAddr = THS_AHT_ADDR;
     s_dev.ahtOk = true;
-    LOG_I("AHT1x/2x: wykryty pod adresem 0x%02X (temperatura i wilgotność)", s_dev.ahtAddr);
+    LOG_I("AHT1x/2x/3x: wykryty pod adresem 0x%02X (temperatura i wilgotność)", s_dev.ahtAddr);
     foundCh(CH_AHT_T);
     foundCh(CH_AHT_H);
+    foundCh(CH_AHT_DP);
   }
 
   // --- 0x40/0x41: najpierw HDC1080/2010/2080, potem Si7021/HTU21D ---
