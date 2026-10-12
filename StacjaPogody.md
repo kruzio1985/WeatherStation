@@ -137,14 +137,18 @@ z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, al
   (plus `data/index.html`).
 
 ### 5. UV = 31,8 → to NIE błąd przeliczenia
-- `uv` = analogowy GUVA-S12SD na `uv_adc` (GPIO4), `UVI = mV / 100`. Odczyt 31,84 = **3184 mV**,
-  czyli pin na sufcie ADC. Sprawny GUVA-S12SD daje maks. ~1,1 V (11 UVI), więc wejście jest nasycone.
-- Historia z karty SD pokazuje narastanie od wschodu słońca: 05:00 → 0,17; 07:00 → 2,7 (max 7,3);
-  08:00 → 15,3 (max 31,4); 09:00 → 23,9 (max 31,84). To sygnatura nasyconego stopnia wejściowego.
-- Do sprawdzenia multimetrem: **VCC modułu = 3,3 V** (nie 5 V), napięcie na OUT ≤ 1,1 V,
-  po zakryciu czujnika spadek do ~0.
-- Światło: BH1750 20 474 lx (patrzy na horyzont) vs VEVOR 2 157 lx (w osłonie, do góry) —
-  ta różnica jest normalna przy pełnym słońcu.
+- `uv` = analogowy czujnik UV na `uv_adc` (GPIO4), wzór `UVI = mV / czułość`.
+- **Objaw:** stale 31,84 (= 3184 mV, raw 4095/4095) mimo zmian światła 24 k → 54 k lx.
+- **Diagnoza:** historia z karty SD pokazała **identyczne nasycenie dzień wcześniej** (13:00 → 31,81),
+  a nocą poprawne ~0,3 — czyli sygnał z czujnika rośnie i w południe przekracza zakres wejścia.
+  Test linii (`lo=4095 hi=4095`) potwierdził, że wyjście modułu siedzi na szynie 3,3 V
+  (impedancja wyjścia wzmacniacza << 45 kΩ wewnętrznego ściągania do masy).
+- **Przyczyna:** moduł ma **~10x większą czułość** niż założone 100 mV/UVI (typowe dla GUVA-S12SD).
+- **Naprawa programowa:** czułość `uv_mv_uvi` = **1000 mV/UVI** (1 V na 1 UVI). Weryfikacja:
+  południe 3184 mV → **3,2** (VEVOR: 3), 07:00 → 0,27, 17:00 → 0,17, 06:00 → 0,02 — zgadza się
+  z porą dnia. Przy nasyceniu wejścia kanał **nie znika** (to dolne oszacowanie), a w logu leci
+  ostrzeżenie raz na 5 min.
+- Światło: BH1750 patrzy na horyzont, VEVOR w osłonie do góry — różnica jest normalna.
 
 ---
 
