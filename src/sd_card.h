@@ -83,6 +83,10 @@ public:
   // trzeba zamknąć przez caller (f.close()).
   File openRead(const String& path);
 
+  // System plików karty (SPI albo SDMMC) - dla bibliotek, które czytają pliki
+  // same, np. LovyanGFX (`drawBmpFile`) przy grafikach pogody na wyświetlaczu.
+  fs::FS& fs();
+
   // Dopisuje blok bajtów do pliku (FILE_APPEND), tworząc w razie potrzeby
   // katalogi nadrzędne. Bezpieczne do wołania z uploadu www (blokada muteksa
   // wewnątrz), np. przy zapisywaniu binarek firmware w /fw.

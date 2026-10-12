@@ -709,6 +709,24 @@ float SensorManager::valueOf(const String& id) {
   return isnan(v) ? rv : v;
 }
 
+bool SensorManager::channelMeta(const String& id, String& name, String& unit, uint8_t& decimals) {
+  bool ok = false;
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  for (auto& c : channels_) {
+    if (c.id != id || !c.enabled) continue;
+    name = c.name;
+    unit = c.unit;
+    int d = c.decimals;
+    if (d < 0) d = 0;
+    if (d > 4) d = 4;
+    decimals = (uint8_t)d;
+    ok = true;
+    break;
+  }
+  if (mutex_) xSemaphoreGive(mutex_);
+  return ok;
+}
+
 float SensorManager::valueByHaClass(const char* haClass, const char* zone) {
   if (!haClass || !zone) return NAN;
   float out = NAN;

@@ -1149,6 +1149,7 @@
           <tr><td class="diag-key">Rozdzielczość</td><td class="diag-value" id="dispInfoRes">—</td></tr>
           <tr><td class="diag-key">Czas odświeżenia</td><td class="diag-value" id="dispInfoDraw">—</td></tr>
           <tr><td class="diag-key">Odświeżeń od startu</td><td class="diag-value" id="dispInfoDraws">—</td></tr>
+          <tr><td class="diag-key">Widok</td><td class="diag-value" id="dispInfoMode">—</td></tr>
         </tbody>
       </table>
     </div>
@@ -1198,6 +1199,96 @@
         <button class="btn ghost" onclick="loadDisplay()">Odśwież</button>
       </div>
       <div id="dispMsg"></div>
+    </div>
+
+    <div class="box">
+      <h3>Widok na ekranie</h3>
+      <p class="muted">Tryb <b>cykl</b> pokazuje kolejne kanały jeden po drugim (duże cyfry widoczne z daleka),
+        <b>jedna wartość</b> — wybrany kanał na stałe, <b>pogoda</b> — grafikę
+        (słońce / chmury / deszcz / śnieg / mgła / noc) razem z wybranymi wartościami.
+        Grafiki wczytujemy z karty SD — pliki <b>BMP</b> (np. 100×100 px, 24-bit), najlepiej w katalogu
+        <code>/tft</code>. Gdy pliku nie ma, firmware rysuje własną grafikę, więc tryb działa zawsze.
+        Ekran GMT024-10 <b>nie ma pinu podświetlenia</b>, dlatego „nocne przygaszenie” ściemnia
+        <b>kolory</b> (czarne tło + stonowane barwy), a nie samo podświetlenie.</p>
+      <div class="form-grid">
+        <label>Tryb widoku
+          <select id="disp_mode">
+            <option value="0">Pulpit (temperatura + lista)</option>
+            <option value="1">Cykl dużych wskazań</option>
+            <option value="2">Jedna wartość na stałe</option>
+            <option value="3">Pogoda (grafika + wartości)</option>
+          </select>
+        </label>
+        <label>Rozmiar cyfr
+          <select id="disp_font">
+            <option value="0">Automatyczny (największy, jaki się zmieści)</option>
+            <option value="1">Średni (Font4)</option>
+            <option value="2">Duży (Font6)</option>
+            <option value="3">Bardzo duży (Font8)</option>
+            <option value="4">7-segmentowy (tylko cyfry)</option>
+            <option value="5">Mały (Font2)</option>
+          </select>
+        </label>
+        <label>Zmiana wskazania co (s, 2–120)
+          <input type="number" id="disp_step_s" min="2" max="120" step="1">
+        </label>
+        <label class="checkbox"><input type="checkbox" id="disp_night"> Nocne przygaszenie kolorów</label>
+        <label>Noc od godziny (0–23)
+          <input type="number" id="disp_nf" min="0" max="23" step="1">
+        </label>
+        <label>Noc do godziny (0–23)
+          <input type="number" id="disp_nt" min="0" max="23" step="1">
+        </label>
+        <label>Grafika pogody — pozycja X (px)
+          <input type="number" id="disp_ic_x" min="-32" max="320" step="1">
+        </label>
+        <label>Grafika pogody — pozycja Y (px)
+          <input type="number" id="disp_ic_y" min="-32" max="320" step="1">
+        </label>
+      </div>
+      <h4 style="margin:14px 0 6px">Kanały w cyklu / przy pogodzie</h4>
+      <div id="dispChBox" class="muted">—</div>
+      <h4 style="margin:14px 0 6px">Grafiki pogody z karty SD (BMP)</h4>
+      <div class="form-grid">
+        <label>Słońce
+          <input type="text" id="disp_i_sun" placeholder="/tft/slonce.bmp">
+        </label>
+        <label>Chmury
+          <input type="text" id="disp_i_cloud" placeholder="/tft/chmury.bmp">
+        </label>
+        <label>Deszcz
+          <input type="text" id="disp_i_rain" placeholder="/tft/deszcz.bmp">
+        </label>
+        <label>Śnieg
+          <input type="text" id="disp_i_snow" placeholder="/tft/snieg.bmp">
+        </label>
+        <label>Mgła
+          <input type="text" id="disp_i_fog" placeholder="/tft/mgla.bmp">
+        </label>
+        <label>Noc
+          <input type="text" id="disp_i_night" placeholder="/tft/noc.bmp">
+        </label>
+      </div>
+      <p class="muted">Firmware rozpoznał pogodę jako: <b id="dispInfoWeather">—</b> ·
+        grafiki wczytane z karty: <b id="dispInfoIcons">—</b></p>
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center">
+        <label>Wgraj grafikę na kartę SD:
+          <select id="dispUploadWhat">
+            <option value="sun">Słońce</option>
+            <option value="cloud">Chmury</option>
+            <option value="rain">Deszcz</option>
+            <option value="snow">Śnieg</option>
+            <option value="fog">Mgła</option>
+            <option value="night">Noc</option>
+          </select>
+        </label>
+        <input type="file" id="dispUploadFile" accept=".bmp">
+        <button class="btn" id="dispUploadBtn" onclick="uploadDispIcon()">Wgraj na kartę</button>
+        <span id="dispUploadMsg" class="muted"></span>
+      </div>
+      <p class="muted">Plik zapisuje się jako <code>/tft/&lt;nazwa&gt;.bmp</code>, a jego ścieżka
+        wpisuje się w pole powyżej i od razu zapisuje w ustawieniach. Wymagany format:
+        <b>BMP 24-bit</b> (np. 100×100 px) — inne formaty są odrzucane, wtedy działa grafika rysowana.</p>
     </div>
 
     <div class="box">
@@ -5876,6 +5967,27 @@ function displayApply(s) {
   el('disp_offx').value = s.offx ?? 0;
   el('disp_offy').value = s.offy ?? 0;
   el('disp_bgr').checked = !!s.bgr;
+  // --- Widok: tryb, kanały, czcionka, noc, grafiki pogody ---
+  el('disp_mode').value = String(s.mode ?? 0);
+  el('disp_font').value = String(s.font ?? 0);
+  el('disp_step_s').value = s.step_s ?? 5;
+  el('disp_night').checked = !!s.night;
+  el('disp_nf').value = s.night_from ?? 21;
+  el('disp_nt').value = s.night_to ?? 7;
+  el('disp_ic_x').value = s.ic_x ?? 8;
+  el('disp_ic_y').value = s.ic_y ?? 56;
+  const ip = s.icon_paths || {};
+  ['sun', 'cloud', 'rain', 'snow', 'fog', 'night'].forEach(k => {
+    const e = el('disp_i_' + k);
+    if (e) e.value = ip[k] || '';
+  });
+  renderDispChannels(s.channels);
+  const MODES = ['Pulpit', 'Cykl dużych wskazań', 'Jedna wartość na stałe', 'Pogoda (grafika)'];
+  el('dispInfoMode').textContent =
+    (MODES[s.mode ?? 0] || '—') + (s.channel_now ? ' · teraz: ' + s.channel_now : '');
+  el('dispInfoWeather').textContent = (s.weather || '—') + (s.night_now ? ' (pora nocna)' : '');
+  const iconsOk = Object.entries(s.icon_ok || {}).filter(([, v]) => v).map(([k]) => k);
+  el('dispInfoIcons').textContent = iconsOk.length ? iconsOk.join(', ') : 'brak (rysowane zastępcze)';
   el('dispInfoCtrl').textContent = (s.ic_name || s.controller || '—') + (s.controller && s.width ? ' ' + s.width + '×' + s.height : '');
   el('dispInfoActive').textContent = s.active ? 'aktywny'
     : (s.enabled ? (s.pins_ok ? 'czeka na inicjalizację' : 'piny nieustawione') : 'wyłączony');
@@ -5890,7 +6002,54 @@ function displayApply(s) {
 }
 
 async function loadDisplay() {
+  await loadDisplayChannels();
   displayApply(await api('/api/display'));
+}
+
+// Lista kanałów do wyboru (tryby: cykl, jedna wartość, pogoda). Pobierana raz -
+// kanały nie zmieniają się w czasie pracy strony.
+let dispChanList = null;
+
+async function loadDisplayChannels() {
+  if (dispChanList) return dispChanList;
+  const st = await api('/api/status');
+  dispChanList = ((st && st.channels) ? st.channels : [])
+    .filter(c => c.enabled !== false)
+    .map(c => ({ id: c.id, name: c.name || c.id, unit: c.unit || '' }));
+  return dispChanList;
+}
+
+function renderDispChannels(csv) {
+  const box = document.getElementById('dispChBox');
+  if (!box) return;
+  if (!dispChanList) { box.textContent = '—'; return; }
+  const sel = new Set(String(csv || '').split(',').map(x => x.trim()).filter(Boolean));
+  const items = dispChanList.slice();
+  // Kanał zapisany w ustawieniach, ale nieobecny na liście (np. wyłączony),
+  // dopisujemy - inaczej zniknąłby po zapisie.
+  sel.forEach(id => { if (!items.some(c => c.id === id)) items.push({ id, name: id, unit: '' }); });
+  const frag = document.createDocumentFragment();
+  items.forEach(c => {
+    const lab = document.createElement('label');
+    lab.className = 'checkbox';
+    lab.style.marginRight = '16px';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = c.id;
+    cb.checked = sel.has(c.id);
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(' ' + c.name + (c.unit ? ' (' + c.unit + ')' : '')));
+    frag.appendChild(lab);
+  });
+  box.replaceChildren(frag);
+}
+
+// Kolejność checkboxów = kolejność wyświetlania na ekranie.
+function readDispChannels() {
+  const box = document.getElementById('dispChBox');
+  if (!box) return '';
+  return Array.from(box.querySelectorAll('input[type="checkbox"]'))
+    .filter(cb => cb.checked).map(cb => cb.value).join(',');
 }
 
 async function saveDisplay() {
@@ -5907,7 +6066,24 @@ async function saveDisplay() {
     offrot: Number(el('disp_offrot').value),
     offx: Number(el('disp_offx').value),
     offy: Number(el('disp_offy').value),
-    bgr: el('disp_bgr').checked
+    bgr: el('disp_bgr').checked,
+    mode: Number(el('disp_mode').value),
+    font: Number(el('disp_font').value),
+    step_s: Number(el('disp_step_s').value),
+    channels: readDispChannels(),
+    night: el('disp_night').checked,
+    night_from: Number(el('disp_nf').value),
+    night_to: Number(el('disp_nt').value),
+    ic_x: Number(el('disp_ic_x').value),
+    ic_y: Number(el('disp_ic_y').value),
+    icon_paths: {
+      sun: el('disp_i_sun').value.trim(),
+      cloud: el('disp_i_cloud').value.trim(),
+      rain: el('disp_i_rain').value.trim(),
+      snow: el('disp_i_snow').value.trim(),
+      fog: el('disp_i_fog').value.trim(),
+      night: el('disp_i_night').value.trim()
+    }
   });
   btn.disabled = false;
   if (r && !r.error) {
@@ -5918,8 +6094,41 @@ async function saveDisplay() {
   displayApply(r);
 }
 
-function displayPollStart() {
-  if (dispPollTimer) return;
+// Wgranie grafiki pogody na kartę SD: endpoint przyjmuje surowe bajty pliku
+// (POST /api/sd/upload?path=/tft/<nazwa>.bmp), a po zapisie wpisujemy ścieżkę
+// w formularzu i zapisujemy ustawienia, żeby grafika od razu działała.
+async function uploadDispIcon() {
+  const what = document.getElementById('dispUploadWhat').value;
+  const fileEl = document.getElementById('dispUploadFile');
+  const msg = document.getElementById('dispUploadMsg');
+  const btn = document.getElementById('dispUploadBtn');
+  const f = fileEl.files && fileEl.files[0];
+  if (!f) { msg.textContent = 'Najpierw wybierz plik BMP.'; return; }
+  const path = '/tft/' + what + '.bmp';
+  btn.disabled = true;
+  msg.textContent = 'Wgrywam ' + f.name + ' (' + Math.round(f.size / 1024) + ' KB) → ' + path + ' …';
+  try {
+    const res = await fetch('/api/sd/upload?path=' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: f
+    });
+    const j = await res.json().catch(() => null);
+    if (res.ok && j && j.ok) {
+      msg.textContent = 'Zapisano ' + j.bytes + ' B → ' + j.path;
+      const field = document.getElementById('disp_i_' + what);
+      if (field) field.value = path;
+      await saveDisplay();
+    } else {
+      msg.textContent = 'Błąd: ' + ((j && j.error) || ('HTTP ' + res.status));
+    }
+  } catch (e) {
+    msg.textContent = 'Błąd połączenia: ' + e;
+  }
+  btn.disabled = false;
+}
+
+function displayPollStart() {  if (dispPollTimer) return;
   dispPollTimer = setInterval(() => {
     if (document.getElementById('tab-display').classList.contains('active')) loadDisplay();
   }, 5000);

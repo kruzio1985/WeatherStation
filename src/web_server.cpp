@@ -244,10 +244,43 @@ static void imgBodySink(AsyncWebServerRequest* r, uint8_t* data, size_t len,
 }
 
 // ------------------------------------------------------------
+//  Wgranie pliku na kartę SD (grafiki wyświetlacza)
+//  Bufor w PSRAM, bo plik przychodzi w kawałkach przez body sink; rozmiar
+//  ograniczony do 512 KB (grafika 100x100 to ~30 KB).
+// ------------------------------------------------------------
+static const size_t MAX_SD_BODY = 512 * 1024;
+static uint8_t*  s_sdUpBuf = nullptr;
+static size_t    s_sdUpLen = 0;
+static size_t    s_sdUpCap = 0;
+static AsyncWebServerRequest* s_sdUpReq = nullptr;
+static bool      s_sdUpTooBig = false;
+
+static void sdUploadSink(AsyncWebServerRequest* r, uint8_t* data, size_t len,
+                         size_t index, size_t total) {
+  if (index == 0) {
+    s_sdUpLen = 0;
+    s_sdUpTooBig = false;
+    s_sdUpReq = r;
+    const size_t want = (total > 0) ? total : MAX_SD_BODY;
+    if (want > MAX_SD_BODY) { s_sdUpTooBig = true; return; }
+    if (s_sdUpCap < want) {
+      if (s_sdUpBuf) { heap_caps_free(s_sdUpBuf); s_sdUpBuf = nullptr; s_sdUpCap = 0; }
+      s_sdUpBuf = (uint8_t*)heap_caps_malloc(want, MALLOC_CAP_SPIRAM);
+      if (!s_sdUpBuf) s_sdUpBuf = (uint8_t*)malloc(want);
+      if (!s_sdUpBuf) { s_sdUpTooBig = true; return; }
+      s_sdUpCap = want;
+    }
+  }
+  if (r != s_sdUpReq || s_sdUpTooBig) return;
+  if (s_sdUpLen + len > s_sdUpCap) { s_sdUpTooBig = true; return; }
+  memcpy(s_sdUpBuf + s_sdUpLen, data, len);
+  s_sdUpLen += len;
+}
+
+// ------------------------------------------------------------
 //  Pomocnicze
 // ------------------------------------------------------------
-static String jsonError(const char* msg) {
-  JsonDocument d;
+static String jsonError(const char* msg) {  JsonDocument d;
   d["error"] = msg;
   String s;
   serializeJson(d, s);
@@ -723,6 +756,43 @@ void WebServerManager::registerRoutes() {
     if (ok) logger.begin();
     r->send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : jsonError("Formatowanie nieudane"));
   });
+
+  // Wgranie pliku na kartę SD (grafiki wyświetlacza). Treść żądania to surowe
+  // bajty pliku, a ścieżkę podaje parametr "path" (np. /tft/slonce.bmp).
+  // Przyjmujemy wyłącznie grafiki BMP - katalog nadrzędny tworzy się sam.
+  server.on("/api/sd/upload", HTTP_POST,
+    [](AsyncWebServerRequest* r) {
+      JsonDocument d;
+      const String path = r->hasArg("path") ? r->arg("path") : String();
+      bool ok = false;
+      String err;
+      if (!path.startsWith("/") || path.indexOf("..") >= 0) {
+        err = "Ścieżka musi zaczynać się od / i nie zawierać ..";
+      } else if (!path.endsWith(".bmp")) {
+        err = "Dozwolone są tylko pliki grafiki BMP (.bmp)";
+      } else if (!sdCard.mounted()) {
+        err = "Karta SD niedostępna";
+      } else if (r == s_sdUpReq && !s_sdUpTooBig && s_sdUpLen >= 2) {
+        sdCard.deleteFile(path);            // nadpisujemy, nie dopisujemy
+        ok = sdCard.writeBlock(path, s_sdUpBuf, s_sdUpLen);
+        if (!ok) err = "Błąd zapisu na karcie SD";
+      } else if (s_sdUpTooBig) {
+        err = "Plik przekracza 512 KB";
+      } else {
+        err = "Brak danych pliku";
+      }
+      d["ok"] = ok;
+      if (ok) {
+        d["path"]  = path;
+        d["bytes"] = (uint32_t)s_sdUpLen;
+        display.reloadIcons();              // następne odświeżenie wczyta grafikę
+      } else {
+        d["error"] = err;
+      }
+      String s;
+      serializeJson(d, s);
+      r->send(ok ? 200 : 400, "application/json", s);
+    }, nullptr, sdUploadSink);
 
   // Ponowne wykrycie karty bez restartu stacji: zwalnia poprzedni montaż
   // i próbuje od nowa (SDMMC, potem SPI) - przydaje się, gdy kartę włożono

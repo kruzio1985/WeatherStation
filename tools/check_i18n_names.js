@@ -160,7 +160,9 @@ for (const g of groups) {
 // disp_* : ustawienia wyswietlacza TFT maja wlasna zakladke "Wyswietlacz TFT"
 // (GET/POST /api/display), a nie pola w formularzu kalibracji ukladow.
 const CALIB_NO_UI = new Set(['disp_on', 'disp_int', 'disp_rot', 'disp_theme', 'disp_inv',
-  'disp_ic', 'disp_offrot', 'disp_offx', 'disp_offy', 'disp_bgr']);
+  'disp_ic', 'disp_offrot', 'disp_offx', 'disp_offy', 'disp_bgr',
+  'disp_mode', 'disp_font', 'disp_step_s', 'disp_night', 'disp_nf', 'disp_nt',
+  'disp_ic_x', 'disp_ic_y']);
 const noUi = [...drvKeys.keys()].filter((k) => !calib.keySet.has(k) && !CALIB_NO_UI.has(k));
 if (!noUi.length) {
   console.log('OK   kalibracja ukladow - klucze driverow w formularzu (' + drvKeys.size + ')');

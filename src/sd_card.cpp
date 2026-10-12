@@ -571,6 +571,13 @@ File SdCardManager::openRead(const String& path) {
   return SD.open(path, FILE_READ);
 }
 
+fs::FS& SdCardManager::fs() {
+#if SD_MMC_AVAILABLE
+  if (sdmmc_) return SD_MMC;
+#endif
+  return SD;
+}
+
 bool SdCardManager::writeBlock(const String& path, const uint8_t* data, size_t len) {
   if (!mounted_) return false;
   if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);

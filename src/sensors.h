@@ -113,6 +113,10 @@ public:
 
   // Bieżąca wartość pojedynczego kanału (NAN = brak danych / kanał wyłączony)
   float valueOf(const String& id);
+  // Nazwa, jednostka i liczba miejsc po przecinku kanału - używa tego
+  // wyświetlacz TFT przy dużych wskazaniach (tryby "cykl" i "pogoda").
+  // false = nie ma takiego kanału (albo jest wyłączony).
+  bool channelMeta(const String& id, String& name, String& unit, uint8_t& decimals);
 
   // Diagnostyka magistrali I2C: skan adresów (przy starcie, osobno dla każdego
   // kanału PCA9548A) + wynik w JSON dla GET /api/i2c.
