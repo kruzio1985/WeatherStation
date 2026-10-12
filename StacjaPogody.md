@@ -64,6 +64,33 @@ z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, al
 
 ---
 
+## AKTUALIZACJA (12.10, 07:30) — ekran TFT, diagnostyka I2C, czujnik na kanale 7
+
+- **Ekran GMT024-10 / ST7789 (osobna magistrala SPI): DZIAŁA.** Sterownik `src/drv_display.{h,cpp}`
+  (LovyanGFX, bufor klatki w PSRAM, układ poziomy 320×240 przy `rotate=1`), piny `SCK=40, MOSI(SDA)=7,
+  CS=21, DC=41, RST=3`, zakładka „Wyświetlacz TFT" + `GET/POST /api/display`. Pełny redraw 77–78 ms
+  (bez bufora 118 ms). Uwaga: na module „SDA" = SPI **MOSI**, nie I2C — nie wpinać w rozdzielacz.
+- **Diagnostyka magistrali I2C:** `GET /api/i2c` (mapa per kanał PCA9548A + stan linii SDA/SCL),
+  `POST /api/i2c/scan` (skan i wykrycie czujników T/H/P **bez restartu**) oraz
+  `POST /api/i2c/probe` (surowe bajty układu 0x38 → pole `probe038` w `/api/i2c`).
+  Poprawka: `addrList()` zwracał adresy **bez cudzysłowów** (`[0x57,0x68]`) → `/api/i2c` był
+  niepoprawnym JSON-em; teraz `["0x57","0x68"]`.
+- **Kanał 7 rozdzielacza, adres 0x38 — DZIAŁA.** To **nie jest SHT3x** (Sensirion ma sztywno
+  0x44/0x45), a klon **AHT2x** w obudowie opisanej „SHT3X": CRC Sensiriona nie pasuje, odpowiedź ma
+  układ *status + 5 bajtów* (`18` + RH[19:0] + T[19:0]). Odczyt: **27,3 °C / 28,0 %** →
+  `ths_aht_t`/`ths_aht_h` → MQTT `stacja_pogody/sensor/ths_aht_*`. Nazwy encji zostają „AHT2x"
+  (decyzja użytkownika).
+- **Naprawione w `drv_ths.cpp`:** komenda pomiaru AHT szła jako **4 bajty** (`00 AC 33 00`) zamiast
+  3 (`AC 33 00`) — dodany `i2cuWrite3()` w `i2c_util.h`; `ahtRead()` **kasowało wynik po 1 s**
+  (pętla czyta rzadziej) → kanały zostawały wiecznie puste — teraz czeka na bit „busy" w bajcie
+  statusu; `ahtProbe()` najpierw inicjalizuje układ (0xE1 / 0xBE), dopiero potem wymaga bitu CAL.
+- Mapa magistrali (07:30): ch0 `0x57,0x68`, ch1 `0x23`, ch2 —, ch3 `0x76` (BMP280), ch4 —, ch5 —,
+  ch6 —, ch7 `0x38` (AHT2x). Multiplekser `0x70`, razem 5 układów.
+- **Nadal nie wgrane:** `uploadfs` (strona z zakładką „Wyświetlacz TFT" i mapą I2C — serwowany
+  `index.html` jest starszy niż lokalny).
+
+---
+
 ## 4. BUDOWANIE I FLASHOWANIE (gotowe komendy)
 
 ### Master (S3)

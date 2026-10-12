@@ -24,6 +24,7 @@
 #include "ota.h"
 #include "syslog.h"
 #include "led_ring.h"
+#include "drv_display.h"
 #include "nvs_store.h"
 #include "gps.h"
 #include "astro.h"
@@ -1167,6 +1168,47 @@ void WebServerManager::registerRoutes() {
     }
     LOG_I("Mapa pinów zapisana z www - wymagany restart");
     r->send(200, "application/json", pinMap.toJson());
+  });
+
+  // --- Wyświetlacz TFT (opcjonalny, własna magistrala SPI) ---
+  server.on("/api/display", HTTP_GET, [](AsyncWebServerRequest* r) {
+    r->send(200, "application/json", display.json());
+  });
+
+  // --- Diagnostyka magistrali I2C (skan z ostatniego startu) ---
+  server.on("/api/i2c", HTTP_GET, [](AsyncWebServerRequest* r) {
+    r->send(200, "application/json", sensors.i2cScanJson());
+  });
+
+  // Zlecenie skanu bez restartu - właściwy skan robi pętla główna (readAll),
+  // żeby magistralą nie korzystały dwa zadania naraz. Odpowiadamy od razu,
+  // a stronę www odświeżamy po chwili przez GET /api/i2c.
+  onPost("/api/i2c/scan", [](AsyncWebServerRequest* r) {
+    sensors.requestI2cRescan();
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  // Diagnostyka układu pod 0x38 (klony "SHT3x"/AHT): surowe bajty w /api/i2c
+  // jako pole "probe038". Też przez pętlę główną.
+  onPost("/api/i2c/probe", [](AsyncWebServerRequest* r) {
+    sensors.requestI2cProbe();
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  // Ustawienia wyświetlacza z www: {"enabled":..,"interval_s":..,"rotate":..,
+  // "theme":..,"invert":..} - każdy klucz opcjonalny. Zapis do NVS i ponowna
+  // inicjalizacja sterownika (piny brane z mapy pinów: tft_sck/tft_mosi/...).
+  onPost("/api/display", [](AsyncWebServerRequest* r) {
+    String body = bodyOf(r);
+    if (body.length() == 0) {
+      r->send(400, "application/json", jsonError("Brak danych"));
+      return;
+    }
+    if (!display.applyJson(body.c_str(), body.length())) {
+      r->send(400, "application/json", jsonError("Błędny JSON"));
+      return;
+    }
+    r->send(200, "application/json", display.json());
   });
 
   // --- Pierścień LED RGB (status pogody) ---

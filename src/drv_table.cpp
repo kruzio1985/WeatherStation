@@ -79,6 +79,16 @@ void drvBeginAll() {
   LOG_I("Sterowniki modułowe: %u zestawów aktywnych", (unsigned)n);
 }
 
+// Ponowne wykrywanie TYLKO sterownika temperatury/wilgotności/ciśnienia
+// (drv_ths: SHT3x, AHT, HDC, Si7021, BMP280/388, DPS310, MS5611...). Używane
+// przy diagnozie magistrali I2C - po przepięciu czujnika nie trzeba restartować
+// stacji. Nie wołamy całego drvBeginAll(), bo część sterowników (I2S, SPI)
+// zakłada zasoby, których nie wolno zakładać drugi raz.
+void drvRedetectThs() {
+  if (drvThs.begin) drvThs.begin(SINK);
+  LOG_I("Ponowne wykrywanie czujników T/H/P (drv_ths) wykonane");
+}
+
 void drvReadAll() {
   for (uint16_t i = 0; i < MODULE_SLOTS; i++) {
     const DrvModule* m = modAt(i);

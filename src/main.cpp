@@ -24,6 +24,7 @@
 #include "openmeteo.h"
 #include "syslog.h"
 #include "led_ring.h"
+#include "drv_display.h"
 #include "flashfix.h"
 #include "gps.h"
 #include "astro.h"
@@ -345,6 +346,10 @@ void setup() {
   // Pierścień LED RGB - po pinMap i config (jasność/stan z ustawień)
   ledRing.begin();
 
+  // Wyświetlacz TFT (opcjonalny, własna magistrala SPI) - piny z pinMap,
+  // ustawienia z sekcji "extra" (domyślnie wyłączony)
+  display.begin();
+
   // Magistrala RS485 - po pinMap (piny RX/TX/DE) i config (rola, prędkość)
   rs485.begin();
 
@@ -499,6 +504,9 @@ void loop() {
 
   // Pierścień LED RGB: kolor stanu pogody + animacja
   ledRing.loop();
+
+  // Wyświetlacz TFT: odświeżanie z odstępem ustawionym na stronie www
+  display.loop();
   esp_task_wdt_reset();   // zdjęcie z kamery: pobranie po HTTP (limit 4 s) + analiza JPEG
   camera.loop();          // timelapse i zdjęcia zlecone z www (gdy kamera włączona)
   esp_task_wdt_reset();

@@ -104,11 +104,11 @@ static const uint16_t NCHANS = sizeof(CHANS) / sizeof(CHANS[0]);
 
 #define THS_AHT_ADDR      0x38
 #define THS_AHT_REG_STAT  0x71     // rejestr statusu
-#define THS_AHT_CMD_INIT1 0xE1     // inicjalizacja (AHT10)
-#define THS_AHT_CMD_INIT2 0xBE     // inicjalizacja (AHT20/21/25)
-#define THS_AHT_CMD_MEAS  0xAC     // wyzwolenie pomiaru (arg 0x3300)
-#define THS_AHT_INIT_ARG  0x0800
-#define THS_AHT_MEAS_ARG  0x3300
+#define THS_AHT_CMD_INIT1 0xE1     // inicjalizacja (AHT10): 0xE1 0x08 0x00
+#define THS_AHT_CMD_INIT2 0xBE     // inicjalizacja (AHT20/21/25): 0xBE 0x08 0x00
+#define THS_AHT_CMD_MEAS  0xAC     // pomiar: 0xAC 0x33 0x00
+#define THS_AHT_ARG_INIT  0x08     // 2. bajt inicjalizacji (3. = 0x00)
+#define THS_AHT_ARG_MEAS  0x33     // 2. bajt pomiaru     (3. = 0x00)
 
 #define THS_HDC_ADDR1     0x40
 #define THS_HDC_ADDR2     0x41
@@ -400,17 +400,26 @@ static void shtRead() {
 // =============================================================
 static bool ahtProbe(uint8_t addr) {
   uint8_t st = 0;
+  // Układ musi w ogóle odpowiadać na rejestr statusu.
   if (!i2cuReadReg(addr, THS_AHT_REG_STAT, &st, 1)) return false;
-  if (!(st & 0x08)) return false;               // układ nie zgłasza kalibracji
-  // Inicjalizacja: AHT10 używa 0xE1, AHT20/21/25 - 0xBE; próbujemy oba warianty
-  if (!i2cuWrite16Arg(addr, THS_AHT_CMD_INIT1, THS_AHT_INIT_ARG)) return false;
-  delay(20);
-  if (!i2cuReadReg(addr, THS_AHT_REG_STAT, &st, 1)) return false;
+  // Świeży AHT10/20/21 NIE ma jeszcze bitu kalibracji (0x08) - dlatego
+  // najpierw próbujemy inicjalizacji, a status sprawdzamy po niej.
+  // (Wcześniej wymagaliśmy bitu od razu, przez co nieinitowany układ, a także
+  // klony "SHT3X" siedzące pod 0x38, były odrzucane.)
   if (!(st & 0x08)) {
-    if (!i2cuWrite16Arg(addr, THS_AHT_CMD_INIT2, THS_AHT_INIT_ARG)) return false;
+    // AHT10 używa 0xE1, AHT20/21/25 - 0xBE; próbujemy oba warianty.
+    if (!i2cuWrite3(addr, THS_AHT_CMD_INIT1, THS_AHT_ARG_INIT, 0x00)) return false;
     delay(20);
     if (!i2cuReadReg(addr, THS_AHT_REG_STAT, &st, 1)) return false;
-    if (!(st & 0x08)) return false;
+    if (!(st & 0x08)) {
+      if (!i2cuWrite3(addr, THS_AHT_CMD_INIT2, THS_AHT_ARG_INIT, 0x00)) return false;
+      delay(20);
+      if (!i2cuReadReg(addr, THS_AHT_REG_STAT, &st, 1)) return false;
+      if (!(st & 0x08)) {
+        LOG_I("AHT: układ 0x%02X odpowiedział, ale nie zgłasza kalibracji (status 0x%02X)", addr, st);
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -420,20 +429,21 @@ static void ahtClear() {
   clearCh(CH_AHT_H);
 }
 
-// Pomiar trwa ~80 ms, więc rozbijamy go na dwa cykle odczytu (bez blokowania)
+// Pomiar AHT trwa ~80 ms. Wynik jest ważny aż do następnego pomiaru, więc
+// odczyt może wypaść w kolejnym cyklu pętli - nie wolno go odrzucać po czasie
+// (wcześniej po 1 s dane były kasowane i kanały zostawały puste).
 static void ahtRead() {
   if (s_dev.ahtPhase == 0) {
-    if (!i2cuWrite16Arg(s_dev.ahtAddr, THS_AHT_CMD_MEAS, THS_AHT_MEAS_ARG)) { ahtClear(); return; }
+    if (!i2cuWrite3(s_dev.ahtAddr, THS_AHT_CMD_MEAS, THS_AHT_ARG_MEAS, 0x00)) { ahtClear(); return; }
     s_dev.ahtPhase = 1;
     s_dev.ahtMs = millis();
     return;
   }
-  uint32_t el = millis() - s_dev.ahtMs;
-  if (el < 90) return;                          // pomiar jeszcze trwa - wracamy w kolejnym cyklu
-  s_dev.ahtPhase = 0;
-  if (el > 1000) { ahtClear(); return; }        // brak odpowiedzi
+  if (millis() - s_dev.ahtMs < 80) return;      // pomiar jeszcze trwa
   uint8_t b[6];
-  if (!i2cuRead(s_dev.ahtAddr, b, sizeof(b))) { ahtClear(); return; }
+  if (!i2cuRead(s_dev.ahtAddr, b, sizeof(b))) { s_dev.ahtPhase = 0; ahtClear(); return; }
+  if (b[0] & 0x80) return;                      // bit "busy" - czekamy na kolejny cykl
+  s_dev.ahtPhase = 0;
   float rh = ((float)(((uint32_t)b[1] << 12) | ((uint32_t)b[2] << 4) | (b[3] >> 4))) * 100.0f / 1048576.0f;
   float t  = ((float)((((uint32_t)b[3] & 0x0F) << 16) | ((uint32_t)b[4] << 8) | b[5])) * 200.0f / 1048576.0f - 50.0f;
   pubT(CH_AHT_T, t);

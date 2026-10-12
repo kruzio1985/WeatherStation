@@ -12,7 +12,9 @@
 //  Prognoza Open-Meteo (7 dni).
 //
 //  Pobiera codzienną prognozę z https://api.open-meteo.com dla
-//  współrzędnych skonfigurowanych w stacji (latitude/longitude).
+//  współrzędnych stacji: gdy GPS ma świeży fix, używana jest pozycja
+//  z GPS (tak samo jak w astro.cpp), a wpisane ręcznie latitude/longitude
+//  są tylko zapasem.
 //  Dane trzymane są w pamięci podręcznej (PSRAM przy parsowaniu JSON),
 //  a strona www odczytuje je przez GET /api/openmeteo.
 //
@@ -73,6 +75,9 @@ private:
   OmCurrent current_;
   int dayCount_ = 0;
   bool valid_ = false;          // czy bufor zawiera dane
+  double usedLat_ = 0.0;        // współrzędne użyte w ostatnim pobraniu
+  double usedLon_ = 0.0;
+  bool geoFromGps_ = false;     // true = pozycja z GPS, false = z ustawień
   unsigned long fetchedAtMs_ = 0;
   String error_;
   volatile bool requestNow_ = false;

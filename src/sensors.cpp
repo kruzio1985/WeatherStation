@@ -7,6 +7,8 @@
  */
 #include "sensors.h"
 #include "config.h"
+#include "drv_table.h"
+#include "i2c_util.h"
 #include "pinmap.h"
 #include "syslog.h"
 #include <Wire.h>
@@ -115,6 +117,62 @@ static void i2cBusRecover(int sda, int scl) {
 // 0x70..0x77 (piny A0-A2). Gdy czujniki siedzą za multiplekserem, włączamy
 // wszystkie kanały naraz (rejestr sterujący = 0xFF), dzięki czemu cała
 // magistrala wygląda jak jedna i zwykłe wykrywanie czujników działa bez zmian.
+static uint8_t s_muxAddr = 0;          // 0 = brak multipleksera
+
+static bool muxSelect(uint8_t mask) {
+  if (!s_muxAddr) return false;
+  Wire.beginTransmission(s_muxAddr);
+  Wire.write(mask);
+  if (Wire.endTransmission() != 0) return false;
+  if (Wire.requestFrom((int)s_muxAddr, 1) != 1) return false;
+  unsigned long t = millis();
+  while (!Wire.available() && millis() - t < 20) delay(1);
+  if (!Wire.available()) return false;
+  return (uint8_t)Wire.read() == mask;
+}
+
+// Przeskanowanie magistrali przy otwartym wybranym kanale. Znalezione adresy
+// trafiają do tablicy (do policzenia potem, co siedzi na magistrali
+// bezpośredniej, a co za konkretnym kanałem multipleksera).
+static uint8_t scanBus(uint8_t mask, uint8_t* found, uint8_t cap) {
+  uint8_t n = 0;
+  if (s_muxAddr) muxSelect(mask);
+  for (uint8_t a = 0x03; a <= 0x77 && n < cap; a++) {
+    if (a == s_muxAddr) continue;                     // sam multiplekser
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() != 0) continue;
+    found[n++] = a;
+  }
+  return n;
+}
+
+static String addrList(const uint8_t* found, uint8_t n) {
+  String out;
+  for (uint8_t i = 0; i < n; i++) {
+    if (out.length()) out += ',';
+    char b[8];
+    // adresy jako napisy - bez cudzysłowów JSON był niepoprawny (0x57 to nie liczba JSON)
+    snprintf(b, sizeof(b), "\"0x%02X\"", found[i]);
+    out += b;
+  }
+  return out;
+}
+
+// Stan linii SDA/SCL w spoczynku (na otwartym wybranym kanale). Przy zamienionych
+// przewodach, zwarciu albo braku zasilania jedna (lub obie) linie bywają
+// przytrzymane nisko - to najszybsza diagnoza "czujnik nie odpowiada, a jest
+// wpięty". Po pomiarze wracamy do trybu I2C.
+static void readIdleLevels(int sda, int scl, uint8_t& sdaHigh, uint8_t& sclHigh) {
+  Wire.end();
+  pinMode(sda, INPUT_PULLUP);
+  pinMode(scl, INPUT_PULLUP);
+  delayMicroseconds(50);
+  sdaHigh = digitalRead(sda) ? 1 : 0;
+  sclHigh = digitalRead(scl) ? 1 : 0;
+  Wire.begin(sda, scl, 50000);
+  Wire.setTimeOut(20);
+}
+
 static void enableI2cMux() {
   const uint8_t CH_ALL = 0xFF;
   for (uint8_t a = 0x70; a <= 0x77; a++) {
@@ -134,10 +192,130 @@ static void enableI2cMux() {
     uint8_t got = (uint8_t)Wire.read();
 
     if (got == CH_ALL) {
+      s_muxAddr = a;
       LOG_I("PCA9548A: multiplekser I2C pod adresem 0x%02X - wszystkie kanały włączone", a);
       return;
     }
   }
+}
+
+// Wynik ostatniego skanu (liczony przy starcie, patrz i2cScanLog) - dzięki temu
+// GET /api/i2c nie dotyka magistrali z wątku serwera www.
+static String s_i2cScanJson;
+
+// Diagnostyka układu pod adresem 0x38. Klony sprzedawane jako "SHT3x" bywają
+// AHT-podobne, więc pokazujemy surowe bajty: status 0x71, próbę inicjalizacji
+// (0xE1 i 0xBE), komendę pomiaru 0xAC 0x33 0x00 i odpowiedź. Tylko na żądanie
+// (POST /api/i2c/probe) - nic nie publikuje i nic nie zapisuje do NVS.
+static String probe038() {
+  uint8_t st = 0;
+  String s;
+
+  if (i2cuReadReg(0x38, 0x71, &st, 1)) s = "status(0x71)=" + String(st, HEX);
+  else                                 s = "status(0x71)=brak";
+
+  bool i1 = i2cuWrite3(0x38, 0xE1, 0x08, 0x00);   // inicjalizacja AHT10
+  delay(20);
+  bool i2 = i2cuWrite3(0x38, 0xBE, 0x08, 0x00);   // inicjalizacja AHT20/21/25
+  delay(20);
+  if (i2cuReadReg(0x38, 0x71, &st, 1)) s += " po-init=" + String(st, HEX);
+  s += " init(E1=" + String(i1 ? 1 : 0) + ",BE=" + String(i2 ? 1 : 0) + ")";
+
+  uint8_t b[7] = {0};
+  uint8_t n = 0;
+  bool m = i2cuWrite3(0x38, 0xAC, 0x33, 0x00);
+  delay(120);
+  if (Wire.requestFrom((int)0x38, (int)sizeof(b)) == (int)sizeof(b)) {
+    while (Wire.available() && n < sizeof(b)) b[n++] = (uint8_t)Wire.read();
+  }
+  s += " pomiar=" + String(m ? 1 : 0) + " bajty(" + String((unsigned)n) + ")=";
+  for (uint8_t i = 0; i < n; i++) {
+    if (i) s += ' ';
+    char h[4];
+    snprintf(h, sizeof(h), "%02X", (unsigned)b[i]);
+    s += h;
+  }
+  if (n >= 6) {
+    float rh = (float)(((uint32_t)b[1] << 12) | ((uint32_t)b[2] << 4) | (b[3] >> 4)) * 100.0f / 1048576.0f;
+    float t  = (float)((((uint32_t)b[3] & 0x0F) << 16) | ((uint32_t)b[4] << 8) | b[5]) * 200.0f / 1048576.0f - 50.0f;
+    s += " -> AHT: t=" + String(t, 1) + "C rh=" + String(rh, 1) + "%";
+  }
+  return s;
+}
+
+void SensorManager::i2cScanLog() {
+  static uint8_t found[8][24];
+  static uint8_t cnt[8];
+
+  String j = "{\"mux\":";
+  if (s_muxAddr) {
+    char b[8];
+    snprintf(b, sizeof(b), "0x%02X", s_muxAddr);
+    j += String("\"") + b + "\"";
+  } else {
+    j += "null";
+  }
+  j += ",\"channels\":[";
+
+  uint16_t total = 0;
+  const int i2cSda = pinMap.pin("i2c_sda");
+  const int i2cScl = pinMap.pin("i2c_scl");
+  if (s_muxAddr) {
+    for (uint8_t ch = 0; ch < 8; ch++) {
+      muxSelect((uint8_t)(1u << ch));
+      uint8_t sdaHigh = 1, sclHigh = 1;
+      if (i2cSda >= 0 && i2cScl >= 0) readIdleLevels(i2cSda, i2cScl, sdaHigh, sclHigh);
+      muxSelect((uint8_t)(1u << ch));
+      cnt[ch] = scanBus((uint8_t)(1u << ch), found[ch], sizeof(found[ch]));
+      total += cnt[ch];
+      if (ch) j += ',';
+      j += String("{\"ch\":") + ch + ",\"count\":" + cnt[ch] + ",\"sda\":" + sdaHigh +
+           ",\"scl\":" + sclHigh + ",\"addr\":[" + addrList(found[ch], cnt[ch]) + "]}";
+      if (cnt[ch]) {
+        LOG_I("I2C skan: kanał %u -> %s (SDA %u, SCL %u)", ch, addrList(found[ch], cnt[ch]).c_str(),
+              sdaHigh, sclHigh);
+      } else if (!sdaHigh || !sclHigh) {
+        LOG_W("I2C skan: kanał %u - pusto, linie SDA %u / SCL %u (0 = przytrzymana nisko!)",
+              ch, sdaHigh, sclHigh);
+      }
+    }
+    muxSelect(0xFF);   // przywrócenie normalnej pracy (wszystkie kanały otwarte)
+
+    // Adres widoczny w KAŻDYM kanale to układ na magistrali bezpośredniej
+    // (nie za multiplekserem) - najczęściej czujniki na płytce stacji.
+    uint8_t direct[24];
+    uint8_t dn = 0;
+    for (uint8_t i = 0; i < cnt[0] && dn < sizeof(direct); i++) {
+      bool inAll = true;
+      for (uint8_t ch = 1; ch < 8 && inAll; ch++) {
+        bool hit = false;
+        for (uint8_t k = 0; k < cnt[ch] && !hit; k++) if (found[ch][k] == found[0][i]) hit = true;
+        if (!hit) inAll = false;
+      }
+      if (inAll) direct[dn++] = found[0][i];
+    }
+    j += String("],\"direct\":[") + addrList(direct, dn) + "],\"total\":" + total + "}";
+    LOG_I("I2C skan: magistrala bezpośrednia -> %s", dn ? addrList(direct, dn).c_str() : "(brak)");
+  } else {
+    uint16_t n = scanBus(0xFF, found[0], sizeof(found[0]));
+    total = n;
+    j += String("{\"ch\":-1,\"count\":") + n + ",\"addr\":[" + addrList(found[0], n) + "]}";
+    j += String("],\"direct\":[" ) + addrList(found[0], n) + "],\"total\":" + total + "}";
+    LOG_I("I2C skan (bez multipleksera): %s", n ? addrList(found[0], n).c_str() : "(brak układów)");
+  }
+  if (i2cProbeReq_) {
+    i2cProbeReq_ = false;
+    String p = probe038();
+    LOG_I("0x38: %s", p.c_str());
+    // dodatkowe pole tylko dla diagnostyki na żądanie (wstawiane przed "}")
+    j = j.substring(0, j.length() - 1) + ",\"probe038\":\"" + p + "\"}";
+  }
+
+  s_i2cScanJson = j;
+}
+
+String SensorManager::i2cScanJson() {  if (s_i2cScanJson.length()) return s_i2cScanJson;
+  return String("{\"mux\":null,\"channels\":[],\"total\":0}");
 }
 
 void IRAM_ATTR SensorManager::rainIsr()  { rainPulses_++; }
@@ -309,6 +487,7 @@ bool SensorManager::begin() {
     LOG_I("I2C: Wire.begin gotowe");
     enableI2cMux();   // PCA9548A (rozdzielacz): ujawnij czujniki za multiplekserem
     LOG_I("I2C: multiplekser gotowy");
+    i2cScanLog();     // diagnostyka: co wisi na magistrali (per kanał muxa)
     Adafruit_BME280* b = new Adafruit_BME280();
     if (b->begin(0x76, &Wire) || b->begin(0x77, &Wire)) {
       bme_ = b;
@@ -573,6 +752,16 @@ void SensorManager::putValue(const String& id, float v, bool valid) {
 }
 
 void SensorManager::readAll() {
+  // Diagnostyka I2C zlecona ze strony www: ponowny skan magistrali + wykrycie
+  // czujników T/H/P. Wykonywane tutaj (pętla główna), a nie w wątku serwera -
+  // magistralą nie może korzystać dwóch zadań naraz.
+  if (i2cRescanReq_) {
+    i2cRescanReq_ = false;
+    i2cScanLog();
+    drvRedetectThs();
+    LOG_I("Diagnostyka I2C: skan i wykrywanie czujników zakończone");
+  }
+
   readBME280();
   readBH1750();
   readDallas();
@@ -583,6 +772,16 @@ void SensorManager::readAll() {
   readAq();
   readExtra();
   bridgeMissing();
+}
+
+void SensorManager::requestI2cRescan() {
+  i2cRescanReq_ = true;
+}
+
+// Diagnostyka 0x38 jedzie tą samą drogą co zwykły skan (pętla główna, readAll).
+void SensorManager::requestI2cProbe() {
+  i2cProbeReq_ = true;
+  i2cRescanReq_ = true;
 }
 
 // Barometry na magistrali - który kanał zastępuje główne "Ciśnienie", gdy
