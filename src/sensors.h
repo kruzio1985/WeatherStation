@@ -113,6 +113,17 @@ public:
 
   // Bieżąca wartość pojedynczego kanału (NAN = brak danych / kanał wyłączony)
   float valueOf(const String& id);
+
+  // Diagnostyka magistrali I2C: skan adresów (przy starcie, osobno dla każdego
+  // kanału PCA9548A) + wynik w JSON dla GET /api/i2c.
+  void i2cScanLog();
+  String i2cScanJson();
+  // Zlecenie ponownego skanu + wykrycia czujników T/H/P (bez restartu).
+  // Wykonuje je pętla główna w readAll() - magistrala nie może mieć dwóch zadań.
+  void requestI2cRescan();
+  // Diagnostyka układu pod adresem 0x38 (klony "SHT3x"/AHT): surowe bajty
+  // po komendzie pomiaru. Wynik trafia do JSON-a /api/i2c jako "probe038".
+  void requestI2cProbe();
   // Najniższa potwierdzona temperatura ze strefy zewnętrznej (NAN, gdy brak).
   // Kamera używa jej, żeby nie ogłosić śniegu przy dodatniej temperaturze.
   float coldestOutdoorTemp();
@@ -262,6 +273,8 @@ private:
   bool dallasOk_ = false;
   int dsCount_ = 0;
   volatile bool dsDiscoverRequested_ = false;
+  volatile bool i2cRescanReq_ = false;   // zlecenie skanu I2C z www (readAll)
+  volatile bool i2cProbeReq_ = false;    // zlecenie diagnostyki 0x38 z www
 
   // PMS5003 (UART2, opcjonalny)
   bool pmsStarted_ = false;   // UART otwarty

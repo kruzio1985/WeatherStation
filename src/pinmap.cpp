@@ -51,6 +51,16 @@ static const PinRole ROLES[] = {
   {"rgb",        "Pierścień LED RGB",  "Płytka", "WS2812B / RGBIC 36 px - jeden przewód danych; 5V i GND z płytki",  PIN_RGB,  false},
   {"wd_heartbeat","Watchdog - impuls życia", "Płytka", "Impulsy ~1 Hz dla zewnętrznego modułu watchdog (przekaźnik odcinający zasilanie, gdy impulsy znikną); włącz checkboxem w Konfiguracja", PIN_WD, false},
 
+  // --- Wyświetlacz TFT SPI (GMT024-10 / ILI9341 240x320) ---
+  // Osobna magistrala SPI (SPI3) - nie koliduje z kartą SD ani z I2C.
+  // Sprawdzone wolne piny na N16R8: SCK=40, SDA(MOSI)=7, CS=21, DC=41, RST=3
+  // (40 i 7 zwalniają się po wyłączeniu Tuya i pierścienia LED).
+  {"tft_sck",    "TFT - SCK",          "Wyświetlacz TFT", "Zegar SPI wyświetlacza (moduł: pin SCK); -1 = brak wyświetlacza", PIN_TFT_SCK, false},
+  {"tft_mosi",   "TFT - SDA (MOSI)",   "Wyświetlacz TFT", "Dane do wyświetlacza (moduł: pin SDA - to SPI MOSI, nie I2C!)", PIN_TFT_MOSI, false},
+  {"tft_cs",     "TFT - CS",           "Wyświetlacz TFT", "Wybór układu (chip select) wyświetlacza", PIN_TFT_CS, false},
+  {"tft_dc",     "TFT - DC",           "Wyświetlacz TFT", "Rozróżnienie danych i rozkazów (data/command)", PIN_TFT_DC, false},
+  {"tft_rst",    "TFT - RST",          "Wyświetlacz TFT", "Reset wyświetlacza (-1 = pozostaw niepodłączony, moduł i tak ma pull-up)", PIN_TFT_RST, false},
+
   // --- GPS (odbiornik NMEA 0183 na UART1) ---
   {"gps_rx",     "GPS - RX",           "GPS", "RX ESP32 <- TX odbiornika (NEO-6M/7M/8M, ATGM336H, L76K); NMEA 0183, 9600 Bd; -1 wyłącza GPS", PIN_GPS_RX, false},
   {"gps_tx",     "GPS - TX",           "GPS", "TX ESP32 -> RX odbiornika; potrzebne tylko do zmiany ustawień modułu (u-center) - można zostawić -1", PIN_GPS_TX, false},

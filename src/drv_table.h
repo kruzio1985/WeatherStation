@@ -25,5 +25,8 @@ const DrvModule* drvModuleAt(uint16_t i);
 
 // Wykrywanie sprzętu i pierwsze odczyty (wołane z SensorManager::beginExtra)
 void drvBeginAll();
+
+// Ponowne wykrywanie czujników T/H/P (drv_ths) - diagnostyka I2C bez restartu
+void drvRedetectThs();
 // Odczyt wszystkich modułów (wołane z SensorManager::readExtra)
 void drvReadAll();

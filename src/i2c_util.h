@@ -77,6 +77,17 @@ inline bool i2cuWrite16Arg(uint8_t addr, uint16_t cmd, uint16_t arg) {
   return Wire.endTransmission() == 0;
 }
 
+// Zapis komendy 3-bajtowej (bajt komendy + 2 bajty argumentu) - tak pracują
+// AHT10/20/21/25 (np. 0xAC 0x33 0x00 = pomiar). i2cuWrite16Arg dokłada
+// wiodące zero starszego bajtu komendy, co dla AHT jest błędne.
+inline bool i2cuWrite3(uint8_t addr, uint8_t b0, uint8_t b1, uint8_t b2) {
+  Wire.beginTransmission(addr);
+  Wire.write(b0);
+  Wire.write(b1);
+  Wire.write(b2);
+  return Wire.endTransmission() == 0;
+}
+
 inline bool i2cuPresent(uint8_t addr) {
   Wire.beginTransmission(addr);
   return Wire.endTransmission() == 0;

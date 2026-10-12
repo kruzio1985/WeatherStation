@@ -1005,6 +1005,20 @@
 
   <section id="tab-diag">
     <h2>Diagnostyka</h2>
+    <div class="box">
+      <h3>Magistrala I2C (mapa)</h3>
+      <p class="muted">Skan pokazuje adresy odpowiadające na magistrali — osobno dla każdego kanału
+        rozdzielacza PCA9548A. „Magistrala bezpośrednia" to układy widoczne w każdym kanale
+        (czyli podłączone przed rozdzielaczem). Przycisk <b>Skanuj teraz</b> powtarza skan i ponownie
+        wykrywa czujniki temperatury/wilgotności/ciśnienia — <b>bez restartu stacji</b>, więc można
+        przepinać układy i sprawdzać na bieżąco.</p>
+      <div class="toolbar">
+        <button class="btn" id="i2cScanBtn" onclick="i2cScanNow()">Skanuj teraz</button>
+        <button class="btn ghost" onclick="loadI2c()">Odśwież</button>
+        <span class="muted" id="i2cInfo">—</span>
+      </div>
+      <div id="i2cMap" class="muted">—</div>
+    </div>
     <div class="toolbar">
       <button class="btn ghost" onclick="loadDiagnostics()">Odśwież</button>
       <label class="checkbox"><input type="checkbox" id="diagAuto" checked> Odświeżaj co 10 s</label>
@@ -1114,6 +1128,89 @@
           ale przy dużej jasności podłącz pierścień do <b>osobnego zasilacza 5 V</b> (GND wspólne z płytką).</li>
         <li>W linii danych zalecany rezystor <b>330 Ω</b> (przy płytce), a między 5V i GND przy pierścieniu kondensator <b>1000 µF / 6,3 V</b>.</li>
         <li>Jeśli kolory są przesunięte (np. zamiast zielonego świeci czerwony), zmień <b>kolejność kolorów</b> na RGB lub BRG.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="tab-display">
+    <h2>Wyświetlacz TFT (opcjonalny)</h2>
+    <p class="muted">Ekran <b>GMT024-10</b> (kontroler <b>ILI9341</b>, 2,4", 240×320) na <b>własnej magistrali SPI</b> —
+      nie podłączaj go do magistrali I2C ani do rozdzielacza PCA9548A. Piny ustawiasz w zakładce
+      <b>Piny</b> (<code>tft_sck</code>, <code>tft_mosi</code>, <code>tft_cs</code>, <code>tft_dc</code>, <code>tft_rst</code>).
+      Domyślnie wyświetlacz jest <b>wyłączony</b> — bez ekranu firmware nie robi nic.</p>
+
+    <div class="box">
+      <h3>Stan</h3>
+      <table>
+        <tbody>
+          <tr><td class="diag-key">Sterownik</td><td class="diag-value" id="dispInfoCtrl">—</td></tr>
+          <tr><td class="diag-key">Stan</td><td class="diag-value" id="dispInfoActive">—</td></tr>
+          <tr><td class="diag-key">Piny</td><td class="diag-value" id="dispInfoPins">—</td></tr>
+          <tr><td class="diag-key">Rozdzielczość</td><td class="diag-value" id="dispInfoRes">—</td></tr>
+          <tr><td class="diag-key">Czas odświeżenia</td><td class="diag-value" id="dispInfoDraw">—</td></tr>
+          <tr><td class="diag-key">Odświeżeń od startu</td><td class="diag-value" id="dispInfoDraws">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box">
+      <h3>Ustawienia</h3>
+      <div class="form-grid">
+        <label class="checkbox"><input type="checkbox" id="disp_enabled"> Wyświetlacz włączony</label>
+        <label>Odświeżanie (sekundy, 2–300)
+          <input type="number" id="disp_interval" min="2" max="300" step="1">
+        </label>
+        <label>Obrót ekranu
+          <select id="disp_rotate">
+            <option value="0">0°</option>
+            <option value="1">90°</option>
+            <option value="2">180°</option>
+            <option value="3">270°</option>
+          </select>
+        </label>
+        <label>Motyw
+          <select id="disp_theme">
+            <option value="0">Ciemny</option>
+            <option value="1">Jasny</option>
+          </select>
+        </label>
+        <label class="checkbox"><input type="checkbox" id="disp_invert"> Odwrócone kolory (gdy ekran pokazuje negatyw)</label>
+        <label>Kontroler ekranu
+          <select id="disp_ic">
+            <option value="0">ILI9341</option>
+            <option value="1">ST7789 (GMT024-10, 2,4")</option>
+            <option value="2">ST7796 (3,5")</option>
+          </select>
+        </label>
+        <label class="checkbox"><input type="checkbox" id="disp_bgr"> Kolejność BGR (gdy kolory są zamienione)</label>
+        <label>Mapowanie obrotu (0–7; 4–7 = lustro)
+          <input type="number" id="disp_offrot" min="0" max="7" step="1">
+        </label>
+        <label>Przesunięcie X (px, −64…64)
+          <input type="number" id="disp_offx" min="-64" max="64" step="1">
+        </label>
+        <label>Przesunięcie Y (px, −64…64)
+          <input type="number" id="disp_offy" min="-64" max="64" step="1">
+        </label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="dispSaveBtn" onclick="saveDisplay()">Zapisz ustawienia</button>
+        <button class="btn ghost" onclick="loadDisplay()">Odśwież</button>
+      </div>
+      <div id="dispMsg"></div>
+    </div>
+
+    <div class="box">
+      <h3>Podłączenie (GMT024-10, 7 pinów)</h3>
+      <p class="muted">Moduł z linku to <b>ST7789</b> 2,4" 240×320 (7 pinów). Jeśli obraz jest lustrzany,
+        przesunięty albo na krawędzi widać szum — popraw <b>Kontroler ekranu</b> i <b>Mapowanie obrotu</b>
+        (wartości 4–7 dają warianty lustrzane). Zmiany działają od razu, bez restartu.</p>
+      <ul class="muted" style="margin:0;padding-left:20px;line-height:1.75">
+        <li><b>GND</b> → GND płytki, <b>VCC</b> → <b>3V3</b> (moduł 3,3 V; podświetlenie włączone na stałe).</li>
+        <li><b>SCK</b> → <code>GPIO 40</code>, <b>SDA</b> (to SPI MOSI, nie I2C!) → <code>GPIO 7</code>.</li>
+        <li><b>CS</b> → <code>GPIO 21</code>, <b>DC</b> → <code>GPIO 41</code>, <b>RST</b> → <code>GPIO 3</code>.</li>
+        <li>Przewody krótkie (&lt;15 cm), kondensator <b>100 nF</b> między VCC i GND przy module.</li>
+        <li>Po zmianie pinów w zakładce <b>Piny</b> wymagany jest <b>restart</b> stacji.</li>
       </ul>
     </div>
   </section>
@@ -1710,6 +1807,7 @@ const MENU = [
     ['ota', 'Aktualizacja', '⬆️'],
     ['public', 'Publiczny', '🌐'] ] },
   ['ring', 'Led RGB', '💡'],
+  ['display', 'Wyświetlacz TFT', '🖥️'],
   { grupa:'ESP i magistrala RS485', ikona:'📡', pozycje:[
     ['esp485', 'Magistrala RS485', '🎛️'] ] },
   { grupa:'System', ikona:'🧰', pozycje:[
@@ -1787,6 +1885,8 @@ function showTab(id) {
   if (id === 'extdev') loadExtDev();
   if (id === 'pins') loadPins();
   if (id === 'ring') { loadRing(); ringPollStart(); }
+  if (id === 'display') { loadDisplay(); displayPollStart(); }
+  if (id === 'diag') loadI2c();
   if (id === 'rtc') { loadRtc(); rtcPollStart(); }
   if (id === 'esp485') { loadEsp485(true); r2PollStart(); }
   if (id === 'config') loadConfig();
@@ -5758,6 +5858,102 @@ function ringPollStart() {
   ringRefreshTimer = setInterval(() => {
     if (document.getElementById('tab-ring').classList.contains('active')) loadRing();
   }, 4000);
+}
+
+// ---------------- Wyświetlacz TFT ----------------
+let dispPollTimer = null;
+
+function displayApply(s) {
+  if (!s || typeof s !== 'object') return;
+  const el = id => document.getElementById(id);
+  el('disp_enabled').checked = !!s.enabled;
+  el('disp_interval').value = s.interval_s || 10;
+  el('disp_rotate').value = String(s.rotate ?? 0);
+  el('disp_theme').value = String(s.theme ?? 0);
+  el('disp_invert').checked = !!s.invert;
+  el('disp_ic').value = String(s.ic ?? 0);
+  el('disp_offrot').value = String(s.offrot ?? 0);
+  el('disp_offx').value = s.offx ?? 0;
+  el('disp_offy').value = s.offy ?? 0;
+  el('disp_bgr').checked = !!s.bgr;
+  el('dispInfoCtrl').textContent = (s.ic_name || s.controller || '—') + (s.controller && s.width ? ' ' + s.width + '×' + s.height : '');
+  el('dispInfoActive').textContent = s.active ? 'aktywny'
+    : (s.enabled ? (s.pins_ok ? 'czeka na inicjalizację' : 'piny nieustawione') : 'wyłączony');
+  el('dispInfoPins').textContent = s.pins
+    ? ('SCK ' + s.pins.sck + ', SDA ' + s.pins.mosi + ', CS ' + s.pins.cs + ', DC ' + s.pins.dc + ', RST ' + s.pins.rst)
+    : '—';
+  el('dispInfoRes').textContent = s.logic_w && s.logic_h
+    ? (s.logic_w + '×' + s.logic_h + (s.framebuf ? ' (bufor klatki)' : ''))
+    : ((s.width && s.height) ? (s.width + '×' + s.height) : '—');
+  el('dispInfoDraw').textContent = (s.last_draw_ms || 0) + ' ms';
+  el('dispInfoDraws').textContent = s.draws ?? 0;
+}
+
+async function loadDisplay() {
+  displayApply(await api('/api/display'));
+}
+
+async function saveDisplay() {
+  const el = id => document.getElementById(id);
+  const btn = el('dispSaveBtn');
+  btn.disabled = true;
+  const r = await post('/api/display', {
+    enabled: el('disp_enabled').checked,
+    interval_s: Number(el('disp_interval').value),
+    rotate: Number(el('disp_rotate').value),
+    theme: Number(el('disp_theme').value),
+    invert: el('disp_invert').checked,
+    ic: Number(el('disp_ic').value),
+    offrot: Number(el('disp_offrot').value),
+    offx: Number(el('disp_offx').value),
+    offy: Number(el('disp_offy').value),
+    bgr: el('disp_bgr').checked
+  });
+  btn.disabled = false;
+  if (r && !r.error) {
+    showMsg('dispMsg', 'Ustawienia wyświetlacza zapisane.', true);
+  } else {
+    showMsg('dispMsg', 'Błąd zapisu ustawień wyświetlacza' + (r && r.error ? ': ' + r.error : ''), false);
+  }
+  displayApply(r);
+}
+
+function displayPollStart() {
+  if (dispPollTimer) return;
+  dispPollTimer = setInterval(() => {
+    if (document.getElementById('tab-display').classList.contains('active')) loadDisplay();
+  }, 5000);
+}
+
+// ---------------- Magistrala I2C (diagnostyka) ----------------
+async function loadI2c() {
+  const s = await api('/api/i2c');
+  const box = document.getElementById('i2cMap');
+  if (!box) return;
+  if (!s || typeof s !== 'object' || !Array.isArray(s.channels)) { box.textContent = '—'; return; }
+  const rows = s.channels.map(c => {
+    const label = (c.ch === -1) ? 'bez multipleksera' : ('kanał ' + c.ch);
+    const addr = (c.addr && c.addr.length) ? c.addr.join(', ') : '—';
+    return `${label}: ${addr}`;
+  });
+  const direct = (s.direct && s.direct.length) ? s.direct.join(', ') : '—';
+  box.innerHTML = '<div><b>multiplekser:</b> ' + (s.mux || '—') + ', <b>układów łącznie:</b> ' + (s.total ?? 0) + '</div>'
+    + '<div style="margin-top:6px">' + rows.map(r => escapeHtml(r)).join('<br>') + '</div>'
+    + '<div style="margin-top:6px"><b>magistrala bezpośrednia:</b> ' + escapeHtml(direct) + '</div>';
+  const info = document.getElementById('i2cInfo');
+  if (info) info.textContent = 'układów: ' + (s.total ?? 0);
+}
+
+async function i2cScanNow() {
+  const btn = document.getElementById('i2cScanBtn');
+  btn.disabled = true;
+  await post('/api/i2c/scan', {});
+  // Skan wykonuje pętla główna - wynik pojawia się po chwili.
+  for (let i = 0; i < 6; i++) {
+    await new Promise(r => setTimeout(r, 700));
+    await loadI2c();
+  }
+  btn.disabled = false;
 }
 
 // ---------------- Zegar RTC ----------------

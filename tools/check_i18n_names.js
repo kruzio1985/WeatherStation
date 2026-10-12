@@ -157,7 +157,10 @@ for (const g of groups) {
 
 // Klucze kalibracji czytane przez drivery musza miec pole w formularzu CALIB_ADV.
 // Wyjatki (klucze swiadomie bez pola) dopisujemy do CALIB_NO_UI.
-const CALIB_NO_UI = new Set();
+// disp_* : ustawienia wyswietlacza TFT maja wlasna zakladke "Wyswietlacz TFT"
+// (GET/POST /api/display), a nie pola w formularzu kalibracji ukladow.
+const CALIB_NO_UI = new Set(['disp_on', 'disp_int', 'disp_rot', 'disp_theme', 'disp_inv',
+  'disp_ic', 'disp_offrot', 'disp_offx', 'disp_offy', 'disp_bgr']);
 const noUi = [...drvKeys.keys()].filter((k) => !calib.keySet.has(k) && !CALIB_NO_UI.has(k));
 if (!noUi.length) {
   console.log('OK   kalibracja ukladow - klucze driverow w formularzu (' + drvKeys.size + ')');

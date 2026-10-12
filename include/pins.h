@@ -89,6 +89,22 @@
 //     1000 uF między 5V i GND przy pierścieniu.
 #define PIN_RGB             7
 
+// --- Wyświetlacz TFT SPI (GMT024-10: kontroler ST7789, 2,4", 240x320) ---
+//     Moduł ma 7 pinów: GND, VCC (3V3), SCK, SDA (to SPI MOSI - nie I2C!),
+//     RST, DC, CS. Nie podłączać do magistrali I2C ani do rozdzielacza
+//     PCA9548A - to osobna magistrala SPI.
+//     Kontroler wybiera się na stronie www ("disp_ic": ILI9341 / ST7789 / ST7796),
+//     a gdy obraz jest lustrzany - "disp_offrot" 4..7.
+//     Domyślnie wyłączony (-1). Sprawdzone wolne piny na N16R8:
+//       SCK = 40, SDA(MOSI) = 7, CS = 21, DC = 41, RST = 3.
+//     Uwaga: GPIO 21 / 41 / 3 są wolne, a 40 i 7 zwalniają się po
+//     wyłączeniu czujnika Tuya (tuy_rx) i pierścienia LED (rgb).
+#define PIN_TFT_SCK         -1
+#define PIN_TFT_MOSI        -1
+#define PIN_TFT_CS          -1
+#define PIN_TFT_DC          -1
+#define PIN_TFT_RST         -1
+
 // =============================================================
 //  Magistrala RS485 - drugi ESP (węzeł z zewnętrznymi czujnikami)
 //

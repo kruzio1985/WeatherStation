@@ -7,6 +7,7 @@
  */
 #include "openmeteo.h"
 #include "config.h"
+#include "gps.h"
 #include "sensors.h"
 #include "syslog.h"
 #include <ArduinoJson.h>
@@ -17,6 +18,11 @@
 #include <string.h>
 
 OpenMeteoService openMeteo;
+
+// Po nieudanej próbie ponawiamy po minucie. Wcześniej próba leciała co sekundę
+// (bo przy niepowodzeniu nie ustawiano znacznika czasu), co zalewało log
+// ostrzeżeniem i bez sensu odpytywało API.
+#define OM_RETRY_MS 60000UL
 
 namespace {
 
@@ -118,13 +124,30 @@ bool OpenMeteoService::applyJson(const char* json, size_t len) {
 }
 
 bool OpenMeteoService::fetch() {
+  // Położenie jak w astro.cpp: gdy GPS ma świeży fix, on jest źródłem prawdy,
+  // a współrzędne z ustawień są tylko zapasem (np. gdy stacja stoi w budynku).
   double lat = config.latitude();
   double lon = config.longitude();
+  bool fromGps = false;
+
+  if (gps.hasFix() && fabs(gps.raw().lat) <= 90.0 && fabs(gps.raw().lon) <= 180.0 &&
+      (gps.raw().lat != 0.0 || gps.raw().lon != 0.0)) {
+    lat = gps.raw().lat;
+    lon = gps.raw().lon;
+    fromGps = true;
+  }
+
   if (fabs(lat) < 0.001 && fabs(lon) < 0.001) {
-    error_ = "Brak współrzędnych stacji - ustaw szerokość i długość geograficzną";
+    error_ = "Brak współrzędnych stacji - brak fix GPS i puste ustawienia geo";
     LOG_W("Open-Meteo: %s", error_.c_str());
     return false;
   }
+
+  if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  usedLat_ = lat;
+  usedLon_ = lon;
+  geoFromGps_ = fromGps;
+  if (mutex_) xSemaphoreGive(mutex_);
 
   char url[512];
   snprintf(url, sizeof(url),
@@ -242,22 +265,26 @@ bool OpenMeteoService::fetch() {
                               cur.app);
   }
 
-  LOG_I("Open-Meteo: pobrano prognozę na %d dni (%.2f, %.2f)", n, lat, lon);
+  LOG_I("Open-Meteo: pobrano prognozę na %d dni (%.5f, %.5f, źródło: %s)", n, lat, lon,
+        fromGps ? "GPS" : "ustawienia");
   return true;
 }
 
 void OpenMeteoService::run() {
-  unsigned long lastFetch = 0;
+  unsigned long lastTry = 0;   // czas ostatniej próby (udanej albo nieudanej)
+  bool lastOk = false;
   for (;;) {
     const bool forced = requestNow_;
     if (forced) requestNow_ = false;
 
     const unsigned long intervalMs = intervalMin() * 60UL * 1000UL;
-    const bool due = (lastFetch == 0) || (millis() - lastFetch >= intervalMs);
+    const unsigned long waitMs = lastOk ? intervalMs : OM_RETRY_MS;
+    const bool due = (lastTry == 0) || (millis() - lastTry >= waitMs);
 
     if ((forced || due) && WiFi.status() == WL_CONNECTED) {
       if (forced || enabled()) {
-        if (fetch()) lastFetch = millis();
+        lastOk = fetch();
+        lastTry = millis();
       }
     } else if (forced && WiFi.status() != WL_CONNECTED) {
       if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -290,8 +317,15 @@ String OpenMeteoService::json() {
   d["wifi"] = (WiFi.status() == WL_CONNECTED);
   d["lat"] = config.latitude();
   d["lon"] = config.longitude();
+  d["gps_fix"] = gps.hasFix();
 
   if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
+  // Współrzędne faktycznie użyte w ostatnim pobraniu (GPS albo ustawienia).
+  if (geoFromGps_) {
+    d["lat"] = usedLat_;
+    d["lon"] = usedLon_;
+  }
+  d["geo_from_gps"] = geoFromGps_;
   d["valid"] = valid_;
   d["count"] = dayCount_;
   d["updated_ms"] = fetchedAtMs_ ? (unsigned long)(millis() - fetchedAtMs_) : 0UL;
