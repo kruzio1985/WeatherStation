@@ -91,6 +91,37 @@ z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, al
 
 ---
 
+## AKTUALIZACJA (12.10, 08:15) — tryby wyświetlacza, grafiki pogody z SD, tryb nocny
+
+- **Tryby ekranu (extra `disp_mode`), przełączane na żywo przez `POST /api/display`:**
+  `0` = pulpit (dotychczasowy), `1` = **cykl dużych wskazań** (kolejne kanały z `disp_ch`,
+  zmiana co `disp_step_s`), `2` = **jedna wartość na stałe**, `3` = **pogoda**
+  (grafika słońce/chmury/deszcz/śnieg/mgła/noc + wartości z `disp_ch`).
+- Nowe klucze: `disp_ch` (lista kanałów, tekst), `disp_font` (0 auto, 1 Font4, 2 Font6, 3 Font8,
+  4 siedmiosegmentowa, 5 Font2), `disp_step_s` (2–120), `disp_night` + `disp_nf`/`disp_nt` (godziny),
+  `disp_ic_x`/`disp_ic_y` (pozycja grafiki), `disp_i_sun/cloud/rain/snow/fog/night` (ścieżki BMP na SD).
+- **Grafiki z karty SD:** plik **BMP** (np. 100×100, 24-bit) jest wczytywany **raz** do PSRAM
+  (`LGFX_Sprite`) — w pętli nie ma potem żadnego odczytu z karty. Brak pliku / zły format =
+  grafika rysowana wektorowo, więc tryb „pogoda" działa zawsze. Doszło `SdCardManager::fs()`
+  (biblioteki zewnętrzne czytają pliki same, np. `drawBmpFile`).
+- **Tryb nocny to kolory, nie podświetlenie:** GMT024-10 ma 7 pinów i **nie wyprowadza pinu
+  podświetlenia (BLK)**, więc PWM jest niemożliwy. „Noc" (godziny `disp_nf`–`disp_nt`) wymusza
+  ciemne tło i mnoży barwy ×0,38; prawdziwe ściemnianie dopiero po dołożeniu pinu BLK.
+- **Stan pogody** liczony z: `rain`, `cam_rain`/`cam_snow`/`cam_fog`/`cam_cloud`, `hum`, `wind`,
+  `temp` i pory dnia (kolejność: deszcz → śnieg → mgła → chmury → noc → słońce).
+- **Sprawdzone na urządzeniu (08:10–08:15):** `mode=1` przechodzi temp → hum → press → c3_pm25 →
+  c3_pm10 (co 5 s, `channel_now` się zmienia), `mode=2` i `mode=3` działają, `night_now` liczy się
+  z zegara, pełny redraw 73–93 ms, `GET /api/display` pokazuje cały stan (mode, channel_now,
+  weather, icon_ok, night_now). Stacja odpowiada 200, karta SD zamontowana (brak katalogu `/tft`).
+- Nowa sekcja „Widok na ekranie" w zakładce TFT (tryb, lista kanałów z checkboxami, czcionka,
+  cykl, noc, pozycja i ścieżki grafik) — **wymaga `uploadfs`, jeszcze nie wgrane**.
+- **Nowy endpoint `POST /api/sd/upload?path=/tft/plik.bmp`** (surowe bajty w treści żądania,
+  tylko `.bmp`, max 512 KB, katalog tworzy się sam, `reloadIcons()` po zapisie) + przycisk
+  „Wgraj na kartę" w zakładce TFT. Sprawdzone: `/tft/sun.bmp` 30 054 B wgrany i wczytany jako
+  grafika (log: „grafika /tft/sun.bmp (100x100 px) wczytana z karty SD", `icon_ok.sun = true`).
+
+---
+
 ## 4. BUDOWANIE I FLASHOWANIE (gotowe komendy)
 
 ### Master (S3)
