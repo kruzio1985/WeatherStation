@@ -47,6 +47,24 @@
 //    disp_i_sun/cloud/rain/snow/fog/night - ścieżka BMP na karcie SD
 //                       (np. "/tft/slonce.bmp"; brak pliku = grafika rysowana)
 //
+//  Wygląd i pozycje elementów (sekcja "Wygląd i pozycje" w zakładce www) -
+//  każdy element ma własny rozmiar czcionki, przesunięcie X/Y i kolor:
+//    disp_ui_top_on  (0/1)      - górny pasek statusów węzłów
+//    disp_ui_top_size (px)      - rozmiar opisów: 0 = auto, 16, 26, 48, 75
+//    disp_ui_top_dx / _dy (px)  - przesunięcie paska (może być ujemne)
+//    disp_ui_top_col            - kolor opisów "#RRGGBB" (puste = domyślny)
+//    disp_ui_top_cam/_out/_in   - które znaczniki pokazywać (0/1)
+//    disp_ui_lbl_size/_dx/_dy/_col   - opis (co pokazują cyfry, środek ekranu)
+//    disp_ui_val_size/_dx/_dy/_col   - duża wartość (kolor puste = auto:
+//                                      temperatura wg skali, resztę wg jasności)
+//    disp_ui_unit_size/_col          - jednostka przy wartości
+//    disp_ui_info_on/_size/_dx/_dy/_col - dolny wiersz (zegar, licznik, sieć)
+//    disp_ui_bar_on / _bar_h (px) / _bar_col - pas jakości powietrza na dole
+//    disp_ui_wx_size/_dx/_dy/_col    - wiersze widoku pogody i pulpitu
+//    disp_ui_wx_icon (%)             - rozmiar grafiki pogody (0 = domyślny)
+//  Wartość 0 / puste pole znaczy "domyślnie", więc bez ustawień ekran wygląda
+//  tak, jak dotąd.
+//
 //  Uwaga: moduł GMT024-10 nie wyprowadza pinu podświetlenia, więc "tryb nocny"
 //  ściemnia KOLORY (tło czarne + stonowane barwy), a nie samo podświetlenie.
 // =============================================================
@@ -85,6 +103,13 @@ private:
   void drawDashboard(void* d, int W, int H, uint16_t bg, uint16_t fg, uint16_t dim, uint16_t acc, const char* hhmm);
   void drawBig(void* d, int W, int H, uint16_t bg, uint16_t fg, uint16_t dim, uint16_t acc, const char* hhmm, bool cycle);
   void drawWeather(void* d, int W, int H, uint16_t bg, uint16_t fg, uint16_t dim, uint16_t acc, const char* hhmm);
+  // Elementy wspólne wszystkich widoków: pasek stanu węzłów (góra), wiersz
+  // informacyjny (zegar/licznik/stan sieci) i pas jakości powietrza (dół).
+  // Wszystkie trzy czytają ustawienia wyglądu z sekcji "Wygląd i pozycje".
+  void dispTopStatus(void* d, int W, uint16_t bg, uint16_t fg, uint16_t dim, float nk);
+  void dispBottomInfo(void* d, int W, int H, uint16_t bg, uint16_t dim,
+                      const char* hhmm, const char* counter, const char* center);
+  void dispBottomBar(void* d, int W, int H, uint16_t bg, uint16_t fg, float nk);
   void release();
   bool pinsOk();
   const char* icName() const;
@@ -130,6 +155,25 @@ private:
   uint8_t  nightFrom_ = 21, nightTo_ = 7;
   bool     nightNow_ = false;       // wyliczone dla bieżącej klatki
   float    nightK_ = 1.0f;          // mnożnik przygaszenia kolorów (tryb nocny)
+
+public:
+  // Wygląd i pozycje elementów ekranu (ustawiane w www, zakładka TFT).
+  // Publiczne, bo rysowanie elementów robią funkcje pomocnicze poza klasą.
+  // 0 = wartość domyślna, col = 0 (0x000000) = kolor domyślny.
+  struct UiCfg {
+    bool     on  = true;
+    int      size = 0;             // px: 16, 26, 48, 75 (0 = auto)
+    int      dx  = 0, dy = 0;      // przesunięcie w pikselach
+    uint32_t col = 0;              // 0xRRGGBB (0 = domyślny)
+  };
+  UiCfg    uiTop_, uiLbl_, uiVal_, uiUnit_, uiInfo_, uiWx_;
+  bool     uiTopCam_ = true, uiTopOut_ = true, uiTopIn_ = true;
+  bool     uiBarOn_ = true;
+  int      uiBarH_ = 0;            // wysokość pasa (0 = domyślna)
+  uint32_t uiBarCol_ = 0;          // kolor znacznika na pasie (0 = domyślny)
+  int      uiWxIcon_ = 0;           // % rozmiaru grafiki pogody (0 = domyślny)
+
+private:
   // --- Grafiki pogody z karty SD ---
   int16_t  icX_ = 8, icY_ = 56;
   String   icPath_[DISP_IC_COUNT];
