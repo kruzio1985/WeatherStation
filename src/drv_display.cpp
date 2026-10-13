@@ -985,6 +985,96 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
 }
 
 // ---------------- Widoki 1 i 2: duże wskazania ----------------
+// Krótkie opisy dla dużego widoku. Nazwy kanałów z węzłów bywają długie i z
+// obcymi znakami (np. "Umidità (sonda presenza)"), a na 320 px taki napis
+// zjechałby do 16 px, czyli był nieczytelny z 2-3 m. Dla znanych kanałów mamy
+// więc własne, krótkie napisy - a nieznane skracamy i czścimy z "?".
+struct ChLabel { const char* id; const char* label; };
+static const ChLabel kChLabel[] = {
+  { "temp", "TEMPERATURA" },      { "temp2", "TEMP. 2" },        { "hum", "WILGOTNOŚĆ" },
+  { "press", "CIŚNIENIE" },       { "light", "ŚWIATŁO" },        { "rain", "OPAD" },
+  { "wind", "WIATR" },            { "vane", "KIERUNEK" },        { "co2", "CO2" },
+  { "aqi", "AQI" },               { "pm1", "PM1" },              { "pm25", "PM2,5" },
+  { "pm10", "PM10" },             { "tvoc", "TVOC" },            { "eco2", "eCO2" },
+  { "uv", "UV" },                 { "soil", "GLEBA" },           { "solar_wm2", "NASŁONECZ." },
+  { "vev_temp", "TEMP. VEVOR" },  { "vev_hum", "WILG. VEVOR" },  { "vev_wind", "WIATR" },
+  { "vev_gust", "PORYW" },        { "vev_vane", "KIERUNEK" },    { "vev_uv", "UV" },
+  { "vev_light", "ŚWIATŁO" },     { "vev_rain_now", "OPAD TERAZ" },
+  { "vev_rain_day", "OPAD DZIŚ" },{ "vev_rain_total", "OPAD SUM." },
+  { "c3_temp", "TEMP. ZEWN." },   { "c3_hum", "WILG. ZEWN." },   { "c3_press", "CIŚN. ZEWN." },
+  { "c3_dew", "PUNKT ROSY" },     { "c3_heat", "ODCZUWALNA" },   { "c3_alt", "WYSOKOŚĆ" },
+  { "c3_aqi", "AQI ZEWN." },      { "c3_pm1", "PM1 ZEWN." },     { "c3_pm25", "PM2,5 ZEWN." },
+  { "c3_pm10", "PM10 ZEWN." },    { "c3_pm25_60m", "PM2,5 (1 h)" },
+  { "in_air_t", "TEMP. WEWN." },  { "in_air_h", "WILG. WEWN." }, { "in_air_t24", "TEMP. 24 h" },
+  { "in_air_h24", "WILG. 24 h" }, { "in_air_dp", "PUNKT ROSY" }, { "in_air_t_ext", "TEMP. SONDY" },
+  { "in_air_h_ext", "WILG. SONDY" }, { "in_rh_corr", "WILG. POPR." },
+  { "in_pm1", "PM1 WEWN." },      { "in_pm25", "PM2,5 WEWN." },  { "in_pm4", "PM4 WEWN." },
+  { "in_pm10", "PM10 WEWN." },    { "in_iaq", "IAQ WEWN." },     { "in_tvoc_lvl", "TVOC WEWN." },
+  { "in_motion", "RUCH" },        { "in_mics_v", "MiCS" },       { "in_mq7_v", "MQ-7" },
+  { "pw_bat_soc", "BATERIA" },    { "pw_ina219_v", "NAPIĘCIE" }, { "pw_ina219_i", "PRĄD" },
+  { "pw_ina219_p", "MOC" },       { "cam_lux", "LUX (KAMERA)" }, { "cam_weather", "POGODA (KAMERA)" },
+};
+
+// Znaki, których nie ma w czcionkach ekranu, zamieniamy na literę bazową
+// (np. włoskie "à" -> "a"), a zupełnie obce pomijamy. Bez tego plGlyph rysuje
+// dla każdego takiego znaku znak zapytania - na ekranie wychodziły "artefakty".
+static char latinBase(uint16_t cp) {
+  switch (cp) {
+    case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return 'A';
+    case 0x00E0: case 0x00E1: case 0x00E2: case 0x00E3: case 0x00E4: case 0x00E5: return 'a';
+    case 0x00C7: return 'C';   case 0x00E7: return 'c';
+    case 0x00C8: case 0x00C9: case 0x00CA: case 0x00CB: return 'E';
+    case 0x00E8: case 0x00E9: case 0x00EA: case 0x00EB: return 'e';
+    case 0x00CC: case 0x00CD: case 0x00CE: case 0x00CF: return 'I';
+    case 0x00EC: case 0x00ED: case 0x00EE: case 0x00EF: return 'i';
+    case 0x00D1: return 'N';   case 0x00F1: return 'n';
+    case 0x00D2: case 0x00D4: case 0x00D5: case 0x00D6: case 0x00D8: return 'O';
+    case 0x00F2: case 0x00F4: case 0x00F5: case 0x00F6: case 0x00F8: return 'o';
+    case 0x00D9: case 0x00DA: case 0x00DB: case 0x00DC: return 'U';
+    case 0x00F9: case 0x00FA: case 0x00FB: case 0x00FC: return 'u';
+    case 0x00DD: return 'Y';   case 0x00FD: case 0x00FF: return 'y';
+    case 0x00DF: return 's';
+    default: return 0;
+  }
+}
+
+// Napis bezpieczny dla czcionek ekranu: polskie znaki zostają (plDraw rysuje do
+// nich diakrytyki), obce diakrytyki sprowadzamy do liter bazowych, a resztę
+// (symbole, emoji) pomijamy.
+static String plSafe(const String& in) {
+  String out;
+  out.reserve(in.length());
+  for (size_t i = 0; i < in.length(); ) {
+    const size_t start = i;
+    const uint16_t cp = plUtf8Next(in, i);
+    if (cp < 0x80) { out += (char)cp; continue; }
+    bool polish = false;
+    for (uint8_t k = 0; k < sizeof(kPlTable) / sizeof(kPlTable[0]); k++) {
+      if (kPlTable[k].cp == cp) { polish = true; break; }
+    }
+    if (polish) { out += in.substring(start, i); continue; }
+    const char base = latinBase(cp);
+    if (base) out += base;
+  }
+  return out;
+}
+
+// Opis kanału do dużego wskazania: krótki napis z tabeli, a dla nieznanego
+// kanału - oczyszczona i skrócona nazwa z definicji czujnika.
+static String channelLabel(const String& id, const String& name) {
+  for (uint8_t i = 0; i < sizeof(kChLabel) / sizeof(kChLabel[0]); i++) {
+    if (id == kChLabel[i].id) return String(kChLabel[i].label);
+  }
+  if (id.startsWith("ds_")) return String("TEMP. ZEWN. ") + id.substring(3);
+  if (id.startsWith("ths_")) return String("CZUJNIK ") + id.substring(4);
+  if (id.startsWith("ads_")) return String("ADC ") + id.substring(4);
+  if (id.startsWith("mot_")) return String("RUCH ") + id.substring(4);
+  String s = plSafe(name);
+  s.toUpperCase();
+  if (s.length() > 20) s = s.substring(0, 20);
+  return s;
+}
+
 // Tryb 1 pokazuje kolejne kanały z "disp_ch" (zmiana co "disp_step_s"),
 // tryb 2 - pierwszy kanał na stałe. Nazwa kanału i jednostka biorą się
 // z definicji kanału, więc nic nie trzeba wpisywać ręcznie.
@@ -1019,52 +1109,39 @@ void DisplayManager::drawBig(void* dv, int W, int H, uint16_t bg, uint16_t fg, u
                       (unit.indexOf("C") >= 0 && unit.indexOf("%") < 0);
   const uint16_t valCol = (!isnan(raw) && tempCh) ? tempColor565(d, raw, nightK_) : fg;
 
-  // Jednostka jest dorysowana ZARAZ ZA liczbą (na końcu tekstu, nie w środku
-  // ekranu), więc przy doborze rozmiaru cyfr uwzględniamy jej szerokość.
+  // Opis TEGO, co pokazują cyfry: krótki napis, wyśrodkowany, dużą czcionką
+  // (Font6 = 48 px, a gdy się nie mieści - Font4 = 26 px ze skróceniem napisu).
+  // Poniżej Font4 nie schodzimy, bo z 2-3 m byłoby to nieczytelne.
+  String label = channelLabel(id, name);
+  d->setFont(&lgfx::fonts::Font6);
+  if (plWidth(d, label) > W - 24) d->setFont(&lgfx::fonts::Font4);
+  while (label.length() > 3 && plWidth(d, label) > W - 24) label.remove(label.length() - 1);
+  plDraw(d, W / 2, H * 31 / 100, label, acc, bg, lgfx::textdatum_t::middle_center);
+
+  // Jednostka jest dorysowana ZARAZ ZA liczbą (na końcu tekstu), więc przy
+  // doborze rozmiaru cyfr uwzględniamy jej szerokość - cyfry mają zostać jak
+  // największe, a cały blok liczba+jednostka jest wyśrodkowany co do piksela.
+  const String unitSafe = plSafe(unit);
   d->setFont(&lgfx::fonts::Font4);
-  const int uw = unit.length() ? plWidth(d, unit) + 12 : 0;
+  const int unitW = unitSafe.length() ? plWidth(d, unitSafe) : 0;
+  const int gapW  = unitW ? 10 : 0;
+  const int maxV  = W - 16 - unitW - gapW;
   if (fontMode_ != 0) {
-    setBigFont(d, val, W - 20, fontMode_);
-    // Wymuszona czcionka może nie zmieścić się z jednostką - wtedy bierzemy
-    // mniejszą automatycznie, żeby nic nie uciekło za ekran.
-    if (plWidth(d, val) + uw > W - 16) setBigFont(d, val, W - 20 - uw, 0);
+    setBigFont(d, val, maxV, fontMode_);            // czcionka wymuszona w ustawieniach
   } else {
-    static const uint8_t kTry[] = { 3, 2, 1, 5 };   // Font8 -> Font6 -> Font4 -> Font2
+    static const uint8_t kTry[] = { 3, 2, 1 };      // Font8 -> Font6 -> Font4
     for (uint8_t i = 0; i < sizeof(kTry); i++) {
       setFontById(d, kTry[i]);
-      if (plWidth(d, val) + uw <= W - 16) break;
+      if (plWidth(d, val) <= maxV) break;
     }
   }
-  const int vw  = plWidth(d, val);
-  const int gx  = (W - (vw + uw)) / 2;      // lewy brzeg bloku: liczba + jednostka
-  const int valY = H * 58 / 100;
-
-  // Opis TEGO, co pokazują cyfry - duży tekst (do czytania z 2-3 m), wyrównany
-  // do lewej krawędzi liczby.
-  d->setFont(&lgfx::fonts::Font6);
-  if (plWidth(d, name) > W - 16) d->setFont(&lgfx::fonts::Font4);
-  if (plWidth(d, name) > W - 16) d->setFont(&lgfx::fonts::Font2);
-  const int nx = (gx > 8 && plWidth(d, name) <= W - 16) ? gx : 8;
-  plDraw(d, nx, H * 27 / 100, name, acc, bg, lgfx::textdatum_t::middle_left);
-
-  // Wartość i jednostka tuż za nią.
-  plDraw(d, gx, valY, val, valCol, bg, lgfx::textdatum_t::middle_left);
-  if (unit.length()) {
+  const int vw   = plWidth(d, val);
+  const int x0   = (W - (vw + unitW + gapW)) / 2;   // środek bloku: liczba + jednostka
+  const int valY = H * 67 / 100;
+  plDraw(d, x0, valY, val, valCol, bg, lgfx::textdatum_t::middle_left);
+  if (unitW) {
     d->setFont(&lgfx::fonts::Font4);
-    plDraw(d, gx + vw + 12, valY, unit, acc, bg, lgfx::textdatum_t::middle_left);
-  }
-
-  // Kropki pokazujące pozycję w cyklu - nad dolnym paskiem jakości powietrza
-  // (z zapasem, żeby nie nachodziły na znacznik na pasku).
-  if (cycle && n > 1) {
-    const int gap = 10;
-    const int dy  = H - 38;
-    const int x0 = W / 2 - (n * gap) / 2;
-    for (uint8_t i = 0; i < n && i < 16; i++) {
-      const int x = x0 + i * gap;
-      if (i == idx_ % n) d->fillCircle(x, dy, 3, acc);
-      else               d->drawCircle(x, dy, 3, dim);
-    }
+    plDraw(d, x0 + vw + gapW, valY, unitSafe, acc, bg, lgfx::textdatum_t::middle_left);
   }
 }
 
@@ -1114,8 +1191,10 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
     String name, unit;
     uint8_t dec = 1;
     if (!sensors.channelMeta(id, name, unit, dec)) continue;
+    // Opis jak w dużym widoku: krótki napis bez znaków, których nie ma czcionka
+    // (obce nazwy z węzłów rysowały się jako "?").
     d->setFont(&lgfx::fonts::Font2);
-    plDraw(d, tx, ty, name, dim, bg, lgfx::textdatum_t::top_left);
+    plDraw(d, tx, ty, channelLabel(id, name), dim, bg, lgfx::textdatum_t::top_left);
     // Temperatura wg skali kolorów, pozostałe wartości w kolorze akcentu.
     const float raw = sensors.valueOf(id);
     const bool tempCh = (id.indexOf("temp") >= 0) ||
@@ -1126,7 +1205,7 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
            lgfx::textdatum_t::top_right);
     if (unit.length()) {
       d->setFont(&lgfx::fonts::Font2);
-      plDraw(d, tx, ty + 22, unit, dim, bg, lgfx::textdatum_t::top_left);
+      plDraw(d, tx, ty + 22, plSafe(unit), dim, bg, lgfx::textdatum_t::top_left);
     }
     ty += 40;
   }
