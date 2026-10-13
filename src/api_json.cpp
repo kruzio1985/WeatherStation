@@ -28,6 +28,7 @@
 #include "app_info.h"
 #include "aqi.h"
 #include "watchdog.h"
+#include "loop_stats.h"
 #if !STACJA_HEADLESS
 #include <WiFi.h>
 #include "mqtt_client.h"
@@ -308,6 +309,16 @@ static String buildDiagnostics() {
   diagRow(ss, "Temperatura układu", cpuOk ? String(cpu, 1) + " °C" : String("—"),
           !cpuOk ? nullptr : (cpu > 75 ? "bad" : (cpu > 60 ? "warn" : "ok")));
   diagRow(ss, "Czas lokalny", String(datetimeString()));
+  // Czasy obiegu pętli: wolny obieg oznacza, że w tym czasie stacja nie
+  // odpowiada i nie wysyła impulsu życia dla zewnętrznego watchdoga.
+  uint32_t lastLoop = loopStatsLastIterationMs(), worstLoop = loopStatsWorstIterationMs();
+  diagRow(ss, "Ostatni obieg pętli", String((unsigned)lastLoop) + " ms",
+          lastLoop > LOOP_SLOW_MS ? "warn" : "ok");
+  diagRow(ss, "Najdłuższy obieg pętli", String((unsigned)worstLoop) + " ms",
+          worstLoop > LOOP_SLOW_MS ? "warn" : "ok");
+  diagRow(ss, "Najdłuższy etap pętli",
+          String(loopStatsWorstStage()) + " " + String((unsigned)loopStatsWorstStageMs()) + " ms",
+          loopStatsWorstStageMs() > LOOP_SLOW_MS ? "warn" : "ok");
 
   // --- Pamięć ---
   JsonArray mm = diagCard(d, "Pamięć");

@@ -10,6 +10,7 @@
 #include "pinmap.h"
 #include "rs485.h"
 #include "syslog.h"
+#include "wifi_util.h"
 
 #if STACJA_HEADLESS && STACJA_NODE_RECOVERY_AP
 #include <WiFi.h>
@@ -119,7 +120,7 @@ void RecoveryAp::start() {
 
   LOG_I("Awaryjny AP: brak łączności z masterem - uruchamiam '%s' (http://192.168.4.1/)", ssid.c_str());
   WiFi.mode(WIFI_AP);
-  WiFi.setSleep(false);
+  wifiApplyMaxPower();    // AP ratunkowy też nadaje pełną mocą (wifi_util.h)
   IPAddress ap(192, 168, 4, 1);
   WiFi.softAPConfig(ap, ap, IPAddress(255, 255, 255, 0));
   if (!WiFi.softAP(ssid.c_str(), pass.c_str(), 1, false)) {

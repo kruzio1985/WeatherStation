@@ -679,6 +679,31 @@
     <table id="evTable"><thead><tr><th>Nazwa</th><th>Adres</th><th>Typ</th><th>Interwał</th><th>Ostatni odczyt</th><th></th></tr></thead><tbody></tbody></table>
   </section>
 
+  <section id="tab-wifinodes">
+    <h2>Węzły Wi-Fi i sieciowe <span class="badge" id="wfBadge">—</span></h2>
+    <p class="muted">Wszystkie urządzenia, które przysyłają dane do tej stacji po sieci - razem z węzłami na
+      magistrali RS485 z zakładki Magistrala RS485. Stacja powietrza wewnątrz daje kanały <code>in_*</code>,
+      węzeł powietrza zewnętrznego C3 kanały <code>c3_*</code>, a stacja VEVOR dane pogodowe. Stan łączności
+      liczymy z ostatniej odpowiedzi urządzenia, a liczbę kanałów z listy czujników stacji. Żaden adres nie jest
+      wpisany na stałe w kodzie - wszystko pochodzi z <code>/api/extdev</code>. Adresy dodajesz i zmieniasz
+      w zakładce Urządzenia zewnętrzne.</p>
+    <div class="box">
+      <h3>Stan węzłów</h3>
+      <div class="toolbar">
+        <button class="btn ghost" onclick="loadWifiNodes(true)">Odśwież</button>
+        <button class="btn ghost" onclick="showTab('extdev')">Urządzenia zewnętrzne</button>
+        <span class="muted" id="wfInfo">—</span>
+      </div>
+      <table class="tbl" id="wfTable">
+        <thead><tr>
+          <th>Węzeł</th><th>Typ</th><th>Adres</th><th>Odpytywanie</th><th>Stan</th><th>Kanały stacji</th>
+        </tr></thead>
+        <tbody id="wfBody"></tbody>
+      </table>
+      <div class="msg" id="wfMsg" style="display:none"></div>
+    </div>
+  </section>
+
   <section id="tab-pins">
     <h2>Piny (GPIO)</h2>
     <p class="muted">Tutaj przypisujesz, co jest podłączone do którego pinu - przy każdym pinie wybierasz funkcję z listy, a <b>— wolny —</b> zwalnia pin.
@@ -1900,7 +1925,8 @@ const MENU = [
   ['ring', 'Led RGB', '💡'],
   ['display', 'Wyświetlacz TFT', '🖥️'],
   { grupa:'ESP i magistrala RS485', ikona:'📡', pozycje:[
-    ['esp485', 'Magistrala RS485', '🎛️'] ] },
+    ['esp485', 'Magistrala RS485', '🎛️'],
+    ['wifinodes', 'Węzły Wi-Fi', '📶'] ] },
   { grupa:'System', ikona:'🧰', pozycje:[
     ['logs', 'Logi', '📜'],
     ['diag', 'Diagnostyka', '🩺'],
@@ -1980,6 +2006,7 @@ function showTab(id) {
   if (id === 'diag') loadI2c();
   if (id === 'rtc') { loadRtc(); rtcPollStart(); }
   if (id === 'esp485') { loadEsp485(true); r2PollStart(); }
+  if (id === 'wifinodes') { loadWifiNodes(); wfPollStart(); }
   if (id === 'config') loadConfig();
   if (id === 'services') loadServices();
   if (id === 'sd') loadSd();
@@ -1999,9 +2026,31 @@ async function api(path, opts={}) {
   const t = await r.text();
   try { return JSON.parse(t); } catch { return t; }
 }
-const post = (path, data) => api(path, {
-  method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data||{})
+const post = (path, data, key) => api(path, {
+  method:'POST',
+  headers: Object.assign({'Content-Type':'application/json'}, key ? {'X-OTA-Key': key} : {}),
+  body: JSON.stringify(data||{})
 });
+
+// Hasło OTA (nagłówek X-OTA-Key) jest wymagane przez operacje nieodwracalne:
+// usunięcie pliku z karty, format karty i reset do ustawień fabrycznych.
+// Bierzemy je z pola w zakładce Aktualizacja; gdy go nie ma albo jest błędne,
+// stacja zwraca 401 i wtedy pytamy użytkownika (zapamiętując do końca sesji).
+function otaKeyFromForm() {
+  const el = document.getElementById('ota_pass');
+  return (el && el.value) ? el.value : (sessionStorage.getItem('otaKey') || '');
+}
+async function postProtected(path, data) {
+  let r = await post(path, data, otaKeyFromForm());
+  if (r && r.error && String(r.error).indexOf('OTA') >= 0) {
+    const k = prompt('Hasło OTA (nagłówek X-OTA-Key):', '');
+    if (k) {
+      sessionStorage.setItem('otaKey', k);
+      r = await post(path, data, k);
+    }
+  }
+  return r;
+}
 
 // ---------------- Pulpit ----------------
 // Etykiety kanałów, których wartością jest kod (analiza zdjęcia z kamery).
@@ -4693,6 +4742,76 @@ async function removeExtDev(index) {
   loadExtDev();
 }
 
+// ---------------- Węzły Wi-Fi / sieciowe (zakładka "Węzły Wi-Fi") ----------------
+// Te same urządzenia, co w zakładce "Urządzenia zewnętrzne", ale pokazane w jednym
+// miejscu ze stanem łączności: kiedy urządzenie ostatnio odpowiedziało i ile kanałów
+// stacja z niego ma. Żaden adres IP nie jest zaszyty w kodzie - wszystko pochodzi
+// z /api/extdev, a stacja powietrza wewnątrz sama podaje swój stan w odpowiedzi.
+const WIFI_NODE_TYPES = {
+  vevor:  { label: 'Stacja VEVOR (Wi-Fi)',      prefix: null },
+  aq:     { label: 'Stacja powietrza wewnątrz', prefix: 'in_' },
+  outaq:  { label: 'Węzeł powietrza zewn. C3',  prefix: 'c3_' },
+  ble:    { label: 'Czujnik BLE',               prefix: null },
+};
+
+// Kanały importu mają stałe prefiksy (in_ z tabeli AIR_IMPORT, c3_ z OUTC3_IMPORT),
+// więc liczymy je po identyfikatorach zwracanych przez /api/sensors.
+function wifiNodeChanCount(type, ids) {
+  const p = (WIFI_NODE_TYPES[type] || {}).prefix;
+  if (!p) return null;
+  return ids.filter(id => id.startsWith(p)).length;
+}
+
+async function loadWifiNodes(manual) {
+  const tbody = document.getElementById('wfBody');
+  if (!tbody) return;
+  let devs = [];
+  try { devs = (await api('/api/extdev')).devices || []; } catch (e) { return; }
+  let ids = [];
+  try { ids = ((await api('/api/sensors')).sensors || []).map(s => s.id); } catch (e) { ids = []; }
+
+  tbody.innerHTML = '';
+  let online = 0;
+  for (const e of devs) {
+    // Świeżość z interwału: brak odpowiedzi przez 3 odpytywania (min. 60 s) to już
+    // brak łączności, nawet jeśli ostatnia próba była udana.
+    const limit = Math.max(3 * (e.interval || 30), 60);
+    const fresh = !!e.ok && (e.last_sec ?? 9999) <= limit;
+    if (fresh) online++;
+    const t = WIFI_NODE_TYPES[e.type] || { label: e.type || '—', prefix: null };
+    const n = wifiNodeChanCount(e.type, ids);
+    const chan = (n === null) ? '<span class="muted">—</span>'
+                              : (n ? String(n) : '<span class="muted">0</span>');
+    const stan = fresh
+      ? `<span style="color:#6bcb77">OK · ${e.last_sec} s temu</span>`
+      : `<span style="color:#ff8c8c">${escapeHtml(e.last_err || 'brak odpowiedzi')}</span>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(e.name)}</td><td>${escapeHtml(t.label)}</td>
+      <td>${escapeHtml(e.url)}</td><td>${e.interval} s</td><td>${stan}</td><td>${chan}</td>`;
+    tbody.appendChild(tr);
+  }
+  if (!devs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">Brak węzłów sieciowych — dodaj je w zakładce Urządzenia zewnętrzne.</td></tr>';
+  }
+  setBadge('wfBadge', devs.length ? `${online} z ${devs.length} odpowiada` : 'brak węzłów', online > 0);
+  const info = document.getElementById('wfInfo');
+  if (info) {
+    info.textContent = 'Odczyt ' + new Date().toLocaleTimeString() +
+      ' • kanały in_* = stacja powietrza wewnątrz, c3_* = węzeł zewnętrzny C3';
+  }
+  if (manual) showMsg('wfMsg', 'Stan węzłów odświeżony', true);
+}
+
+// Odświeżanie w tle tylko wtedy, gdy zakładka jest otwarta (tak jak przy magistrali).
+let wfTimer = null;
+function wfPollStart() {
+  if (wfTimer) return;
+  wfTimer = setInterval(() => {
+    const sec = document.getElementById('tab-wifinodes');
+    if (sec && sec.classList.contains('active') && !document.hidden) loadWifiNodes(false);
+  }, 15000);
+}
+
 // ---------------- Piny ----------------
 let pinData = null;
 // Bieżące przypisania: klucz funkcji -> numer GPIO (-1 = funkcja wyłączona).
@@ -5566,7 +5685,7 @@ async function saveWatchdog() {
 }
 async function reboot() { if (confirm('Zrestartować stację?')) await post('/api/reboot'); }
 async function factoryReset() {
-  if (confirm('Przywrócić ustawienia fabryczne? To usunie konfigurację i stan liczników.')) await post('/api/factoryreset');
+  if (confirm('Przywrócić ustawienia fabryczne? To usunie konfigurację i stan liczników.')) await postProtected('/api/factoryreset');
 }
 
 // ---------------- Karta SD ----------------
@@ -5619,12 +5738,12 @@ async function saveSdRetention() {
 }
 async function delFile(path) {
   if (!confirm('Usunąć ' + path + '?')) return;
-  await post('/api/sd/delete', {path});
+  await postProtected('/api/sd/delete', {path});
   loadSd();
 }
 async function formatSd() {
   if (!confirm('Sformatować kartę SD? WSZYSTKIE LOGI ZOSTANĄ USUNIĘTE!')) return;
-  await post('/api/sd/format');
+  await postProtected('/api/sd/format');
   loadSd();
 }
 // Ponowne wykrycie karty bez restartu stacji (karta włożona po starcie,

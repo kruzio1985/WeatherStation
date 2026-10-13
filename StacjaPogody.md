@@ -1,17 +1,18 @@
 # StacjaPogody — Pamięć sesji (do wznowienia w nowym czacie)
 
-> Ten plik to pełna kopia wiedzy z sesji zakończonej **2026-10-11 ~06:25**.
+> Ten plik to pełna kopia wiedzy z sesji zakończonej **2026-10-11 ~06:25**, dopisywana w kolejnych sesjach
+> (ostatnia aktualizacja: **2026-10-12 22:27**).
 > Aby kontynuować pracę w nowym czacie, powiedz agentowi:
 > **„Przeczytaj `StacjaPogody.md` w głównym katalogu repo i kontynuuj od sekcji STAN OBECNY i DO ZROBIENIA."**
 
 ---
 
-## 1. STAN OBECNY (najważniejsze — 2026-10-11 06:25)
+## 1. STAN OBECNY (najważniejsze — 2026-10-12 22:27)
 
 | Urządzenie | IP | Stan |
 |---|---|---|
 | **Master** (ESP32-S3 WROOM-1 N16R8) | **192.168.1.143 (statyczne)** | ✅ **DZIAŁA** — `/` → 200, `/api/status` → 200. MAC `80:b5:4e:c6:52:a8`. Podłączony kablem USB do PC (COM9, USB-Serial/JTAG). |
-| **C3 air node** (ESP32-C3 SuperMini) | 192.168.1.147 | ✅ DZIAŁA — master odpytuje go jako ExtDev (`outaq`) → kanały `c3_*` w `/api/status`. |
+| **Air node** (od 13.10.2026 **ESP32-WROOM-32U**, klasyczny ESP32; wcześniej C3, potem S3) | **192.168.1.147 (statyczne)** | ✅ **DZIAŁA** — WiFi `<twoja-siec>` z anteną zewn. (**RSSI −28 dBm**, moc 19,5 dBm, bez usypiania), MQTT `stacja_c3`, konsola **COM19** (CP210x, 115200). Czujniki: AHT20 OK, BMP280 OK (0x77), **PMS7003 = 1 ramka/s (98/98 dobrych)** → `pm1/pm25/pm10 + temp/hum/press/dew/absh/heat/alt/aqi` (14 kanałów). Master importuje jako ExtDev `outaq` → kanały `c3_*` (`ok=True, 14 odczytów`). Log węzła: `/log.txt`, błędy: `/api/errs`. |
 | Air station (zewnętrzna, wmbus) | 192.168.1.141 | ✅ DZIAŁA — master odpytuje ją jako ExtDev (`aq`) → kanały `in_*`. |
 | Broker MQTT (HA) | 192.168.1.14:1883 | ✅ user `StacjaP` (hasło w pliku sekretów — nie drukować, nie commitować). |
 | Sniffer VEVOR 868 MHz | 192.168.1.130 | ✅ Serwuje `/json`; **nie modyfikować**. |
@@ -27,7 +28,9 @@
 - Węzły podrzędne RS485, kamera, VEVOR 868 MHz (przez sniffer),
 - Import czujników zewnętrznych (ExtDev): stacja powietrza .141 (`aq`), C3 (`outaq`), VEVOR.
 
-Do tego nowy samodzielny węzeł **c3air** (ESP32-C3): AHT20 + BMP280 + PMS7003, WiFi + własna strona WWW + MQTT + OTA + metryki pochodne.
+Do tego samodzielny węzeł **air node** (`c3air/`): AHT20 + BMP280 + PMS7003, WiFi + własna strona WWW +
+MQTT + OTA + metryki pochodne. Ten sam kod buduje się na **4 płytki** (C3 4 MB, S3 16 MB, S3 8 MB, klasyczny
+ESP32 4/8 MB) — różnią się tylko tabelą partycji i pinami/UART (patrz sekcja 5 i 4).
 
 ---
 
@@ -44,6 +47,192 @@ Do tego nowy samodzielny węzeł **c3air** (ESP32-C3): AHT20 + BMP280 + PMS7003,
 z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, ale **treść identyczna**
 (`git diff 9055602 98e5aaa` = pusto — GitHub ma squashowaną historię), więc push wymaga
 `--force-with-lease` albo merge.
+
+---
+
+### Sekcja błędów na www + log do kopii (13.10, 17:40)
+- **Nowa sekcja „Błędy i ostrzeżenia"** na pulpicie (`/`, tylko te, które wystąpiły) i w `/diag` (wszystkie
+  kategorie): WiFi (rozłączenia z powodem), MQTT, czujniki I2C, pyłomierz (zła długość/suma, brak ramek),
+  LittleFS, HTTP do mastera, OTA. Każda ma licznik, czas ostatniego wystąpienia i komunikat; do trwałego logu
+  trafia 1. wystąpienie i co 50.
+- **Nowe endpointy:** `/api/errs` (JSON z licznikami) i **`/log.txt`** (surowy log trwały + bieżący z RAM) —
+  z tego master może robić kopię na SD (np. raz dziennie).
+- **Ustawienia radia widoczne w `/diag`:** `Moc nadawania = 19,5 dBm`, `Usypianie modemu = wyłączone`,
+  `RSSI = −28 dBm` (z podłączoną anteną zewnętrzną).
+- **Piny zapasowe** dla klasycznego ESP32: **GPIO32 i GPIO33** (oba ADC1, nadają się na analogowy albo
+  1-Wire, np. własny deszczomierz z kontaktronem) — widoczne w sondzie pinów w `/diag` i w logu startowym.
+- **OTA działa normalnie** (wielokrotnie użyte 13.10, ostatnio za pierwszym razem). Zamieszanie z „obraz nie
+  działa" dotyczyło **zapisu po USB**, nie OTA — patrz pułapka 3 wyżej.
+
+---
+
+## ZROBIONE (13.10, 19:35) — wyświetlacz TFT mastera (zgłoszone 13.10, 17:44)
+
+Wszystko wdrożone i **wgrane na stację** (firmware OTA 19:2x, `verify_ok:true`, obraz 1 914 272 B):
+
+1. **Górny pasek: TRZY znaczniki stanu naraz** (wspólne dla wszystkich widoków, zawsze widoczne):
+   `KAMERA` (moduł ESP32-CAM), `C3` (węzeł powietrza na zewnątrz — ExtDevice typ `outaq`, .147),
+   `WEW` (węzeł powietrza w środku — typ `aq`, .141). Kropka stanu (zielona / czerwona / szara) jest
+   **na KOŃCU opisu**, promień 5 px, żeby kolor było widać z 2-3 m. Po prawej licznik cyklu (`7/13`) i zegar.
+   Zestaw opisów dobiera się sam do szerokości panelu (na 320 px wchodzi `KAMERA / C3 / WEW`).
+   Stan bierzemy **wyłącznie z tego, co urządzenia same przysyłają**: `extdev.ok` + `lastMs` + `peerMs`
+   (`uptime_s`/`mqtt` z `/api/status` węzła), kamera z chwili odebrania zdjęcia — **bez adresów IP na sztywno**.
+2. **Środek ekranu: rotacja wskazań** co `disp_step_s` (5 s) po liście `disp_ch` — obecnie 13 kanałów:
+   `temp,hum,press,c3_temp,c3_hum,c3_pm25,c3_aqi,in_air_t,in_air_h,in_pm25,in_iaq,vev_wind,vev_rain_day`
+   (czyli różne czujniki: master, węzeł C3 i stacja powietrza wewnętrzna). Duża wartość + jednostka
+   **tuż za liczbą** + duży opis, czego dotyczy („Temperatura", „PM2.5 (C3)" itd.).
+3. **Kolory temperatury** (`tempColor565`): poniżej 10 °C błękity (im zimniej, tym ciemniej, przy minusie
+   granat), potem żółty → pomarańczowy → czerwony. Działa dla każdego kanału temperatury (`temp`, `c3_temp`, `in_air_t`).
+4. **Przecinek dziesiętny** — czcionka 7-segmentowa (Font7) nie ma glifu przecinka, więc przy wartości
+   z przecinkiem `setBigFont()` sam bierze Font8. Koniec z „17 2".
+5. **Dolny pasek jakości powietrza** — 6 pasów o progach 0/50/100/150/200/300/500 (te same wartości hex,
+   co legenda na stronie www) + słupek pokazujący aktualny AQI (`c3_aqi` → PM2.5 z C3 → `aqi` mastera).
+6. **Nic na siebie nie nachodzi:** kropki cyklu na `H-38`, stopka na `H-20`, pasek na `H-12…H`.
+
+Pliki: `src/drv_display.cpp`, `src/drv_display.h` (`nightK_`), `src/extdev.cpp`/`.h` (peer `uptime_s`/`mqtt`),
+`src/camera.h` (`lastIngestMs()`). Sprawdzone na urządzeniu: `GET /api/display` — rotacja
+`temp → c3_hum → c3_aqi` co 5 s, `last_draw_ms` 76-77 ms; `GET /api/extdev` — 3/3 `ok:true`.
+
+---
+
+## AKTUALIZACJA (13.10, 17:45) — dzienna kopia logów węzłów na SD
+- Węzeł wystawia surowy log pod `/log.txt` (patrz `c3air`: `handleLogTxt` → log trwały z LittleFS + bieżący z RAM).
+- Master raz na dobę (po 3:00 czasu lokalnego) pobiera `<baza>/log.txt` z każdego ExtDev typu `aq`/`outaq`
+  i **dopisuje** na kartę SD do `/logi/<nazwa>-<RRRR-MM-DD>.txt` z nagłówkiem (adres + data kopii).
+  Powtórny przebieg tego samego dnia nic nie duplikuje (sprawdza, czy plik już jest), a urządzenia bez
+  `/log.txt` (np. .141) są pomijane jako „brak logu", nie jako błąd.
+- Wołane w `main.cpp` zaraz po `extdev.loop()`. Wynik widać w syslogu: `Kopia logów węzłów: …`.
+- **Sprawdzone na urządzeniu:** `/logi/Stacja_C3__powietrze_-2026-10-13.txt` — 9431 B, w środku logi
+  startowe węzła z jego numeracją uruchomień.
+- **OTA mastera:** `pio run -e esp32s3-ota -t upload --upload-port 192.168.1.143` — **adres IP jest konieczny**,
+  bo domyślny `upload_port` w env to `stacja-pogody.local` i mDNS na tym PC nie rozwiązuje nazwy
+  (`Host stacja-pogody.local Not Found`). Auth: `stacja-ota` (w env).
+
+---
+
+## AKTUALIZACJA (13.10, 13:30) — węzeł powietrza DZIAŁA na ESP32-WROOM-32U (COM19)
+
+**Stan końcowy (zweryfikowany):** `192.168.1.147` — WiFi `<twoja-siec>` STA, `RSSI −39 dBm`, MQTT → `192.168.1.14:1883`
+(prefix `stacja_c3`), AHT20 OK, BMP280 OK (0x77), **PMS7003 = 1 ramka/s, 98/98 dobrych** (`pm1=7, pm25=9,
+pm10=10 µg/m³`), 14 kanałów ważnych, master .143 importuje je jako `c3_*` (`ok=True, 14 odczytów`).
+
+### Błąd, przez który pyłomierz „nie działał" (naprawiony)
+W `pmsParse()` było:
+```cpp
+if (pmsRd() != 0x42) continue;
+if (!PMS_SERIAL.available()) return;    // <-- gubił ramkę
+```
+Gdy w buforze była chwilowo tylko `0x42` (drugi bajt nagłówka jeszcze nie dotarł — pętla sprawdza to tysiące
+razy na sekundę), funkcja **wychodziła ze zjedzonym bajtem nagłówka**. Efekt: **1 poprawna ramka na 45 s**
+zamiast 45, a `bajty` w diagnostyce pokazywały poprawny ruch (~32 B/s). Naprawa: krótkie oczekiwanie (20 ms)
+na drugi bajt i `continue`, zamiast `return`. **Pomiar po poprawce: 98 nagłówków / 98 dobrych, 0 błędów.**
+
+### Diagnostyka dodana w `c3air` (przyda się przy kolejnych czujnikach)
+- `/diag` → sekcja **„PMS: rozbiór"** (nagłówki / zła długość / zła suma / dobre / suma ramki vs wyliczona /
+  początek ramki w hex) oraz **„Aktywność pinów czujników"** (liczba zmian poziomu w 200 ms dla 16, 17, 25, 26,
+  27, 34). Uwaga: sonda 200 ms **nie łapie** ruchu pyłomierza (ramka zajmuje ~33 ms z każdej sekundy) — nie
+  wyciągać z niej wniosku „brak sygnału", patrzeć na licznik bajtów.
+- Znacznik `build <data> <godzina>` w logu startowym — pokazuje, **który obraz faktycznie działa**.
+- Auto-wybór kierunku linii PMS: nasłuch obu pinów przy starcie + co 20 s (zamiana **tylko** gdy drugi pin ma
+  wyraźnie więcej ruchu; działające wpięcie zapisywane w NVS jako `pmsSwap`).
+
+### Piny pyłomierza — zmierzone, nie zgadywane
+`PMS: ruch na 16 (18) / 17 (0)` → **RX płytki = GPIO16 (TX modułu), TX płytki = GPIO17 (RX modułu)**.
+
+### Pułapki tej płytki (ESP32-WROOM-32U, CP210x, COM19, MAC `d4:e9:f4:a3:c5:0c`)
+1. **EN jest na linii RTS** mostka (przy trzymaniu RTS-a log milknie = płytka w resecie).
+2. **IO0 (BOOT) NIE jest podłączony** do DTR — przycisk BOOT nie ściąga IO0 do masy (6/6 prób dało
+   `Wrong boot mode 0x13`). Wejście w tryb wgrywania: **zewrzeć pin `IO0`/`0` do `GND`** (kabelkiem) i wtedy
+   zresetować EN. Działa sekwencja: trzymaj EN nisko (RTS=1), zewrzyj IO0→GND, puść EN → `default_reset`.
+3. **Zapis po USB na `0x10000` nie działa, gdy `otadata` wskazuje drugą partycję** (np. po OTA). Objawy:
+   „wgrałem, a działa stary obraz". Rozwiązanie: `erase_region 0xe000 0x2000` przed zapisem albo `--full`
+   (bootloader + partycje + boot_app0, co resetuje `otadata`).
+4. `setRxBufferSize()` **po** `begin()` nic nie robi (rdzeń tylko loguje błąd) — ustawiać przed `begin()`.
+
+### Paniki z 13.10 (13:00–13:45) — co ustalono
+Objaw: `Guru Meditation` (głównie `IllegalInstruction`) co ~20 s, w **losowych** miejscach (WiFi `lmac*`/`sta_*`,
+lwIP `tcp_output_segment`, idle task, `PubSubClient::connected`), licznik uruchomień rósł do ~570.
+Sprawdzone i **wykluczone**: rozmiar stosu pętli (16 KB nie pomógł), MQTT (przy wyłączonym też panikowało),
+moc radia (11 dBm + usypianie też panikowało). **Ustąpiły po odłączeniu i ponownym podłączeniu USB** i od tego
+czasu (13:00) płytka chodzi stabilnie (2× po 90 s i 100 s bez ani jednej paniki) na maksymalnej mocy.
+Wniosek: nie kod, a przejściowy stan sprzętowy (zablokowane IO / „zawieszony" układ). **Jeśli wróci — najpierw
+odłączyć i podłączyć USB, dopiero potem szukać w kodzie.**
+
+### Pozostałe zmiany w kodzie
+- `esp_ota_mark_app_valid_cancel_rollback()` przeniesione na **początek** `setup()` (wcześniej na końcu — gdy nowy
+  obraz panikował w pierwszych sekundach, bootloader cofał aktualizację i „wgrane poprawki znikały").
+- `-DARDUINO_LOOP_STACK_SIZE=16384` w `esp32-air-4mb` i `esp32s3-air`.
+- Sonda pinów + licznik rozbioru ramek + znacznik builda (patrz wyżej).
+
+---
+
+## AKTUALIZACJA (13.10, 09:20) — drugi węzeł powietrza: ESP32-WROOM-32U (klasyczny ESP32)
+
+- **Nowa płytka:** ESP32-D0WD-V3 rev 3.1, **4 MB**, mostek **CP210x (COM19)**, MAC `d4:e9:f4:a3:c5:0c`
+  (krótsza obudowa + gniazdo anteny zewnętrznej). Fabrycznie miała obcy układ partycji (recovery/ota_0/settings
+  z ESP-IDF 5.3.1) i pętlę resetów TG0WDT.
+- **Piny (środowisko `esp32-air-4mb`)** — w `c3air/src/main.cpp` pod `C3AIR_ESP32_CLASSIC`:
+
+| Funkcja | GPIO |
+|---|---|
+| I2C1 SDA / SCL (AHT20 `0x38`, BMP280 `0x76/0x77`) | **21 / 22** |
+| I2C2 SDA / SCL (przyszły czujnik zewnętrzny) | **25 / 26** |
+| PMS7003 RX / TX (`Serial2`, 9600) | **16 / 17** |
+| Deszcz — linia analogowa (AO) | **34** (ADC1_CH6, tylko wejście) |
+| Wiatromierz — hall D0 | **27** (pull-up + przerwanie) |
+| wolne / rezerwa | 4, 5, 18, 19, 23, 32, 33, 35, 36, 39 |
+
+  Uzasadnienie: 6–11 = flash, 0/2/12/15 = strapping, a **ADC2 (0,2,4,12–15,25–27) nie działa przy Wi-Fi** —
+  dlatego deszcz MUSI być na ADC1 (32–39). 25/26/27 są tam użyte cyfrowo, więc to nie przeszkadza.
+- **Pułapka (kosztowała jedno wgranie):** klasyczny ESP32 ma bootloader na **`0x1000`**, nie `0x0` jak C3/S3.
+  Pod `0x0` ROM wpada w pętlę `invalid header: 0x04202040` + `RTCWDT_RTC_RESET`. `tools/flash_retry.py`
+  wybiera offset sam (`--chip esp32` → `0x1000`).
+- **Pułapka sprzętowa tej płytki:** IO0 (BOOT) **i** EN **nie są podłączone** do DTR/RTS mostka CP210x —
+  wejście w tryb wgrywania tylko przez **fizyczne trzymanie BOOT** w chwili resetu, a po wgraniu trzeba
+  nacisnąć EN albo odłączyć USB (inaczej zostaje `waiting for download`).
+- **Stan po wgraniu (zweryfikowany):** `piny: I2C1 SDA=21 SCL=22 | I2C2 SDA=25 SCL=26 | PMS RX=16 TX=17 |
+  deszcz ADC=34 | hall=27`; WiFi `<twoja-siec>` → `192.168.1.147`; MQTT połączony (prefix `stacja_c3`); konsola UART0
+  (COM19, 115200). Obie magistrale I2C **puste** — czujniki jeszcze niepodłączone.
+- **Diagnostyka:** `/diag` pokazuje surowy odczyt linii deszczu (ADC), licznik impulsów halla i skan drugiej
+  magistrali I2C. Bez kanałów MQTT i bez zmian w tabelach importu mastera (świadomie — czekają na decyzję
+  o jednostkach/nazwach).
+- **`--erase-nvs`** w `tools/flash_retry.py`: czyści NVS (`0x9000-0xE000`) przy pierwszym wgraniu na płytkę
+  z obcym układem partycji. **Używać tylko dla nowej płytki — nigdy dla mastera.**
+
+---
+
+## AKTUALIZACJA (12.10, 22:27) — węzeł powietrza na ESP32-S3 (N16R8) + warianty płytek
+
+- **Nowa płytka na COM12 = ESP32-S3, 16 MB flash** (MAC `80:b5:4e:c3:f8:58`, mostek CH343). Poprzedni węzeł
+  C3 (MAC `10:B4:1D:16:25:14`) **nie łączył się z routerem <twoja-siec>** (powód 15/202/204 mimo poprawnego hasła);
+  na S3 **ten sam kod łączy się od razu** (RSSI **−43 dBm**) — hipoteza o słabym RF tamtej płytki potwierdzona.
+- Wgrany **pełny obraz** (`--full`: bootloader `0x0`, partycje `0x8000`, `boot_app0` `0xe000`, app `0x10000`)
+  środowiska `esp32s3-air`, z fabrycznymi danymi Wi-Fi wkompilowanymi przez `PLATFORMIO_BUILD_FLAGS`
+  (nie trafiają do repo; pusta płytka zapisuje je do NVS w `loadCfg()`).
+- **Stan .147 (zmierzony):** `/api/status` → `fw=c3air`, `mqtt:true`, IP statyczne `192.168.1.147`, `-43 dBm`;
+  MQTT do `192.168.1.14:1883`, prefix `stacja_c3` (ustawione przez `POST /save`: `mqh/mqp/mqu/mqw/mqx`).
+- **Konsola S3 przeniesiona na UART0** (usunięte `-DARDUINO_USB_CDC_ON_BOOT=1` z `esp32s3-air*`), bo płytka jest
+  programowana i podglądana przez mostek CH343 — wcześniej nie było widać **żadnego** logu. PMS7003 siedzi
+  teraz na **UART1** (RX 20 / TX 5), żeby nie kolidował z konsolą (makro `C3AIR_ESP32S3`).
+- **5 wariantów firmware, wszystkie build SUCCESS:** `esp32c3-air` (4 MB, 54,7 %), `esp32s3-air` (16 MB, 33,2 %,
+  build 2×), `esp32s3-air-8mb`, `esp32-air-4mb` (63,9 %), `esp32-air-8mb`. Klasyczny ESP32: I2C 21/22, pył na
+  `Serial2` (16/17) — **nie ma GPIO20**, a konsola zajmuje UART0 (`C3AIR_ESP32_CLASSIC`).
+- **Naprawione błędy w `c3air/src/main.cpp`:**
+  1. `bmpBegin()` zapisywał `bmpAddr` **przed** sprawdzeniem ID → bez czujnika `/diag` pokazywał fałszywe
+     „BMP280 OK (0x76)". Teraz adres zapisywany dopiero po potwierdzeniu ID `0x58`.
+  2. Brak ponownego wykrywania czujników → dodane w `loop()` co 30 s, więc moduł podłączony po starcie
+     działa **bez restartu** urządzenia.
+- **Czujniki węzła: NIEPODŁĄCZONE** — `I2C: (puste)`, AHT20 brak, BMP280 brak, PMS7003 brak ramek. Master (.143)
+  odpytuje .147 jako ExtDev `outaq` i słusznie zgłasza „brak rozpoznanych kanałów"; widoczne `c3_*` to
+  **stare wartości** z poprzedniego węzła C3.
+- **Narzędzie:** `tools/flash_retry.py --build <dir> --chip <esp32|esp32s3> --flash-size <4MB|8MB|16MB> [--full|--app-only]`
+  (czeka na port, odrzuca „duchy" COM, próbuje `default_reset` i `no_reset`).
+- **Pułapka (mój błąd, naprawiony):** podmiana tekstu przez PowerShell (`Get-Content -Raw` + `WriteAllText`
+  w PS 5.1) **podwójnie koduje polskie znaki** (systemowy ANSI = cp1250): `ó` (`C3 B3`) → `Ăł` (`C4 82 C5 82`).
+  Wykrywanie/cofanie bajtowo (liczniki `c3b3` vs `c482`) odwrotną tabelą cp1250. **Tekst edytować tylko narzędziem `edit`.**
+- **Pułapka:** cudzysłowy w `PLATFORMIO_BUILD_FLAGS` muszą mieć `\` (`-DC3_DEF_PASS=\"hasło\"`), inaczej build
+  pada na `expected primary-expression before '}'`.
+- **Na życzenie użytkownika:** bez commita/pusha, bez syncu z `OnlineWorkspace`, bez backupu ZIP.
 
 ---
 
@@ -87,8 +276,10 @@ z 11.10 06:16: „nic na githuba niewgrywaj"). Lokal **ahead 20 / behind 8**, al
   statusu; `ahtProbe()` najpierw inicjalizuje układ (0xE1 / 0xBE), dopiero potem wymaga bitu CAL.
 - Mapa magistrali (07:30): ch0 `0x57,0x68`, ch1 `0x23`, ch2 —, ch3 `0x76` (BMP280), ch4 —, ch5 —,
   ch6 —, ch7 `0x38` (AHT2x). Multiplekser `0x70`, razem 5 układów.
-- **Nadal nie wgrane:** `uploadfs` (strona z zakładką „Wyświetlacz TFT" i mapą I2C — serwowany
-  `index.html` jest starszy niż lokalny).
+- **Wgrane 13.10, 19:24:** `uploadfs` — strona (374 588 B) i `i18n.js` serwowane z mastera, zgodne z plikami
+  lokalnymi; w menu jest nowa zakładka „Węzły Wi-Fi" (druga sekcja obok ESP/RS485, której nie ruszano).
+  Uwaga: pierwsza próba `espota -t uploadfs` padła na 38% i **zostawiła FS bez strony** — obraz FS
+  (10 420 224 B) wgrywaj przez `POST /api/ota/filesystem` (multipart + `X-OTA-Key`), poszło w 88 s.
 
 ---
 
@@ -204,6 +395,29 @@ cd "C:\Projects\NOWY BACKUP\ESP\StacjaPogody\c3air"
 # OTA: -e esp32c3-air-ota (192.168.1.147)
 ```
 
+### Air node — warianty płytek (ten sam kod, 4 tabele partycji)
+| Środowisko PlatformIO | Płytka | Flash | Partycje | Konsola / pył |
+|---|---|---|---|---|
+| `esp32c3-air` | ESP32-C3 SuperMini | 4 MB | `c3air/partitions.csv` | USB-CDC / UART0 (20, 5) |
+| `esp32s3-air` | ESP32-S3 (N16R8) | 16 MB | `partitions.csv` | UART0 (CH343) / UART1 (20, 5) |
+| `esp32s3-air-8mb` | ESP32-S3 N8 | 8 MB | `partitions-8mb.csv` | jak wyżej |
+| `esp32-air-4mb` | klasyczny ESP32 (WROOM-32) | 4 MB | `partitions-4mb.csv` | UART0 / UART2 (16, 17), I2C 21/22 |
+| `esp32-air-8mb` | klasyczny ESP32 | 8 MB | `partitions-8mb.csv` | jak wyżej |
+
+Uwaga: klasyczny ESP32 **nie ma GPIO20**, a konsola siedzi na UART0 — dlatego pył idzie po `Serial2`
+(16/17), a I2C na 21/22 (przełącznik `C3AIR_ESP32_CLASSIC` w `c3air/src/main.cpp`).
+
+**Wgranie z retry (płytka wchodzi w download mode sama albo po resecie):**
+```powershell
+cd "C:\Projects\NOWY BACKUP\ESP\StacjaPogody"
+# nowa/pusta płytka: --full (bootloader + partycje + app); aktualizacja: --app-only
+& "...\python.exe" tools\flash_retry.py --build c3air/.pio/build/esp32s3-air --chip esp32s3 --flash-size 16MB --full
+& "...\python.exe" tools\flash_retry.py --build c3air/.pio/build/esp32-air-4mb --chip esp32 --flash-size 4MB --full
+```
+Fabryczne Wi-Fi dla pustej płytki (nie trafia do repo, przekazywane przy budowaniu):
+`$env:PLATFORMIO_BUILD_FLAGS = '-DC3_DEF_SSID=\"<twoja-siec>\" -DC3_DEF_PASS=\"<hasło>\"'` — cudzysłowy **muszą** być
+poprzedzone `\`, inaczej build pada (`expected primary-expression before '}'`).
+
 **Pełny flash C3 po zmianie tabeli partycji** (bootloader+partitions+app, zachowuje NVS):
 ```powershell
 C:\Users\kruse\.platformio\penv\Scripts\python.exe C:\Users\kruse\.platformio\packages\tool-esptoolpy\esptool.py --chip esp32c3 -p COM24 -b 460800 write_flash 0x0 bootloader.bin 0x8000 partitions.bin 0x10000 firmware.bin
@@ -214,12 +428,15 @@ C:\Users\kruse\.platformio\penv\Scripts\python.exe C:\Users\kruse\.platformio\pa
 
 ## 5. PINSY I CZUJNIKI
 
-### C3 (c3air)
-- I2C: SDA=8, SCL=9
-- AHT20 (0x38) — temperatura + wilgotność
-- BMP280 (0x77) — ciśnienie
-- PMS7003: UART0 RX=20 / TX=21, 9600 (RS485 nieużywany w c3air)
-- Konsola: USB-CDC (`Serial`), `Serial0`=UART0 PMS. **Brak Serial2 na C3.**
+### Air node — piny w zależności od płytki (`c3air/src/main.cpp`)
+- **ESP32-C3** (SuperMini): I2C SDA=8, SCL=9; PMS7003 na UART0 RX=20 / TX=5, 9600; konsola USB-CDC.
+- **ESP32-S3**: I2C 8/9; PMS na **UART1** RX=20 / TX=5; konsola UART0 (GPIO43/44 → mostek CH343).
+  UART1 musi być wolny, bo konsola dzieli UART0 z wgrywaniem firmware.
+- **klasyczny ESP32**: I2C SDA=21, SCL=22; PMS na **UART2 (Serial2)** RX=16 / TX=17; konsola UART0.
+  (Brak GPIO20; `Serial0` = konsola, więc pył nie może na niego trafić.)
+- Czujniki: AHT20 (0x38), BMP280 (0x76/0x77 — ID 0x58), PMS7003. Brak czujnika = `brak` w `/diag`
+  (adres BMP280 zapisywany **po** potwierdzeniu ID), wykrywanie ponawiane co 30 s w pętli → można
+  podłączyć czujnik bez restartu.
 
 ### Master (S3)
 - `wd_heartbeat` — pin „życia" ~1 Hz (nowa rola pinu, domyślnie −1 = wyłączony).
@@ -291,8 +508,13 @@ Master (`src/`, `data/`, `include/`):
 - `include/pins.h`, `src/pinmap.cpp`, `src/board.cpp` — rola pinu `wd_heartbeat`.
 
 C3 (`c3air/`):
-- `c3air/src/main.cpp` — cały firmware (pojedynczy plik, ~25 KB).
-- `c3air/platformio.ini`, `c3air/partitions.csv`.
+- `c3air/src/main.cpp` — cały firmware (pojedynczy plik, ~25 KB), wspólny dla wszystkich płytek
+  (przełączniki `C3AIR_ESP32S3`, `C3AIR_ESP32_CLASSIC`).
+- `c3air/platformio.ini` — 5 środowisk: `esp32c3-air`(+`-ota`), `esp32s3-air`(+`-ota`), `esp32s3-air-8mb`,
+  `esp32-air-4mb`, `esp32-air-8mb`.
+- `c3air/partitions.csv` (C3 4 MB), `partitions.csv` / `partitions-8mb.csv` / `partitions-4mb.csv` (root, wg flashu).
+- `tools/flash_retry.py` — wgrywanie z retry (czeka na port, `--full`/`--app-only`, `--flash-size`).
+- `src/wifi_util.h` — `wifiApplyMaxPower()` (pełna moc WiFi, wspólne dla wszystkich płytek).
 
 ---
 
@@ -304,6 +526,8 @@ C3 (`c3air/`):
 4. ✅ **Build `esp32s3-master` — 2× SUCCESS** (RAM 26,7 %, Flash 56,5 %, 0 ostrzeżeń/błędów); backup `C:\Projects\NOWY BACKUP\ESP\StacjaPogody.zip` (44,6 MB, bez `.pio`, z `.git`).
 5. ⏸️ **Push — WSTRZYMANY NA ŻYCZENIE UŻYTKOWNIKA** („nic na githuba niewgrywaj"). Zmiany **zacommitowane lokalnie** (11.10 23:50); lokal **ahead 20 / behind 8** vs `98e5aaa` — treść identyczna, push wymaga `--force-with-lease` albo merge. Sync z `C:\Projects\OnlineWorkspace\StacjaPogody\` **niewykonany**.
 6. (opcjonalnie) Ustawić `wifi_ssid`/`wifi_pass` w konfiguracji mastera przez `POST /api/config`, żeby zakładka „Sieć" pokazywała realne dane (teraz puste — działa fallback na poświadczenia z NVS sterownika Wi-Fi).
+7. **Podłączyć czujniki do węzła powietrza .147** (ESP32-S3): I2C `SDA=8 / SCL=9` (AHT20 `0x38`, BMP280 `0x76/0x77`), PMS7003 na `UART1` (`RX=20 / TX=5`). Po podłączeniu czujniki są wykrywane w ciągu 30 s **bez restartu**, a master zacznie importować `c3_*`. Kolejność flashowania: kod → build 2× → `git diff` → dopiero potem wgranie (domyślnie tylko aplikacja `@0x10000`).
+8. **Warianty klasycznego ESP32 (`esp32-air-4mb`, `esp32-air-8mb`) — zbudowane, niegrane.** Wgranie, gdy płytka będzie podłączona: `tools/flash_retry.py --build c3air/.pio/build/esp32-air-4mb --chip esp32 --flash-size 4MB --full`.
 
 ---
 

@@ -23,6 +23,7 @@
 #include "alerts.h"
 #include "openmeteo.h"
 #include "syslog.h"
+#include "wifi_util.h"
 #include "led_ring.h"
 #include "drv_display.h"
 #include "flashfix.h"
@@ -34,8 +35,10 @@
 #include "rs485.h"
 #include "recovery_ap.h"
 #include "extdev.h"
+#include "node_log_backup.h"   // dzienna kopia logów węzłów na kartę SD
 #include "retention.h"
 #include "watchdog.h"
+#include "loop_stats.h"
 #if !STACJA_HEADLESS
 // Firmware węzła bez sieci (STACJA_HEADLESS) nie zawiera Wi-Fi, serwera www,
 // MQTT, serwisów pogodowych ani OTA - dane z jego czujników czyta master po
@@ -92,7 +95,7 @@ void setupWiFi() {
   }
 
   WiFi.mode(asNode ? WIFI_AP : WIFI_AP_STA);
-  WiFi.setSleep(false);   // stabilniejszy MQTT i szybszy interfejs www
+  wifiApplyMaxPower();    // pełna moc nadawania + brak usypiania modemu (wifi_util.h)
 
   String host = config.hostname();
   host.trim();
@@ -172,6 +175,9 @@ void logWifiChanges() {
 
   switch (st) {
     case WL_CONNECTED:
+      // Po (re)asocjacji sterownik wraca do swoich wartości - wymuszamy pełną
+      // moc i brak usypiania modemu ponownie, żeby nie "zgubić" ustawienia.
+      wifiApplyMaxPower();
       LOG_I("Połączono z Wi-Fi '%s', IP %s, RSSI %d dBm",
             config.wifiSsid().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
       break;
@@ -397,10 +403,14 @@ void setup() {
 }
 
 void loop() {
+  loopStatsBeginIteration();
 #if !STACJA_HEADLESS
-  web.loop();
-  if (!asNode) mqtt.loop();
-  ota.loop();
+  {
+    LoopStageTimer stage(LOOP_WWW);
+    web.loop();
+    if (!asNode) mqtt.loop();
+    ota.loop();
+  }
 #endif
 
   unsigned long now = millis();
@@ -427,14 +437,18 @@ void loop() {
   // na OTA w środku watchdog.cpp.
   watchdog.maybeDailyRestart();
 
-  sensors.serviceDiscovery();
-  sensors.serviceTuya();   // Tuya UART (T=...;RH=...) - bufor obsługiwany co obieg
-  gps.loop();
-  lightning.loop();
-  rtc.loop();
+  {
+    LoopStageTimer stage(LOOP_SENSORS);
+    sensors.serviceDiscovery();
+    sensors.serviceTuya();   // Tuya UART (T=...;RH=...) - bufor obsługiwany co obieg
+    gps.loop();
+    lightning.loop();
+    rtc.loop();
+  }
 
   // Odczyt czujników co 5 s
   if (now - lastSensorRead >= 5000) {
+    LoopStageTimer stage(LOOP_SENSORS_READ);
     lastSensorRead = now;
     esp_task_wdt_reset();   // odczyt I2C/ADC potrafi zająć dłużej - niech watchdog liczy od nowa
     sensors.readAll();
@@ -447,27 +461,32 @@ void loop() {
   // Natężenie światła (BH1750) co 1,5 s - światło zmienia się szybko (chmury,
   // ręka nad czujnikiem), więc kanał "light" odświeżamy częściej niż resztę.
   if (now - lastLightRead >= 1500) {
+    LoopStageTimer stage(LOOP_SENSORS_READ);
     lastLightRead = now;
     sensors.readBH1750();
   }
 
-  // Astronomia (Słońce/Księżyc) co 60 s - pozycja z GPS, a bez fixa z ustawień
-  if (now - lastAstro >= 60000UL) {
-    lastAstro = now;
-    astro.update(config.latitude(), config.longitude(), time(nullptr),
-                 AstroService::localTzOffsetMin());
-  }
+  {
+    LoopStageTimer stage(LOOP_ASTRO);
+    // Astronomia (Słońce/Księżyc) co 60 s - pozycja z GPS, a bez fixa z ustawień
+    if (now - lastAstro >= 60000UL) {
+      lastAstro = now;
+      astro.update(config.latitude(), config.longitude(), time(nullptr),
+                   AstroService::localTzOffsetMin());
+    }
 
-  // Prognoza lokalna: próbka historii (co 5 min) + przeliczenie co 30 s
-  forecast.loop();
-  if (now - lastForecast >= 30000UL) {
-    lastForecast = now;
-    forecast.update(time(nullptr), AstroService::localTzOffsetMin());
+    // Prognoza lokalna: próbka historii (co 5 min) + przeliczenie co 30 s
+    forecast.loop();
+    if (now - lastForecast >= 30000UL) {
+      lastForecast = now;
+      forecast.update(time(nullptr), AstroService::localTzOffsetMin());
+    }
   }
 
   // Dosiewanie rekordów z CSV (jeden plik na obieg pętli, aż do skutku)
 #if !STACJA_HEADLESS
   if (!asNode) {
+    LoopStageTimer stage(LOOP_JOBS);
     analysis.loop();
     alerts.loop();
     retention.loop();
@@ -476,6 +495,7 @@ void loop() {
 
   // Zapis logu na SD co log_interval_s
   if (now - lastLog >= (unsigned long)config.logIntervalS() * 1000UL) {
+    LoopStageTimer stage(LOOP_LOG);
     lastLog = now;
     esp_task_wdt_reset();   // zapis na karcie SD (SPI) bywa najwolniejszy w obiegu
     std::vector<Channel> snap = sensors.snapshot();
@@ -495,7 +515,10 @@ void loop() {
   // Magistrala RS485: master odpytuje węzeł, węzeł odpowiada.
   // Przed pierścieniem LED - żeby kolory pogody brały też dane z drugiego ESP.
   esp_task_wdt_reset();   // RS485 potrafi blokować do ~3 s (brak węzła)
-  rs485.loop();
+  {
+    LoopStageTimer stage(LOOP_RS485);
+    rs485.loop();
+  }
   esp_task_wdt_reset();
 
 #if STACJA_HEADLESS
@@ -503,22 +526,45 @@ void loop() {
 #endif
 
   // Pierścień LED RGB: kolor stanu pogody + animacja
-  ledRing.loop();
+  {
+    LoopStageTimer stage(LOOP_RING);
+    ledRing.loop();
+  }
 
   // Wyświetlacz TFT: odświeżanie z odstępem ustawionym na stronie www
-  display.loop();
+  {
+    LoopStageTimer stage(LOOP_DISPLAY);
+    display.loop();
+  }
   esp_task_wdt_reset();   // zdjęcie z kamery: pobranie po HTTP (limit 4 s) + analiza JPEG
-  camera.loop();          // timelapse i zdjęcia zlecone z www (gdy kamera włączona)
+  {
+    LoopStageTimer stage(LOOP_CAMERA);
+    camera.loop();        // timelapse i zdjęcia zlecone z www (gdy kamera włączona)
+  }
   esp_task_wdt_reset();
 #if !STACJA_HEADLESS
   esp_task_wdt_reset();   // HTTP do urządzeń zewnętrznych (timeout 1,5+2 s)
-  extdev.loop();    // odpytywanie urządzeń zewnętrznych po HTTP
+  {
+    LoopStageTimer stage(LOOP_EXTDEV);
+    extdev.loop();  // odpytywanie urządzeń zewnętrznych po HTTP
+  }
+  esp_task_wdt_reset();
+  // Dzienna kopia logów węzłów (/log.txt) na kartę SD - sam pilnuje raz-na-dobę
+  {
+    LoopStageTimer stage(LOOP_LOG);
+    nodeLogs.loop();
+  }
   esp_task_wdt_reset();
 #endif
   // Długie przytrzymanie przycisku BOOT (3 s) = przywrócenie fabrycznych
   if (buttonPin >= 0 && digitalRead(buttonPin) == LOW) {
     unsigned long press = millis();
-    while (digitalRead(buttonPin) == LOW && millis() - press < 3000) delay(10);
+    while (digitalRead(buttonPin) == LOW && millis() - press < 3000) {
+      // Impuls życia musi iść dalej - inaczej zewnętrzny watchdog odetnie
+      // zasilanie dokładnie w chwili, gdy trzymasz przycisk.
+      watchdog.heartbeat();
+      delay(10);
+    }
     if (millis() - press >= 3000) {
       LOG_W("Przycisk BOOT przytrzymany 3 s - reset do ustawień fabrycznych");
       g_factoryResetRequested = true;
@@ -539,12 +585,9 @@ void loop() {
     ESP.restart();
   }
 
-  // Diagnostyka: pojedynczy obieg pętli nie powinien trwać dłużej niż ~1 s.
-  // Dłuższe czasy sumują się z innymi blokującymi wywołaniami i wyzwalają
-  // watchdog zadania - logujemy je, żeby widzieć winowajcę w syslogu.
-  if ((long)(millis() - now) > 2000) {
-    LOG_W("Pętla główna: obieg trwał %lu ms", (unsigned long)(millis() - now));
-  }
+  // Diagnostyka: pomiar etapów obiegu (loop_stats.cpp) - wolny obieg trafia do
+  // logu razem z nazwą najdłuższego etapu, a maksima widać w "Diagnostyce".
+  loopStatsEndIteration();
 
   delay(10);
 }

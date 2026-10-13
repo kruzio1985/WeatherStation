@@ -62,6 +62,11 @@ WebServerManager web;
 //  zestaw - skan zwracał 0 sieci mimo widocznych AP. Ścieżka Arduino jest
 //  spójna z rdzeniem, dlatego tylko ona daje prawidłową listę sieci.
 // ------------------------------------------------------------
+// Wyniki skanu Wi-Fi pisze osobne zadanie, a czyta je serwer www - String
+// nie jest bezpieczny przy równoczesnym zapisie i odczycie (przydział pamięci
+// podczas serializacji), dlatego wynik jest chroniony mutexem.
+static SemaphoreHandle_t s_scanMtx = nullptr;
+
 static volatile bool s_scanRunning = false;   // trwa skan (dla strony www)
 static volatile bool s_scanBusy = false;      // zadanie skanujące jeszcze żyje
 static unsigned long s_scanStarted = 0;
@@ -71,6 +76,19 @@ static int    s_scanCount = 0;
 static int    s_scanTries = 0;                // ile przebiegów skanu wykonał sterownik
 
 static const int SCAN_AP_CAP = 64;            // maksymalna liczba AP w jednym skanie
+
+// Wyniki skanu Wi-Fi pisze osobne zadanie, a czyta je serwer www - String nie
+// jest bezpieczny przy równoczesnym zapisie i odczycie (serializacja przydziela
+// pamięć), dlatego odczyt i zapis wyniku są pod tym samym mutexem.
+static void scanResultCopy(String& networks, String& error, int& count, int& tries, bool& running) {
+  if (s_scanMtx) xSemaphoreTake(s_scanMtx, portMAX_DELAY);
+  networks = s_scanNetworks;
+  error    = s_scanError;
+  count    = s_scanCount;
+  tries    = s_scanTries;
+  running  = s_scanRunning;
+  if (s_scanMtx) xSemaphoreGive(s_scanMtx);
+}
 
 // Jedno znalezione AP - tylko pola potrzebne stronie www.
 struct ScanAp {
@@ -133,6 +151,7 @@ static void wifiScanTask(void*) {
     else             LOG_I("Skan Wi-Fi: przebieg %d -> %d sieci", tries, got);
     if (e2.length()) err = e2;
   }
+  if (s_scanMtx) xSemaphoreTake(s_scanMtx, portMAX_DELAY);
   s_scanTries = tries;
 
   if (got <= 0 && err.length()) {
@@ -179,6 +198,7 @@ static void wifiScanTask(void*) {
 
   s_scanRunning = false;
   s_scanBusy = false;
+  if (s_scanMtx) xSemaphoreGive(s_scanMtx);
   vTaskDelete(nullptr);
 }
 
@@ -204,8 +224,25 @@ static void bodySink(AsyncWebServerRequest* r, uint8_t* data, size_t len, size_t
   s_body.concat((const char*)data, len);
 }
 
+// Treść POST-a jest trzymana w jednym wspólnym buforze, a wskaźnik żądania,
+// które ją przyniosło, nie był nigdy czyszczony - po zwolnieniu żądania ten
+// sam adres mógł trafić do nowego żądania i handler oddałby mu starą treść.
+// Czyścimy bufor, gdy połączenie się kończy (tylko jeśli bufor nadal należy
+// do tego żądania - kolejne żądanie mogło już nadpisać wskaźnik).
+static void detachBodyOnClose(AsyncWebServerRequest* r) {
+  r->onDisconnect([r]() {
+    if (s_bodyReq == r) {
+      s_bodyReq = nullptr;
+      s_body = "";
+    }
+  });
+}
+
 static void onPost(const char* uri, ArRequestHandlerFunction fn) {
-  server.on(uri, HTTP_POST, fn, nullptr, bodySink);
+  server.on(uri, HTTP_POST, [fn](AsyncWebServerRequest* r) {
+    detachBodyOnClose(r);
+    fn(r);
+  }, nullptr, bodySink);
 }
 
 // ------------------------------------------------------------
@@ -287,6 +324,17 @@ static String jsonError(const char* msg) {  JsonDocument d;
   return s;
 }
 
+// Operacje nieodwracalne (usunięcie pliku, format karty SD, reset ustawień)
+// wymagają tego samego hasła co OTA - one nie mają własnego potwierdzenia,
+// a stacja stoi też w sieci domowej. Gdy hasło OTA nie jest ustawione,
+// funkcja przepuszcza (identycznie jak trasy OTA).
+static bool requiresOtaKey(AsyncWebServerRequest* r) {
+  if (otaAuthorized(r)) return false;
+  r->send(401, "application/json",
+          jsonError("Wymagane hasło OTA (nagłówek X-OTA-Key)"));
+  return true;
+}
+
 // Zamienia "#RRGGBB" / "RRGGBB" na liczbę 0xRRGGBB. Zwraca false, gdy tekst
 // nie jest poprawnym kolorem (wtedy wołający pomija daną wartość).
 static bool parseHexColor(const char* s, uint32_t& out) {
@@ -324,8 +372,14 @@ static String jsonEscape(const String& in) {
 }
 
 static String bodyOf(AsyncWebServerRequest* r) {
-  // 1) treść odebrana przez bodySink (application/json i inne typy)
-  if (r == s_bodyReq && s_body.length()) return s_body;
+  // 1) treść odebrana przez bodySink (application/json i inne typy).
+  //    Tylko dla żądań, które faktycznie niosą treść: wskaźnik żądania z
+  //    poprzedniego POST-a może zostać przydzielony nowemu żądaniu GET, a wtedy
+  //    stara treść trafiłaby na przykład do polecenia magistrali RS485.
+  if (r == s_bodyReq && (r->method() == HTTP_POST || r->method() == HTTP_PUT) &&
+      s_body.length()) {
+    return s_body;
+  }
 
   // 2) formularz lub tekst wysłany w parametrze "plain"
   String b = r->arg("plain");
@@ -423,6 +477,9 @@ void WebServerManager::registerRoutes() {
       co["zone"] = c.zone;
       co["remote"] = c.remote;   // kanał z drugiego ESP (po RS485)
       co["remote_addr"] = c.remote ? c.remoteAddr : 0;   // adres węzła magistrali
+      // Offset kalibracji musi wrócić do strony: bez tego tabela kalibracji
+      // wysyłała z powrotem 0 i kasowała zapisaną korektę kanału.
+      co["offset"] = config.channelCfg(c.id).offset;
     }
     d["ds_count"] = sensors.dsSensorCount();
     d["pms_detected"] = sensors.pmsDetected();
@@ -745,9 +802,10 @@ void WebServerManager::registerRoutes() {
   });
 
   onPost("/api/sd/delete", [](AsyncWebServerRequest* r) {
+    if (requiresOtaKey(r)) return;
     String b = bodyOf(r);
     JsonDocument d;
-    deserializeJson(d, b);
+    if (deserializeJson(d, b)) { r->send(400, "application/json", jsonError("Błędny JSON")); return; }
     String path = d["path"] | "";
     if (path.length() == 0) { r->send(400, "application/json", jsonError("Brak path")); return; }
     bool ok = sdCard.deleteFile(path);
@@ -755,6 +813,7 @@ void WebServerManager::registerRoutes() {
   });
 
   server.on("/api/sd/format", HTTP_POST, [](AsyncWebServerRequest* r) {
+    if (requiresOtaKey(r)) return;
     bool ok = sdCard.format();
     if (ok) logger.begin();
     r->send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : jsonError("Formatowanie nieudane"));
@@ -858,6 +917,12 @@ void WebServerManager::registerRoutes() {
       } else if (s_imgTooBig) {
         err = "zdjęcie przekracza maksymalny rozmiar (512 KB)";
       }
+      // Bufor zdjęcia trzyma do 512 kB - po odebraniu zwalniamy go, żeby
+      // kolejna (i równoległa) wysyłka nie nadpisała odebranego już zdjęcia.
+      if (s_imgBuf) { heap_caps_free(s_imgBuf); s_imgBuf = nullptr; }
+      s_imgCap = 0;
+      s_imgLen = 0;
+      s_imgReq = nullptr;
       d["ok"] = ok;
       if (ok) d["path"] = camera.lastFile();
       else    d["error"] = err;
@@ -1181,25 +1246,30 @@ void WebServerManager::registerRoutes() {
                          : (m == WIFI_MODE_AP)    ? "AP" : "wyłączone";
 
     String resp = "{\"scanning\":";
-    resp += s_scanRunning ? "true" : "false";
+    String net, serr;
+    int nCount = 0, nTries = 0;
+    bool scanning = false;
+    scanResultCopy(net, serr, nCount, nTries, scanning);
+
+    resp += scanning ? "true" : "false";
     resp += ",\"mode\":\"";
     resp += modeName;
     resp += "\",\"sta_enabled\":";
     resp += (WiFi.getMode() & WIFI_MODE_STA) ? "true" : "false";
 
-    if (s_scanRunning) {
+    if (scanning) {
       resp += ",\"status\":\"scanning\"";
-    } else if (s_scanError.length()) {
+    } else if (serr.length()) {
       resp += ",\"status\":\"failed\",\"error\":\"";
-      resp += jsonEscape(s_scanError);
+      resp += jsonEscape(serr);
       resp += "\"";
     } else {
       resp += ",\"status\":\"done\",\"count\":";
-      resp += String(s_scanCount);
+      resp += String(nCount);
       resp += ",\"tries\":";
-      resp += String(s_scanTries);
+      resp += String(nTries);
       resp += ",\"networks\":";
-      resp += (s_scanNetworks.length() ? s_scanNetworks : String("[]"));
+      resp += (net.length() ? net : String("[]"));
     }
     resp += "}";
     r->send(200, "application/json", resp);
@@ -1842,6 +1912,7 @@ void WebServerManager::registerRoutes() {
   });
 
   server.on("/api/factoryreset", HTTP_POST, [](AsyncWebServerRequest* r) {
+    if (requiresOtaKey(r)) return;
     r->send(200, "application/json", "{\"ok\":true}");
     g_factoryResetRequested = true;
   });
@@ -1852,6 +1923,13 @@ void WebServerManager::registerRoutes() {
   server.serveStatic("/", LittleFS, "/", "no-cache, must-revalidate").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest* r) {
+    // Nieznany adres API nie może kończyć się przekierowaniem na stronę główną:
+    // literówka w wywołaniu z www dostawała wtedy HTML z kodem 200 i błąd
+    // parsowania JSON zamiast czytelnego komunikatu.
+    if (r->url().startsWith("/api/")) {
+      r->send(404, "application/json", jsonError("Nie ma takiego adresu API"));
+      return;
+    }
     if (r->method() == HTTP_GET && r->url().indexOf('.') < 0) {
       r->redirect("/");
     } else {
@@ -1875,6 +1953,8 @@ void WebServerManager::begin(const IPAddress& apIP) {
   // Portal captive: wszystkie DNS-y -> IP stacji
   dnsServer.start(53, "*", apIP);
 
+  if (!s_scanMtx) s_scanMtx = xSemaphoreCreateMutex();   // wynik skanu Wi-Fi
+
   registerRoutes();
   server.begin();
   LOG_I("Serwer www wystartował (port 80), portal: http://%s/", apIP.toString().c_str());
@@ -1885,11 +1965,15 @@ void WebServerManager::loop() {
 
   // Skan Wi-Fi działa w osobnym zadaniu - gdy trwa zbyt długo, przestajemy
   // kazać stronie czekać (wynik i tak pojawi się po zakończeniu skanu).
-  if (s_scanRunning && millis() - s_scanStarted > 30000UL) {
+  // Krótkie oczekiwanie na mutex: pętla główna nie może się tu zatrzymać,
+  // gdy zadanie skanujące właśnie publikuje wynik.
+  if (s_scanRunning && millis() - s_scanStarted > 30000UL &&
+      (!s_scanMtx || xSemaphoreTake(s_scanMtx, pdMS_TO_TICKS(50)) == pdTRUE)) {
     s_scanRunning = false;
     if (s_scanError.length() == 0) {
       s_scanError = "przekroczono czas skanowania (30 s)";
       LOG_W("Skan Wi-Fi trwa dłużej niż 30 s - zgłaszam przekroczenie czasu");
     }
+    if (s_scanMtx) xSemaphoreGive(s_scanMtx);
   }
 }

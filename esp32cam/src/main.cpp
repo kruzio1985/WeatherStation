@@ -237,6 +237,14 @@ static void applySensorSettings() {
   if (s->set_raw_gma)      s->set_raw_gma(s, g_raw_gma);
 }
 
+// Pełna moc nadawania + brak usypiania modemu Wi-Fi (wymaganie projektu).
+// Domyślne oszczędzanie energii w Arduino daje skoki opóźnień i gubienie
+// pakietów, przez co przesyłanie zdjęć do stacji potrafi się nie wyrobić.
+static void wifiApplyMaxPower() {
+  WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+}
+
 static void reconnectWifi() {
   WiFi.disconnect(true);
   delay(300);
@@ -245,6 +253,7 @@ static void reconnectWifi() {
     g_ap_active = false;
   }
   WiFi.mode(WIFI_STA);
+  wifiApplyMaxPower();
   if (g_static_ip) {
     IPAddress ip, gw, mask, dns;
     if (ip.fromString(g_ip) && gw.fromString(g_gw) && mask.fromString(g_mask)) {
@@ -551,6 +560,7 @@ void setup() {
   // Najpierw Wi-Fi (musi być przed server.begin() - lwIP wymaga
   // zainicjalizowanego interfejsu sieciowego).
   WiFi.mode(WIFI_STA);
+  wifiApplyMaxPower();
   if (g_static_ip) {
     IPAddress ip, gw, mask, dns;
     if (ip.fromString(g_ip) && gw.fromString(g_gw) && mask.fromString(g_mask)) {
@@ -569,6 +579,7 @@ void setup() {
   if (WiFi.status() != WL_CONNECTED) {
     // Tryb awaryjny: punkt dostępowy z pełną stroną konfiguracji
     WiFi.mode(WIFI_AP_STA);
+    wifiApplyMaxPower();
     WiFi.softAP("StacjaKam", g_ap_pass.c_str());
     g_ap_active = true;
     Serial.printf("[KAM] Tryb AP: StacjaKam / %s (IP %s)\n",
