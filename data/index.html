@@ -10,342 +10,468 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stacja Pogody</title>
 <style>
+  /* ==========================================================================
+     Stacja Pogody - arkusz stylów panelu.
+     Konwencja: jedna paleta w :root, płaskie powierzchnie (bez gradientów),
+     1 px obramowania, promienie 6/4 px, liczby czcionką o stałej szerokości
+     (tabular-nums), etykiety małymi wersalikami. Nazwy klas bez zmian, żeby
+     cały JavaScript działał jak dotąd.
+     ========================================================================== */
   :root {
-    --bg: #0f172a; --panel: #1e293b; --panel2: #273449;
-    --accent: #38bdf8; --text: #e2e8f0; --muted: #94a3b8;
-    --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+    --bg:       #0b0e13;
+    --panel:    #14181f;
+    --panel2:   #1a1f27;
+    --line:     #2a313c;
+    --line2:    #202631;
+    --text:     #e4e8ee;
+    --muted:    #94a3b8;
+    --accent:   #4f8fdd;
+    --accent-d: #2f6bb5;
+    --ok:       #3fb950;
+    --warn:     #d9a13b;
+    --err:      #e5534b;
+    --r:        6px;
+    --r-s:      4px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
   }
   * { box-sizing: border-box; }
-  body { margin:0; height:100vh; overflow:hidden; display:flex; flex-direction:column;
-         font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; align-items:center; gap:16px; padding:14px 18px; background:var(--panel); flex-wrap:wrap; flex:0 0 auto; }
-  header h1 { font-size:1.15rem; margin:0; }
-  .badge { font-size:.75rem; padding:3px 10px; border-radius:999px; background:var(--panel2); color:var(--muted); }
-  .badge.ok { color:var(--ok); } .badge.err { color:var(--err); } .badge.warn { color:var(--warn); }
-  /* --- Menu boczne (sidebar) z podmenu --- */
-  .layout { flex:1 1 auto; display:grid; grid-template-columns:252px 1fr; min-height:0; }
-  .sidebar { background:linear-gradient(180deg,#16233a 0%, #131c2e 100%);
-             border-right:1px solid #334155; overflow-y:auto; padding:12px 10px; }
-  .side-nav { display:grid; gap:6px; align-content:start; }
-  .side-item, .side-group-head { display:flex; align-items:center; gap:9px; width:100%;
-    text-align:left; cursor:pointer; border-radius:9px; }
-  .side-item { background:none; border:0; color:var(--muted); padding:8px 11px; font-size:.88rem; }
-  .side-item:hover { background:#1d2c45; color:var(--text); }
-  .side-item.active { background:var(--accent); color:#0b1220; font-weight:600; }
-  .side-group-head { background:#1b2942; border:1px solid #2f4560; color:var(--text);
-    padding:10px 12px; font-size:.9rem; font-weight:700; }
-  .side-group-head:hover { background:#213353; }
-  .side-group-head .caret { margin-left:auto; color:var(--muted); font-size:.7rem; transition:transform .15s ease; }
-  .side-group.collapsed .side-group-head .caret { transform:rotate(-90deg); }
-  .side-items { display:grid; gap:3px; margin:4px 0 0 10px; padding-left:8px; border-left:1px solid #2f4560; }
-  .side-group.collapsed .side-items { display:none; }
-  .side-item .ico, .side-group-head .ico { width:1.2em; text-align:center; flex:0 0 auto; }
-  /* Pozycje pojedynczych węzłów magistrali ("ESP #n") w grupie menu. */
-  .side-item.side-sub { padding:6px 11px; font-size:.82rem; }
-  .side-item.side-sub.sel { background:#24405f; color:var(--text); }
-  .backdrop { display:none; position:fixed; inset:0; background:rgba(2,6,23,.6); z-index:30; }
-  .menu-btn { display:none; }
-  main { overflow-y:auto; padding:18px; }
-  main > section { max-width:1100px; margin:0 auto; }
-  @media (max-width:900px) {
-    .layout { grid-template-columns:1fr; }
-    .sidebar { position:fixed; top:0; bottom:0; left:0; width:268px; z-index:40;
-               transform:translateX(-100%); transition:transform .2s ease; }
-    body.menu-open .sidebar { transform:none; }
-    body.menu-open .backdrop { display:block; }
-    .menu-btn { display:inline-flex; align-items:center; justify-content:center; background:var(--panel2);
-                border:1px solid #334155; color:var(--text); border-radius:8px; padding:8px 12px;
-                font-size:1.05rem; line-height:1; cursor:pointer; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+    font-family: var(--sans); font-size: 14px; line-height: 1.45;
+    background: var(--bg); color: var(--text);
+    -webkit-font-smoothing: antialiased;
   }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
-  .photo { background:var(--panel2); border-radius:10px; overflow:hidden; border:1px solid #334155;
-           display:flex; flex-direction:column; text-decoration:none; color:var(--text); }
-  .photo img { width:100%; height:120px; object-fit:cover; display:block; background:#0b1220; }
-  .photo-cap { padding:6px 8px; font-size:.72rem; color:var(--muted); overflow:hidden;
-               text-overflow:ellipsis; white-space:nowrap; }
-  /* Zdjęcie obrócone o 90/270° obracamy w CSS, więc plik JPEG na karcie SD
-     zostaje bez zmian (bez ponownej kompresji). Miniatura dostaje kwadratowy
-     obszar, żeby obrócony obraz się w niej mieścił. */
-  .photo.rot90 img, .photo.rot270 img { width:120px; height:auto; align-self:center; object-fit:contain; }
-  .photo.rot90 img  { transform: rotate(90deg); }
-  .photo.rot180 img { transform: rotate(180deg); }
-  .photo.rot270 img { transform: rotate(270deg); }
-  /* Pełnoekranowy podgląd zdjęcia (galeria kamery) */
-  #lightbox { position:fixed; inset:0; z-index:200; display:none; padding:12px;
-              background:rgba(2,6,23,.93); align-items:center; justify-content:center; }
-  #lightbox.on { display:flex; }
-  #lightbox img { max-width:96vw; max-height:86vh; object-fit:contain; background:#0b1220;
-                  border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
-  /* Po obrocie o 90° szerokość obrazu bierze się z jego wysokości - dlatego
-     limity zamieniamy miejscami, żeby obrócone zdjęcie zmieściło się w oknie. */
-  #lightbox img.rot90, #lightbox img.rot270 { max-width:86vh; max-height:96vw; }
-  #lightbox img.rot90  { transform: rotate(90deg); }
-  #lightbox img.rot180 { transform: rotate(180deg); }
-  #lightbox img.rot270 { transform: rotate(270deg); }
-  #lightbox .lb-bar { position:absolute; left:0; right:0; bottom:14px; text-align:center;
-                      color:var(--muted); font-size:.8rem; padding:0 14px; }
-  .card { background:var(--panel); border-radius:12px; padding:14px; border-left:3px solid #334155; }
-  .card .label { color:var(--muted); font-size:.8rem; }
-  .card .value { font-size:1.5rem; font-weight:700; margin-top:4px; }
-  .card .unit { font-size:.9rem; color:var(--muted); }
-  /* Krótki opis stanu pod wartością (np. "czyste powietrze", "podwyższone") -
-     progi takie same, jakich używa strona stacji jakości powietrza. */
-  .card .note { color:var(--muted); font-size:.72rem; margin-top:2px; }
+  ::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #313a47; border: 3px solid var(--bg); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3d4857; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-  /* --- Panele jakości powietrza (wygląd jak stacja powietrza 192.168.1.141) ---
-     Karty w siatce (min. 280 px), wiersze "nazwa ... wartość jednostka",
-     poziome legendy progów i karta IAQ ze skalą gradientową. */
-  .aqp-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
-              gap:16px; grid-column:1 / -1; }
-  .aqp { background:var(--panel); border:1px solid #2a3342; border-radius:12px;
-         padding:16px 18px; }
-  .aqp h4 { margin:0 0 12px; font-size:15px; font-weight:600; color:var(--text); }
-  .aqp .m { display:grid; grid-template-columns:1fr auto auto; align-items:baseline; gap:8px;
-            padding:7px 0; border-bottom:1px solid #222a36; }
-  .aqp .m:last-child { border-bottom:none; }
-  .aqp .m span { color:var(--muted); font-size:13px; }
-  .aqp .m b { font-size:20px; font-weight:600; }
-  .aqp .m em { color:var(--muted); font-style:normal; font-size:12px; }
-  /* Legenda progów: poziome wiersze "nazwa [kolor]zakres [kolor]zakres..." */
-  .aqp .lgd { margin-top:12px; border-top:1px solid #222a36; padding-top:10px;
-              display:flex; flex-direction:column; gap:5px; }
-  .aqp .lgd-row { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px;
-                  font-size:11px; color:var(--muted); }
-  .aqp .lgd-row .nm { min-width:46px; color:var(--text); font-weight:600; font-size:12px; }
-  .aqp .lgd-i { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
-  .aqp .lgd-i .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
-  /* Legenda zdań (MiCS / MQ-7): kolor + zdanie */
-  .aqp .sent { margin-top:12px; border-top:1px solid #222a36; padding-top:10px;
-               display:flex; flex-wrap:wrap; gap:14px; }
-  .aqp .sent-i { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
-  .aqp .sent-i .sw { width:16px; height:16px; border-radius:4px; display:inline-block; flex:0 0 auto; }
-  .aqp .hint { color:var(--muted); font-size:12px; line-height:1.5; margin:12px 0 0; }
-  .aqp .hint b { color:var(--text); }
-  /* Karta IAQ */
-  .aqp.aqi { text-align:center; }
-  .aqp .aqi-big { font-size:64px; font-weight:700; line-height:1; margin:8px 0 2px; }
-  .aqp .aqi-label { color:var(--muted); margin-bottom:12px; }
-  .aqp .aqi-cause { margin-top:8px; font-size:13px; color:var(--muted); }
-  .aqp .aqi-scale { margin-top:14px; }
-  .aqp .aqi-track { position:relative; height:22px; border-radius:11px;
-    background:linear-gradient(to right,
-      #00C853 0%, #00C853 10%,
-      #FFD600 10%, #FFD600 20%,
-      #FF9100 20%, #FF9100 30%,
-      #E53935 30%, #E53935 40%,
-      #8E24AA 40%, #8E24AA 60%,
-      #7B1F1F 60%, #7B1F1F 100%); }
-  .aqp .aqi-marker { position:absolute; top:-4px; bottom:-4px; width:4px; margin-left:-2px;
-                     border-radius:2px; background:#fff;
-                     box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 8px rgba(0,0,0,.9);
-                     transition:left .4s; }
-  .aqp .aqi-ticks { position:relative; height:20px; margin-top:6px; font-size:11px; color:var(--muted); }
-  .aqp .aqi-ticks span { position:absolute; transform:translateX(-50%); }
-  .aqp .aqi-ticks span:first-child { transform:none; }
-  .aqp .aqi-ticks span:last-child { transform:translateX(-100%); }
-  .aqp .aqi-legend { display:grid; grid-template-columns:repeat(auto-fit, minmax(105px, 1fr));
-                     gap:6px 8px; margin-top:12px; text-align:left; }
-  .aqp .aqi-lg { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
-  .aqp .aqi-lg .sw { flex:0 0 11px; height:11px; border-radius:3px; display:inline-block; }
-  .aqp .aqi-lg em { font-style:normal; margin-left:auto; color:#66707d; }
-  .aqp .motion { margin-top:12px; font-size:13px; color:var(--muted); }
-  .aqp .motion.on { color:var(--accent); }
-  /* --- Wskaźniki pogody (styl Weather Underground) ---
-     Karta ze wskaźnikiem SVG (termometr, barometr, kropla, zlewka deszczu,
-     wiatrowskaz, pasek) - wskazanie animuje się po każdej aktualizacji. */
-  .wx-panel { background:var(--panel); border-radius:12px; padding:12px 14px;
-              grid-column:1 / -1; }
-  .wx-panel h4 { margin:0 0 10px; font-size:.95rem; font-weight:600; color:var(--text); }
-  .wx-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px; }
-  /* Na wąskim ekranie wskaźniki zawijają się, zamiast ściskać w jedną linię
-     (inline grid-template-columns z renderWxGauges wymusza jedną linię). */
-  @media (max-width: 760px) {
-    .wx-grid { grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)) !important; }
+  /* --- Nagłówek: znak, nazwa stacji i chipy stanu --- */
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 0 16px;
+    height: 48px; flex: 0 0 auto; background: var(--panel);
+    border-bottom: 1px solid var(--line); flex-wrap: nowrap; overflow: hidden;
   }
-  .wx-card { background:var(--panel2); border:1px solid #273449; border-radius:10px;
-             padding:8px 8px 10px; text-align:center; display:flex; flex-direction:column;
-             align-items:center; height:166px; }
-  .wx-card .lbl { color:var(--muted); font-size:.78rem; }
-  .wx-card svg { display:block; margin:4px auto; flex:0 0 auto; }
-  .wx-card .val { font-size:1.22rem; font-weight:700; line-height:1.15;
-                  font-variant-numeric:tabular-nums; margin-top:auto; }
-  .wx-card .unit { font-size:.72rem; color:var(--muted); font-weight:400; }
-  .wx-card .sub { color:var(--muted); font-size:.72rem; margin-top:2px; }
-  .wx-card .bigico { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
-                     font-size:2.4rem; line-height:1.2; }
+  header h1 {
+    display: flex; align-items: center; gap: 9px; margin: 0;
+    font-size: 13px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  header h1::before {
+    content: ""; width: 9px; height: 9px; flex: 0 0 auto; border-radius: 2px;
+    background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .02em;
+    padding: 3px 8px 3px 7px; border-radius: var(--r-s);
+    background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
+  }
+  .badge::before {
+    content: ""; width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%;
+    background: var(--muted); opacity: .6;
+  }
+  .badge.ok   { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+  .badge.ok::before   { background: var(--ok); opacity: 1; }
+  .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+  .badge.warn::before { background: var(--warn); opacity: 1; }
+  .badge.err  { color: var(--err);  border-color: color-mix(in srgb, var(--err) 35%, var(--line)); }
+  .badge.err::before  { background: var(--err); opacity: 1; }
+  select.lang {
+    margin-left: auto; font-family: var(--mono); font-size: 11px; padding: 4px 8px;
+    border-radius: var(--r-s); background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); cursor: pointer;
+  }
+
+  /* --- Układ: menu boczne + treść --- */
+  .layout { flex: 1 1 auto; display: grid; grid-template-columns: 236px 1fr; min-height: 0; }
+  .sidebar { background: #0d1116; border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 10px; }
+  .side-nav { display: grid; gap: 2px; align-content: start; }
+  .side-item, .side-group-head {
+    display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+    cursor: pointer; border: 0; background: none; color: var(--muted);
+    border-radius: var(--r-s); font-family: inherit;
+  }
+  .side-item { padding: 7px 9px; font-size: 13px; position: relative; }
+  .side-item:hover { background: var(--panel2); color: var(--text); }
+  .side-item.active {
+    background: var(--panel2); color: var(--text); font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .side-group-head {
+    background: #11161d; border: 1px solid var(--line); color: #b7c0cd;
+    padding: 8px 9px; font-size: 11px; font-weight: 600;
+    letter-spacing: .07em; text-transform: uppercase;
+  }
+  .side-group-head:hover { background: var(--panel2); color: var(--text); }
+  .side-group-head .caret { margin-left: auto; color: var(--muted); font-size: 9px; transition: transform .15s ease; }
+  .side-group { margin-bottom: 3px; }
+  .side-group.collapsed .side-group-head .caret { transform: rotate(-90deg); }
+  .side-items { display: grid; gap: 1px; margin: 2px 0 0 9px; padding-left: 6px; border-left: 1px solid var(--line2); }
+  .side-group.collapsed .side-items { display: none; }
+  .side-item .ico, .side-group-head .ico {
+    width: 18px; height: 18px; flex: 0 0 auto; display: inline-flex;
+    align-items: center; justify-content: center; opacity: .8;
+  }
+  .side-item.active .ico { opacity: 1; color: var(--accent); }
+  .side-item .lbl, .side-group-head .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Ikony (SVG) w menu - kreska, bez wypełnień, kolor jak tekst */
+  .i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7;
+       stroke-linecap: round; stroke-linejoin: round; }
+  /* Kropka stanu przy pozycjach węzłów ("ESP #n") */
+  .st-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .5; }
+  .st-dot.on  { background: var(--ok);   opacity: 1; }
+  .st-dot.mid { background: var(--warn); opacity: 1; }
+  .st-dot.off { background: #5b6673; }
+  /* Kolory stanu w tabelach (węzły, kamera) - te same, co w diagnostyce */
+  .st-ok  { color: var(--ok); }
+  .st-bad { color: var(--err); }
+  .side-item.side-sub { padding: 6px 9px; font-size: 12px; font-family: var(--mono); }
+  .side-item.side-sub.sel { background: var(--panel2); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+  .backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 30; }
+  .menu-btn { display: none; }
+
+  main { overflow-y: auto; padding: 20px 22px 34px; }
+  main > section { max-width: 1180px; margin: 0 auto; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: 256px; z-index: 40;
+               transform: translateX(-100%); transition: transform .2s ease; }
+    body.menu-open .sidebar { transform: none; }
+    body.menu-open .backdrop { display: block; }
+    main { padding: 16px 14px 30px; }
+    .menu-btn {
+      display: inline-flex; align-items: center; justify-content: center; background: var(--panel2);
+      border: 1px solid var(--line); color: var(--text); border-radius: var(--r-s);
+      padding: 7px 10px; font-size: 15px; line-height: 1; cursor: pointer;
+    }
+  }
+
+  /* --- Tytuły sekcji --- */
+  h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+  h4 { font-size: 14px; }
+
+  /* --- Kafelki pomiarów --- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-left: 2px solid #39424f;
+    border-radius: var(--r); padding: 11px 13px 12px;
+  }
+  .card .label { color: var(--muted); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; }
+  .card .value {
+    font-family: var(--mono); font-size: 25px; font-weight: 600; line-height: 1.15;
+    margin-top: 5px; font-variant-numeric: tabular-nums;
+  }
+  .card .unit { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 3px; }
+  .card .note { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .card.off { opacity: .4; }
+  .card[data-tone] { border-left-color: var(--tone); }
+  .card[data-tone] .label { color: var(--muted); }
+  .zone-head {
+    grid-column: 1/-1; color: var(--muted); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .09em; margin: 10px 0 -2px; display: flex; align-items: center; gap: 8px; font-weight: 600;
+  }
+  .zone-head::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line); }
+  .zone-head .zh-ico { display: inline-flex; align-items: center; }
+  .zone-head .zh-ico .i { width: 14px; height: 14px; }
+  .zone-head[data-tone] { color: var(--tone); }
+  .zone-head[data-tone]::after { background: currentColor; opacity: .35; }
+  .sub-head {
+    grid-column: 1/-1; color: var(--muted); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .07em; margin: 12px 0 -6px 2px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sub-head::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line); opacity: .6; }
+  .zone-head[data-tone="in"],   .card[data-tone="in"]   { --tone: #4f9bea; }
+  .zone-head[data-tone="out"],  .card[data-tone="out"]  { --tone: #46b96a; }
+  .zone-head[data-tone="bt"],   .card[data-tone="bt"]   { --tone: #8b7fe0; }
+  .zone-head[data-tone="vev"],  .card[data-tone="vev"]  { --tone: #d9a13b; }
+  .zone-head[data-tone="node"], .card[data-tone="node"] { --tone: #3fb6b6; }
+  .zone-head[data-tone="net"],  .card[data-tone="net"]  { --tone: #d97a8b; }
+  .zone-head[data-tone="cam"],  .card[data-tone="cam"]  { --tone: #c07bc0; }
+
+  /* --- Wskaźniki pogody (SVG) --- */
+  .wx-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; grid-column: 1 / -1; }
+  .wx-panel h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .wx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  @media (max-width: 760px) { .wx-grid { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important; } }
+  .wx-card {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r-s);
+    padding: 8px 8px 10px; text-align: center; display: flex; flex-direction: column;
+    align-items: center; height: 166px;
+  }
+  .wx-card .lbl { color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+  .wx-card svg { display: block; margin: 4px auto; flex: 0 0 auto; }
+  .wx-card .val { font-family: var(--mono); font-size: 19px; font-weight: 600; line-height: 1.15;
+                  font-variant-numeric: tabular-nums; margin-top: auto; }
+  .wx-card .unit { font-family: var(--mono); font-size: 10.5px; color: var(--muted); font-weight: 400; }
+  .wx-card .sub { color: var(--muted); font-size: 10.5px; margin-top: 3px; }
+  .wx-card .bigico { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .wx-card .bigico .i { width: 46px; height: 46px; stroke-width: 1.3; }
   .wx-fill   { transition: y .9s cubic-bezier(.25,.9,.35,1), height .9s cubic-bezier(.25,.9,.35,1); }
   .wx-fillw  { transition: width .9s cubic-bezier(.25,.9,.35,1); }
   .wx-needle { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
   .wx-arrow  { transition: transform .9s cubic-bezier(.25,.9,.35,1); }
-  .card.off { opacity:.45; }
-  .zone-head { grid-column:1/-1; color:var(--muted); font-size:.78rem; text-transform:uppercase;
-               letter-spacing:.06em; margin:6px 0 -2px; display:flex; align-items:center; gap:8px;
-               font-weight:600; }
-  .zone-head::after { content:""; flex:1 1 auto; height:1px; background:#334155; }
-  /* Podsekcje wewnątrz strefy (cząsteczki, gazy, MiCS5524, MQ-7...). Układ
-     wzorowany na stronie stacji jakości powietrza - bez tego sekcja "Wewnątrz"
-     była jednym długim ciągiem dwudziestu kilku kafelków. */
-  .sub-head { grid-column:1/-1; color:var(--muted); font-size:.72rem; font-weight:600;
-              text-transform:uppercase; letter-spacing:.05em; margin:9px 0 -7px 2px;
-              display:flex; align-items:center; gap:6px; }
-  .sub-head::after { content:""; flex:1 1 auto; height:1px; background:#334155; opacity:.45; }
-  /* Kolory stref - wiadomo od razu, co do czego należy */
-  .zone-head[data-tone="in"],   .card[data-tone="in"]   { --tone:#38bdf8; }
-  .zone-head[data-tone="out"],  .card[data-tone="out"]  { --tone:#4ade80; }
-  .zone-head[data-tone="bt"],   .card[data-tone="bt"]   { --tone:#a78bfa; }
-  .zone-head[data-tone="vev"],  .card[data-tone="vev"]  { --tone:#fbbf24; }
-  .zone-head[data-tone="node"], .card[data-tone="node"] { --tone:#22d3ee; }
-  .zone-head[data-tone="net"],  .card[data-tone="net"]  { --tone:#fb7185; }
-  .zone-head[data-tone="cam"],  .card[data-tone="cam"]  { --tone:#f472b6; }
-  .zone-head[data-tone] { color:var(--tone); }
-  .zone-head[data-tone]::after { background:var(--tone); opacity:.5; }
-  .card[data-tone] { border-left-color:var(--tone);
-                     background:linear-gradient(135deg, var(--panel) 0%, var(--panel) 70%, color-mix(in srgb, var(--tone) 8%, transparent) 100%); }
-  .card[data-tone] .value { color:var(--text); }
-  .card[data-tone] .label { color:color-mix(in srgb, var(--tone) 70%, #94a3b8); }
-  .needle-wrap { width:74px; height:74px; border-radius:50%; background:var(--panel2); position:relative;
-                 display:flex; align-items:center; justify-content:center; margin-top:6px; }
-  .needle-wrap span { position:absolute; font-size:.62rem; color:var(--muted); }
-  .needle-wrap .n { top:3px; } .needle-wrap .s { bottom:3px; }
-  .needle-wrap .e { right:4px; } .needle-wrap .w { left:4px; }
-  .needle { width:5px; height:60px; background:linear-gradient(to bottom,var(--accent) 0 50%,#64748b 50% 100%);
-            border-radius:3px; transition:transform .5s ease; }
-  .svc-row { display:flex; align-items:flex-start; gap:10px; margin:0 0 12px; flex-wrap:wrap; }
-  .svc-row label { display:flex; flex-direction:column; gap:5px; font-size:.85rem; color:var(--muted); }
-  .svc-row label.chk { flex-direction:row; align-items:center; gap:8px; min-width:200px; padding-top:22px; }
-  .svc-row label.chk input { width:auto; }
-  section { display:none; }
-  section.active { display:block; }
-  h2 { font-size:1.05rem; margin:0 0 14px; }
-  table { width:100%; border-collapse:collapse; background:var(--panel); border-radius:12px; overflow:hidden; }
-  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid #334155; font-size:.9rem; }
-  th { color:var(--muted); font-weight:500; background:var(--panel2); }
-  input, select, button.btn { background:var(--panel2); border:1px solid #334155; color:var(--text); padding:9px 12px; border-radius:8px; font-size:.9rem; }
-  input:focus, select:focus { outline:1px solid var(--accent); }
-  button.btn { cursor:pointer; background:var(--accent); color:#0b1220; font-weight:600; border:0; }
-  button.btn.ghost { background:var(--panel2); color:var(--text); border:1px solid #334155; }
-  button.btn.danger { background:var(--err); color:#0b1220; }
-  button.btn:disabled { opacity:.5; cursor:not-allowed; }
-  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-  .form-grid label { display:flex; flex-direction:column; gap:5px; font-size:.85rem; color:var(--muted); }
-  .chart-wrap { background:var(--panel); border-radius:12px; padding:14px; }
-  canvas { width:100%; height:320px; display:block; }
-  .rose-wrap { display:flex; gap:18px; align-items:center; flex-wrap:wrap; background:var(--panel); border-radius:12px; padding:14px; }
-  #rose { width:300px; height:300px; flex:0 0 auto; }
-  .rose-legend { display:flex; flex-direction:column; gap:6px; font-size:.85rem; min-width:180px; }
-  .rose-legend .rrow { display:flex; align-items:center; gap:8px; }
-  .rose-legend .sw { width:12px; height:12px; border-radius:3px; }
-  .rose-legend .rv { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
-  .toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .muted { color:var(--muted); font-size:.85rem; }
-  .msg { padding:10px 14px; border-radius:8px; margin:10px 0; font-size:.9rem; }
-  .msg.ok { background:#064e3b; color:var(--ok); }
-  .msg.err { background:#450a0a; color:var(--err); }
-  .msg.warn { background:#452f0a; color:var(--warn); }
-  tr.row-sel td { background:#1e3350; }
-  tr.pin-bad input, tr.pin-bad select { border-color:var(--err); }
-  tr.pin-bad td { background:#3f1417; }
-  tr.pin-warn input, tr.pin-warn select { border-color:var(--warn); }
-  /* --- Piny: lista w układzie złączy płytki --- */
-  .pin-layout { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
-  .pin-col { flex:1 1 340px; min-width:300px; }
-  .pin-col-head { font-weight:600; color:var(--muted); margin:0 0 8px; }
-  .pin-cell b { font-weight:600; }
-  .pin-cell small { display:block; color:var(--muted); font-size:.76rem; line-height:1.35; }
-  .pin-layout select { width:100%; max-width:260px; padding:6px 8px; font-size:.85rem; }
-  .pin-layout td { padding:7px 10px; vertical-align:top; }
-  /* --- Piny: legenda czujników pod listą pinów --- */
-  .legend-buses { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
-  .legend-bus-btn { background:var(--panel2); border:1px solid #334155; color:var(--text); border-radius:999px; padding:5px 12px; font-size:.82rem; cursor:pointer; }
-  .legend-bus-btn.on { background:var(--accent); color:#0b1220; border-color:var(--accent); font-weight:600; }
-  .legend-scroll { max-height:540px; overflow:auto; }
-  .legend-scroll th { position:sticky; top:0; z-index:1; }
-  #legendTable tr.legend-row { cursor:pointer; }
-  #legendTable tr.legend-row:hover td { background:var(--panel2); }
-  #legendTable tr.legend-row.legend-open td { background:#132a3d; }
-  #legendTable td { font-size:.85rem; vertical-align:top; }
-  .legend-name { font-weight:600; }
-  .legend-cat { display:block; color:var(--muted); font-size:.76rem; }
-  .legend-detail { background:var(--panel2); border-radius:10px; padding:12px 14px; margin-bottom:12px; font-size:.86rem; }
-  .legend-detail h4 { margin:0 0 8px; font-size:.9rem; }
-  .legend-detail dl { margin:0; }
-  .legend-detail dt { color:var(--muted); float:left; clear:left; width:120px; }
-  .legend-detail dd { margin:0 0 6px 130px; }
-  .legend-pins { margin-top:8px; display:flex; flex-direction:column; gap:4px; }
-  .legend-pins-row { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
-  .legend-detail h5 { margin:10px 0 2px; font-size:.85rem; color:var(--muted); font-weight:600; }
-  .legend-rowlink { background:none; border:0; color:var(--accent); cursor:pointer; padding:0; font-size:.84rem; text-align:left; }
-  .legend-empty { color:var(--muted); padding:6px 0; }
-  #pinLayout tr.legend-sel td { background:#0f2c3f; }
-  h3 { font-size:.95rem; margin:0 0 10px; }
-  .box { background:var(--panel); border-radius:12px; padding:14px; margin-bottom:14px; }
-  .box h3 { color:var(--muted); font-weight:600; }
-  .checkbox { display:flex; flex-direction:row; align-items:center; gap:8px; font-size:.85rem; color:var(--muted); }
-  .checkbox input { width:auto; }
-  .hidden { display:none; }
-  progress { width:100%; height:14px; margin-top:10px; }
-  code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:.85rem; }
 
-  /* --- Logi systemowe (zakładka Logi) --- */
-  .logs-viewer { background:#0b1220; border:1px solid #334155; border-radius:10px; padding:10px 12px;
-    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size:.78rem; line-height:1.45;
-    height:460px; overflow:auto; margin:0; white-space:pre-wrap; word-break:break-word; }
-  .log-line { display:block; padding:1px 4px; border-radius:4px; }
-  .log-I { color:#7dd3fc; }
-  .log-W { color:#fcd34d; background:rgba(251,191,36,.08); }
-  .log-E { color:#fca5a5; background:rgba(248,113,113,.10); }
-  .log-boot { color:#a7f3d0; font-weight:600; }
-  .log-crash { color:#fecaca; background:rgba(239,68,68,.22); font-weight:600; }
-  .log-plain { color:var(--text); }
+  /* --- Panel jakości powietrza --- */
+  .aqp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; grid-column: 1 / -1; }
+  .aqp { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+  .aqp h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--muted); }
+  .aqp .m { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 10px;
+            padding: 6px 0; border-bottom: 1px solid var(--line2); }
+  .aqp .m:last-child { border-bottom: none; }
+  .aqp .m span { color: var(--muted); font-size: 12.5px; }
+  .aqp .m b { font-family: var(--mono); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .aqp .m em { color: var(--muted); font-style: normal; font-family: var(--mono); font-size: 11px; }
+  .aqp .lgd { margin-top: 12px; border-top: 1px solid var(--line2); padding-top: 10px;
+              display: flex; flex-direction: column; gap: 5px; }
+  .aqp .lgd-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
+  .aqp .lgd-row .nm { min-width: 46px; color: var(--text); font-weight: 600; font-size: 11.5px; }
+  .aqp .lgd-i { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-family: var(--mono); }
+  .aqp .lgd-i .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .aqp .sent { margin-top: 12px; border-top: 1px solid var(--line2); padding-top: 10px; display: flex; flex-wrap: wrap; gap: 14px; }
+  .aqp .sent-i { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  .aqp .sent-i .sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; flex: 0 0 auto; }
+  .aqp .hint { color: var(--muted); font-size: 11.5px; line-height: 1.55; margin: 12px 0 0; }
+  .aqp .hint b { color: var(--text); }
+  .aqp.aqi { text-align: center; }
+  .aqp .aqi-big { font-family: var(--mono); font-size: 58px; font-weight: 700; line-height: 1;
+                  font-variant-numeric: tabular-nums; margin: 8px 0 2px; }
+  .aqp .aqi-label { color: var(--muted); margin-bottom: 12px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+  .aqp .aqi-cause { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .aqp .aqi-scale { margin-top: 14px; }
+  .aqp .aqi-track { position: relative; height: 20px; border-radius: 3px;
+    background: linear-gradient(to right,
+      #00C853 0%, #00C853 10%, #FFD600 10%, #FFD600 20%, #FF9100 20%, #FF9100 30%,
+      #E53935 30%, #E53935 40%, #8E24AA 40%, #8E24AA 60%, #7B1F1F 60%, #7B1F1F 100%); }
+  .aqp .aqi-marker { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px;
+                     border-radius: 2px; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.6); transition: left .4s; }
+  .aqp .aqi-ticks { position: relative; height: 20px; margin-top: 6px; font-family: var(--mono);
+                    font-size: 10.5px; color: var(--muted); }
+  .aqp .aqi-ticks span { position: absolute; transform: translateX(-50%); }
+  .aqp .aqi-ticks span:first-child { transform: none; }
+  .aqp .aqi-ticks span:last-child { transform: translateX(-100%); }
+  .aqp .aqi-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 6px 8px; margin-top: 12px; text-align: left; }
+  .aqp .aqi-lg { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .aqp .aqi-lg .sw { flex: 0 0 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  .aqp .aqi-lg em { font-style: normal; margin-left: auto; color: #6b7683; font-family: var(--mono); }
+  .aqp .motion { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+  .aqp .motion.on { color: var(--accent); }
 
-  /* --- Diagnostyka (zakładka Diagnostyka) --- */
-  .diag-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:12px; }
-  .diag-card { background:var(--panel); border-radius:12px; padding:12px 14px; }
-  .diag-card h3 { margin:0 0 8px; color:var(--text); font-size:.95rem; }
-  .diag-row { display:flex; justify-content:space-between; gap:12px; padding:5px 0;
-    border-bottom:1px solid #273449; font-size:.85rem; }
-  .diag-row:last-child { border-bottom:0; }
-  .diag-key { color:var(--muted); }
-  .diag-value { text-align:right; font-family:ui-monospace, Consolas, monospace; }
-  .diag-ok { color:var(--ok); } .diag-warn { color:var(--warn); } .diag-bad { color:var(--err); }
-  .diag-note { color:var(--muted); font-size:.8rem; margin:8px 0 0; }
+  /* --- Tabele --- */
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line);
+          border-radius: var(--r); overflow: hidden; }
+  th, td { text-align: left; padding: 8px 11px; border-bottom: 1px solid var(--line2); font-size: 13px; }
+  th { color: var(--muted); font-weight: 600; font-size: 10.5px; letter-spacing: .07em;
+       text-transform: uppercase; background: var(--panel2); white-space: nowrap; }
+  tbody tr:hover td { background: #171c24; }
+  td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tr.row-sel td { background: #1b2836; }
+  tr.pin-bad input, tr.pin-bad select { border-color: var(--err); }
+  tr.pin-bad td { background: #2b1614; }
+  tr.pin-warn input, tr.pin-warn select { border-color: var(--warn); }
 
-  /* --- Pierścień LED RGB (zakładka Led RGB) --- */
-  .ring-wrap { display:flex; gap:22px; flex-wrap:wrap; align-items:center; }
-  .ring-preview { position:relative; width:240px; height:240px; flex:0 0 auto; }
-  .ring-preview .dot { position:absolute; width:16px; height:16px; border-radius:50%;
-    margin:-8px 0 0 -8px; background:#1f2937; box-shadow:0 0 6px rgba(0,0,0,.6);
-    transition:background .15s linear, box-shadow .15s linear; }
-  .ring-center { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    width:132px; text-align:center; }
-  .ring-center .st { font-size:1rem; font-weight:700; line-height:1.2; }
-  .ring-center .sub { font-size:.72rem; color:var(--muted); margin-top:4px; }
-  .legend { display:grid; grid-template-columns:repeat(auto-fill,minmax(265px,1fr)); gap:8px; }
-  .legend .item { display:flex; align-items:center; gap:9px; background:var(--panel2);
-    border-radius:8px; padding:7px 10px; font-size:.82rem; }
-  .legend .item:hover { outline:1px solid var(--accent); }
-  .legend .sw { width:16px; height:16px; border-radius:4px; flex:0 0 auto; border:1px solid #334155; }
-  .legend .sw-edit { width:34px; height:26px; padding:0 2px; flex:0 0 auto; cursor:pointer; }
-  .legend .nm { flex:1 1 auto; }
-  .legend .nm-in { flex:1 1 auto; min-width:90px; padding:4px 7px; font-size:12.5px; }
-  button.btn.tiny { padding:4px 9px; font-size:.75rem; }
+  /* --- Formularze --- */
+  input, select, textarea, button.btn {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    padding: 7px 10px; border-radius: var(--r-s); font-size: 13px; font-family: inherit;
+  }
+  input[type=number], input[type=time], input[type=date], input[type=text] { font-family: var(--mono); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  button.btn { cursor: pointer; background: var(--accent); border-color: var(--accent);
+               color: #08101c; font-weight: 600; }
+  button.btn:hover { background: #5c9ae6; border-color: #5c9ae6; }
+  button.btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  button.btn.ghost:hover { background: #232a34; }
+  button.btn.danger { background: var(--err); border-color: var(--err); color: #1a0a09; }
+  button.btn.danger:hover { background: #ee6159; border-color: #ee6159; }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  button.btn.tiny { padding: 4px 8px; font-size: 11.5px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-grid label, .svc-row label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--muted); }
+  .checkbox { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .checkbox input { width: auto; }
+  .svc-row { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 12px; flex-wrap: wrap; }
+  .svc-row label.chk { flex-direction: row; align-items: center; gap: 8px; min-width: 200px; padding-top: 20px; }
+  .svc-row label.chk input { width: auto; }
+  input[type=range] { padding: 0; height: 24px; accent-color: var(--accent); }
 
-  /* --- Zegar RTC (zakładka Zegar RTC) --- */
-  .rtc-wrap { display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; }
-  .clock { font-family:ui-monospace, "Cascadia Mono", Consolas, monospace; font-size:2.6rem;
-    font-weight:700; line-height:1.1; letter-spacing:.02em; }
-  .clock-date { color:var(--muted); font-size:.9rem; margin-top:4px; }
-  .clock-src { color:var(--accent); font-size:.8rem; margin-top:10px; max-width:280px; line-height:1.5; }
-  input[type=range] { padding:0; height:26px; }
-  @media (max-width:600px){ .form-grid{grid-template-columns:1fr;} }
-  select.lang { margin-left:auto; font-size:.8rem; padding:5px 9px; border-radius:8px; background:var(--panel2); color:var(--text); border:1px solid #334155; cursor:pointer; }
+  /* --- Przyciski narzędzi, komunikaty, pomocnicze --- */
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .hidden { display: none; }
+  .msg { padding: 9px 12px; border-radius: var(--r-s); margin: 10px 0; font-size: 12.5px;
+         background: var(--panel2); border: 1px solid var(--line); border-left-width: 3px; }
+  .msg.ok   { border-left-color: var(--ok);   color: var(--ok);   background: color-mix(in srgb, var(--ok) 8%, var(--panel2)); }
+  .msg.err  { border-left-color: var(--err);  color: var(--err);  background: color-mix(in srgb, var(--err) 8%, var(--panel2)); }
+  .msg.warn { border-left-color: var(--warn); color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel2)); }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; margin-bottom: 12px; }
+  code { background: var(--panel2); border: 1px solid var(--line2); padding: 1px 5px; border-radius: 3px;
+         font-family: var(--mono); font-size: 12px; color: #cfd6e0; }
+  progress { width: 100%; height: 12px; margin-top: 10px; accent-color: var(--accent); }
+
+  /* --- Wykresy i róża wiatrów --- */
+  .chart-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+  canvas { width: 100%; height: 320px; display: block; }
+  .rose-wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+               background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+  #rose { width: 300px; height: 300px; flex: 0 0 auto; }
+  .rose-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 180px; }
+  .rose-legend .rrow { display: flex; align-items: center; gap: 8px; }
+  .rose-legend .sw { width: 11px; height: 11px; border-radius: 2px; }
+  .rose-legend .rv { margin-left: auto; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* --- Kompas / igła --- */
+  .needle-wrap { width: 72px; height: 72px; border-radius: 50%; background: var(--panel2);
+                 border: 1px solid var(--line); position: relative; display: flex;
+                 align-items: center; justify-content: center; margin-top: 6px; }
+  .needle-wrap span { position: absolute; font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
+  .needle-wrap .n { top: 3px; } .needle-wrap .s { bottom: 3px; }
+  .needle-wrap .e { right: 4px; } .needle-wrap .w { left: 4px; }
+  .needle { width: 4px; height: 56px; background: linear-gradient(to bottom, var(--accent) 0 50%, #55606e 50% 100%);
+            border-radius: 2px; transition: transform .5s ease; }
+
+  /* --- Sekcje widoczne pojedynczo --- */
+  section { display: none; }
+  section.active { display: block; }
+
+  /* --- Zdjęcia (galeria kamery) --- */
+  .photo { background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+           display: flex; flex-direction: column; text-decoration: none; color: var(--text); }
+  .photo img { width: 100%; height: 120px; object-fit: cover; display: block; background: #05070a; }
+  .photo-cap { padding: 6px 8px; font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .photo.rot90 img, .photo.rot270 img { width: 120px; height: auto; align-self: center; object-fit: contain; }
+  .photo.rot90 img  { transform: rotate(90deg); }
+  .photo.rot180 img { transform: rotate(180deg); }
+  .photo.rot270 img { transform: rotate(270deg); }
+  #lightbox { position: fixed; inset: 0; z-index: 200; display: none; padding: 12px;
+              background: rgba(0,0,0,.94); align-items: center; justify-content: center; }
+  #lightbox.on { display: flex; }
+  #lightbox img { max-width: 96vw; max-height: 86vh; object-fit: contain; background: #05070a;
+                  border-radius: var(--r-s); border: 1px solid var(--line); }
+  #lightbox img.rot90, #lightbox img.rot270 { max-width: 86vh; max-height: 96vw; }
+  #lightbox img.rot90  { transform: rotate(90deg); }
+  #lightbox img.rot180 { transform: rotate(180deg); }
+  #lightbox img.rot270 { transform: rotate(270deg); }
+  #lightbox .lb-bar { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center;
+                      color: var(--muted); font-family: var(--mono); font-size: 11.5px; padding: 0 14px; }
+
+  /* --- Piny: układ jak na złączach płytki --- */
+  .pin-layout { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+  .pin-col { flex: 1 1 340px; min-width: 300px; }
+  .pin-col-head { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+                  color: var(--muted); margin: 0 0 8px; }
+  .pin-cell b { font-weight: 600; font-family: var(--mono); }
+  .pin-cell small { display: block; color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .pin-layout select { width: 100%; max-width: 260px; padding: 5px 8px; font-size: 12.5px; }
+  .pin-layout td { padding: 6px 10px; vertical-align: top; }
+  #pinLayout tr.legend-sel td { background: #1b2836; }
+
+  /* --- Legenda czujników --- */
+  .legend-buses { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .legend-bus-btn { background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+                    border-radius: var(--r-s); padding: 5px 11px; font-size: 12px; cursor: pointer;
+                    font-family: inherit; }
+  .legend-bus-btn:hover { background: #232a34; }
+  .legend-bus-btn.on { background: var(--accent); border-color: var(--accent); color: #08101c; font-weight: 600; }
+  .legend-scroll { max-height: 540px; overflow: auto; }
+  .legend-scroll th { position: sticky; top: 0; z-index: 1; }
+  #legendTable tr.legend-row { cursor: pointer; }
+  #legendTable tr.legend-row:hover td { background: #171c24; }
+  #legendTable tr.legend-row.legend-open td { background: #1b2836; }
+  #legendTable td { font-size: 12.5px; vertical-align: top; }
+  .legend-name { font-weight: 600; }
+  .legend-cat { display: block; color: var(--muted); font-size: 11px; }
+  .legend-detail { background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r);
+                   padding: 12px 14px; margin-bottom: 12px; font-size: 12.5px; }
+  .legend-detail h4 { margin: 0 0 8px; font-size: 13px; }
+  .legend-detail dl { margin: 0; }
+  .legend-detail dt { color: var(--muted); float: left; clear: left; width: 120px; }
+  .legend-detail dd { margin: 0 0 6px 130px; }
+  .legend-detail h5 { margin: 10px 0 2px; font-size: 11px; color: var(--muted); font-weight: 600;
+                      letter-spacing: .06em; text-transform: uppercase; }
+  .legend-pins { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .legend-pins-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .legend-rowlink { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0;
+                    font-size: 12px; text-align: left; font-family: inherit; }
+  .legend-empty { color: var(--muted); padding: 6px 0; }
+
+  /* --- Logi systemowe --- */
+  .logs-viewer { background: #080b0f; border: 1px solid var(--line); border-radius: var(--r-s);
+    padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+    height: 460px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; }
+  .log-line { display: block; padding: 1px 4px; border-radius: 2px; }
+  .log-I { color: #7fb2e5; }
+  .log-W { color: #e0b455; background: rgba(217,161,59,.08); }
+  .log-E { color: #ef8a84; background: rgba(229,83,75,.10); }
+  .log-boot { color: #77c99a; font-weight: 600; }
+  .log-crash { color: #f3b0ac; background: rgba(229,83,75,.22); font-weight: 600; }
+  .log-plain { color: var(--text); }
+
+  /* --- Diagnostyka --- */
+  .diag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .diag-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+  .diag-card h3 { margin: 0 0 8px; }
+  .diag-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0;
+              border-bottom: 1px solid var(--line2); font-size: 12.5px; }
+  .diag-row:last-child { border-bottom: 0; }
+  .diag-key { color: var(--muted); }
+  .diag-value { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .diag-ok { color: var(--ok); } .diag-warn { color: var(--warn); } .diag-bad { color: var(--err); }
+  .diag-note { color: var(--muted); font-size: 11.5px; }
+
+  /* --- Pierścień LED RGB --- */
+  .ring-wrap { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
+  .ring-preview { position: relative; width: 240px; height: 240px; flex: 0 0 auto; }
+  .ring-preview .dot { position: absolute; width: 15px; height: 15px; border-radius: 50%;
+    margin: -7.5px 0 0 -7.5px; background: #1c222b; border: 1px solid var(--line);
+    transition: background .15s linear, box-shadow .15s linear; }
+  .ring-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 132px; text-align: center; }
+  .ring-center .st { font-size: 14px; font-weight: 700; line-height: 1.2; }
+  .ring-center .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* --- Lista kolorów (legenda LED / kanały) --- */
+  .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(265px, 1fr)); gap: 6px; }
+  .legend .item { display: flex; align-items: center; gap: 9px; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: var(--r-s); padding: 6px 10px; font-size: 12.5px; }
+  .legend .item:hover { border-color: var(--accent); }
+  .legend .sw { width: 15px; height: 15px; border-radius: 3px; flex: 0 0 auto; border: 1px solid var(--line); }
+  .legend .sw-edit { width: 34px; height: 26px; padding: 0 2px; flex: 0 0 auto; cursor: pointer; }
+  .legend .nm { flex: 1 1 auto; }
+  .legend .nm-in { flex: 1 1 auto; min-width: 90px; padding: 4px 7px; font-size: 12.5px; }
+
+  /* --- Zegar RTC --- */
+  .rtc-wrap { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .clock { font-family: var(--mono); font-size: 40px; font-weight: 600; line-height: 1.05;
+           letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+  .clock-date { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: var(--mono); }
+  .clock-src { color: var(--accent); font-size: 12px; margin-top: 10px; max-width: 280px; line-height: 1.55; }
+
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr; }
+    header { gap: 8px; padding: 0 10px; }
+    header h1 { font-size: 11.5px; }
+    .badge { font-size: 10px; padding: 2px 6px; }
+  }
 </style>
 </head>
 <body>
 <header>
   <button id="menuBtn" class="menu-btn" type="button" title="Menu">☰</button>
-  <h1>🌤️ Stacja Pogody</h1>
+  <h1>Stacja Pogody</h1>
+  <span class="badge" id="fwBadge" title="Wersja firmware i czas pracy od startu">--</span>
   <span class="badge" id="clock">--</span>
   <span class="badge" id="wifiBadge">Wi-Fi --</span>
   <span class="badge" id="mqttBadge">MQTT --</span>
@@ -683,10 +809,12 @@
     <h2>Węzły Wi-Fi i sieciowe <span class="badge" id="wfBadge">—</span></h2>
     <p class="muted">Wszystkie urządzenia, które przysyłają dane do tej stacji po sieci - razem z węzłami na
       magistrali RS485 z zakładki Magistrala RS485. Stacja powietrza wewnątrz daje kanały <code>in_*</code>,
-      węzeł powietrza zewnętrznego C3 kanały <code>c3_*</code>, a stacja VEVOR dane pogodowe. Stan łączności
-      liczymy z ostatniej odpowiedzi urządzenia, a liczbę kanałów z listy czujników stacji. Żaden adres nie jest
-      wpisany na stałe w kodzie - wszystko pochodzi z <code>/api/extdev</code>. Adresy dodajesz i zmieniasz
-      w zakładce Urządzenia zewnętrzne.</p>
+      węzeł powietrza zewnętrznego C3 kanały <code>c3_*</code>, a stacja VEVOR dane pogodowe. Czwarty węzeł to
+      kamera ESP32-CAM: ona nie przysyła pomiarów, więc jej stan liczymy z tego, kiedy przyszło ostatnie zdjęcie
+      (<code>/api/camera</code>), a kanały <code>cam_*</code> to wynik analizy zdjęcia. Stan łączności pozostałych
+      węzłów bierzemy z ostatniej odpowiedzi urządzenia, a liczbę kanałów z listy czujników stacji. Żaden adres nie
+      jest wpisany na stałe w kodzie - wszystko pochodzi z <code>/api/extdev</code> i <code>/api/camera</code>.
+      Adresy dodajesz i zmieniasz w zakładce Urządzenia zewnętrzne.</p>
     <div class="box">
       <h3>Stan węzłów</h3>
       <div class="toolbar">
@@ -1898,39 +2026,87 @@
 // Pozycja bez podmenu: [id zakładki, etykieta, ikona].
 // Grupa z podmenu:     { grupa, ikona, pozycje:[[id, etykieta, ikona], ...] }.
 // Kolejność w menu = kolejność na tej liście, więc przeniesienie zakładki to jedna linia.
+// --------------------------------------------------------- ikony interfejsu
+// Emoji zastąpione jednym zestawem ikon SVG (24x24, rysowane linią, kolor bierze
+// się z tekstu). Dzięki temu menu wygląda jak panel urządzenia, a nie zbiór
+// emoji, i jednakowo na każdym systemie.
+const ICONS = {
+  home:     '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/><path d="M10 21v-6h4v6"/>',
+  forecast: '<circle cx="8.5" cy="6.5" r="2.5"/><path d="M3.6 8.6H5M12 2.6v1.6M4.4 3.1 5.5 4.2"/><path d="M8 20h9a4 4 0 0 0 .3-8 5.5 5.5 0 0 0-10.6 1.4A3.6 3.6 0 0 0 8 20z"/>',
+  sun:      '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>',
+  chart:    '<path d="M3 3v18h18"/><path d="M7 15.5l4-5 3 3 5-7.5"/>',
+  bars:     '<path d="M3 21h18"/><path d="M6 21V11M11 21V6M16 21v-6"/>',
+  trophy:   '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5v1.5A2.5 2.5 0 0 0 7.5 10"/><path d="M16 6h3v1.5A2.5 2.5 0 0 1 16.5 10"/><path d="M12 13v4M9 20h6"/>',
+  doc:      '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h4"/>',
+  gauge:    '<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-5"/>',
+  pin:      '<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  camera:   '<path d="M3 8h4l1.5-2h7L17 8h4v12H3z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  radio:    '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 15.5a5 5 0 0 0 0-7M5.5 5.5a9 9 0 0 0 0 13M18.5 18.5a9 9 0 0 0 0-13"/>',
+  gear:     '<circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M4.5 7.5l1.9 1.1M17.6 15.4l1.9 1.1M4.5 16.5l1.9-1.1M17.6 8.6l1.9-1.1"/>',
+  sliders:  '<path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/>',
+  bell:     '<path d="M18 15V10a6 6 0 1 0-12 0v5l-1.5 3h15z"/><path d="M10 21h4"/>',
+  plug:     '<path d="M9 3v6M15 3v6"/><path d="M7 9h10v3a5 5 0 0 1-10 0z"/><path d="M12 17v4"/>',
+  clock:    '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  link:     '<path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.1 1.1"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.1-1.1"/>',
+  wifi:     '<path d="M3.5 9a12 12 0 0 1 17 0"/><path d="M7 12.5a8 8 0 0 1 10 0"/><path d="M10.5 16a3.5 3.5 0 0 1 3 0"/><path d="M12 19.5h.01"/>',
+  sdcard:   '<path d="M7 3h7l5 5v13H7z"/><path d="M10 3v4M13 3v4M16 3v4"/>',
+  upload:   '<path d="M12 17V5"/><path d="M7 10l5-5 5 5"/><path d="M4 19h16"/>',
+  globe:    '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>',
+  bulb:     '<path d="M9.5 18h5"/><path d="M10.5 21h3"/><path d="M12 3a6 6 0 0 1 3.5 10.9V16h-7v-2.1A6 6 0 0 1 12 3z"/>',
+  monitor:  '<path d="M3 4h18v12H3z"/><path d="M8 20h8M12 16v4"/>',
+  bus:      '<path d="M7 7v10M17 7v10M4 12h16"/><circle cx="7" cy="6" r="1.6"/><circle cx="17" cy="6" r="1.6"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/>',
+  list:     '<path d="M4 6h16M4 11h16M4 16h10M4 20h6"/>',
+  activity: '<path d="M3 12h4l2.5-7 4 14 2.5-7H21"/>',
+  info:     '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+  box:      '<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
+  /* Ikony pogody - kody z analizy zdjęcia kamery (0 noc ... 5 mgła). */
+  wx0:      '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  wx1:      '<circle cx="12" cy="12" r="4.2"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/>',
+  wx2:      '<path d="M7 18h10a4 4 0 0 0 .3-8 5.5 5.5 0 0 0-10.6 1.4A3.5 3.5 0 0 0 7 18z"/>',
+  wx3:      '<path d="M7 16h10a4 4 0 0 0 .3-8 5.5 5.5 0 0 0-10.6 1.4A3.5 3.5 0 0 0 7 16z"/><path d="M8.5 19l-1 2.5M12 19l-1 2.5M15.5 19l-1 2.5"/>',
+  wx4:      '<path d="M7 15h10a4 4 0 0 0 .3-8 5.5 5.5 0 0 0-10.6 1.4A3.5 3.5 0 0 0 7 15z"/><path d="M9 19h.01M12 21h.01M15 19h.01M12 18.5h.01"/>',
+  wx5:      '<path d="M4 9h16M3 13h18M6 17h13"/>',
+  question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3V13"/><path d="M12 16.5h.01"/>'
+};
+// Ikona jako gotowy SVG - klasa "i" (rozmiar i grubość linii ustawia CSS).
+function ic(name) {
+  const p = ICONS[name];
+  return p ? '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + p + '</svg>' : '';
+}
+
 const MENU = [
-  ['dashboard', 'Pulpit', '🏠'],
-  { grupa:'Prognoza', ikona:'🌤️', pozycje:[
-    ['forecast', 'Prognoza lokalna', '📈'],
-    ['astro', 'Słońce i Księżyc', '🌞'],
-    ['charts', 'Wykresy', '📊'],
-    ['records', 'Rekordy i statystyki', '🏆'],
-    ['reports', 'Raporty min/śr/max', '🧾'] ] },
-  { grupa:'Czujniki', ikona:'🌡️', pozycje:[
-    ['sensors', 'Czujniki', '🧪'],
-    ['gps', 'GPS', '📍'],
-    ['camera', 'Kamera', '📷'],
-    ['extdev', 'Urządzenia zewnętrzne', '📡'] ] },
-  { grupa:'Ustawienia', ikona:'⚙️', pozycje:[
-    ['config', 'Konfiguracja', '📝'],
-    ['calibration', 'Kalibracja', '🎚️'],
-    ['alerts', 'Alerty', '🚨'],
-    ['pins', 'Piny', '🔌'],
-    ['rtc', 'Zegar RTC', '🕒'],
-    ['services', 'Serwisy', '🔗'],
-    ['network', 'Sieć', '📶'],
-    ['sd', 'Karta SD', '💾'],
-    ['ota', 'Aktualizacja', '⬆️'],
-    ['public', 'Publiczny', '🌐'] ] },
-  ['ring', 'Led RGB', '💡'],
-  ['display', 'Wyświetlacz TFT', '🖥️'],
-  { grupa:'ESP i magistrala RS485', ikona:'📡', pozycje:[
-    ['esp485', 'Magistrala RS485', '🎛️'],
-    ['wifinodes', 'Węzły Wi-Fi', '📶'] ] },
-  { grupa:'System', ikona:'🧰', pozycje:[
-    ['logs', 'Logi', '📜'],
-    ['diag', 'Diagnostyka', '🩺'],
-    ['info', 'Informacje', 'ℹ️'] ] }
+  ['dashboard', 'Pulpit', 'home'],
+  { grupa:'Prognoza', ikona:'forecast', pozycje:[
+    ['forecast', 'Prognoza lokalna', 'chart'],
+    ['astro', 'Słońce i Księżyc', 'sun'],
+    ['charts', 'Wykresy', 'bars'],
+    ['records', 'Rekordy i statystyki', 'trophy'],
+    ['reports', 'Raporty min/śr/max', 'doc'] ] },
+  { grupa:'Czujniki', ikona:'gauge', pozycje:[
+    ['sensors', 'Czujniki', 'gauge'],
+    ['gps', 'GPS', 'pin'],
+    ['camera', 'Kamera', 'camera'],
+    ['extdev', 'Urządzenia zewnętrzne', 'radio'] ] },
+  { grupa:'Ustawienia', ikona:'gear', pozycje:[
+    ['config', 'Konfiguracja', 'list'],
+    ['calibration', 'Kalibracja', 'sliders'],
+    ['alerts', 'Alerty', 'bell'],
+    ['pins', 'Piny', 'plug'],
+    ['rtc', 'Zegar RTC', 'clock'],
+    ['services', 'Serwisy', 'link'],
+    ['network', 'Sieć', 'wifi'],
+    ['sd', 'Karta SD', 'sdcard'],
+    ['ota', 'Aktualizacja', 'upload'],
+    ['public', 'Publiczny', 'globe'] ] },
+  ['ring', 'Led RGB', 'bulb'],
+  ['display', 'Wyświetlacz TFT', 'monitor'],
+  { grupa:'ESP i magistrala RS485', ikona:'bus', pozycje:[
+    ['esp485', 'Magistrala RS485', 'bus'],
+    ['wifinodes', 'Węzły Wi-Fi', 'wifi'] ] },
+  { grupa:'System', ikona:'box', pozycje:[
+    ['logs', 'Logi', 'list'],
+    ['diag', 'Diagnostyka', 'activity'],
+    ['info', 'Informacje', 'info'] ] }
 ];
 
 const sideNav = document.getElementById('nav');
@@ -1945,7 +2121,7 @@ function menuItem(id, label, icon) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'side-item';
-  b.innerHTML = '<span class="ico">' + (icon || '') + '</span><span class="lbl">' + label + '</span>';
+  b.innerHTML = '<span class="ico">' + ic(icon) + '</span><span class="lbl">' + label + '</span>';
   b.onclick = () => { showTab(id); closeMenu(); };
   TAB_BTN[id] = b;
   return b;
@@ -1959,7 +2135,7 @@ MENU.forEach(entry => {
   naglowek.type = 'button';
   naglowek.className = 'side-group-head';
   naglowek.setAttribute('aria-expanded', 'true');
-  naglowek.innerHTML = '<span class="ico">' + entry.ikona + '</span><span class="lbl">' + entry.grupa +
+  naglowek.innerHTML = '<span class="ico">' + ic(entry.ikona) + '</span><span class="lbl">' + entry.grupa +
                        '</span><span class="caret">▾</span>';
   naglowek.onclick = () => {
     grupa.classList.toggle('collapsed');
@@ -2650,11 +2826,10 @@ function buildBar(v, min, max, color) {
 }
 
 function buildWeatherIcon(code) {
-  const icons = { 0: '🌙', 1: '☀️', 2: '☁️', 3: '🌧️', 4: '🌨️', 5: '🌫️' };
   const d = document.createElement('div');
   d.className = 'bigico';
   const missing = code === null || code === undefined || !isFinite(code);
-  d.textContent = missing ? '—' : (icons[code] || '❓');
+  d.innerHTML = missing ? '—' : (ic('wx' + code) || ic('question'));
   if (missing) d.style.opacity = '0.35';
   return { node: d, settle: () => {} };
 }
@@ -2831,7 +3006,14 @@ async function loadStatus() {
     const h = document.createElement('div');
     h.className = 'zone-head';
     if (tone) h.dataset.tone = tone;
-    h.textContent = (icon ? icon + ' ' : '') + label;
+    // Ikona strefy (nazwa z zestawu ICONS) przed opisem - spójna z menu, bez emoji.
+    if (icon) {
+      const s = document.createElement('span');
+      s.className = 'zh-ico';
+      s.innerHTML = ic(icon);
+      h.appendChild(s);
+    }
+    h.appendChild(document.createTextNode(label));
     frag.appendChild(h);
     list.forEach(c => addCard(c, tone));
   };
@@ -2862,13 +3044,13 @@ async function loadStatus() {
     const zh = document.createElement('div');
     zh.className = 'zone-head';
     zh.dataset.tone = 'in';
-    zh.textContent = '🏠 ' + t('Wewnątrz');
+    zh.textContent = t('Wewnątrz');
     frag.appendChild(zh);
 
     const used = renderAirPanels(frag, inList);
     const rest = inList.filter(c => !used.has(c.id));
     if (rest.length) {
-      addSubHead('📦', 'Pozostałe czujniki wewnętrzne');
+      addSubHead('', 'Pozostałe czujniki wewnętrzne');
       rest.forEach(c => addCard(c, 'in'));
     }
   }
@@ -2880,13 +3062,13 @@ async function loadStatus() {
     const zh = document.createElement('div');
     zh.className = 'zone-head';
     zh.dataset.tone = 'out';
-    zh.textContent = '🌤️ ' + t('Na zewnątrz');
+    zh.textContent = t('Na zewnątrz');
     frag.appendChild(zh);
     const byId = new Map(chans.map(c => [c.id, c]));
     const used = renderWxGauges(frag, WX_OUT_GAUGES, byId);
     const rest = outList.filter(c => !used.has(c.id));
     if (rest.length) {
-      addSubHead('📦', 'Pozostałe na zewnątrz');
+      addSubHead('', 'Pozostałe na zewnątrz');
       rest.forEach(c => addCard(c, 'out'));
     }
   }
@@ -2903,7 +3085,7 @@ async function loadStatus() {
     const list = btByMac.get(mac);
     const devChan = list.find(c => c.id.endsWith('_t')) || list[0];
     const label = devChan.name.replace(/\s+(temperatura|wilgotność|bateria|sygnał)$/i, '').trim();
-    addZone(label || ('BT ' + mac), list, 'bt', '📶');
+    addZone(label || ('BT ' + mac), list, 'bt', 'radio');
   });
 
   // Stacja VEVOR (sniffer 868 MHz) - zawsze widoczna sekcja z wskaźnikami
@@ -2914,13 +3096,13 @@ async function loadStatus() {
     const zh = document.createElement('div');
     zh.className = 'zone-head';
     zh.dataset.tone = 'vev';
-    zh.textContent = '📻 ' + t('VEVOR 868 MHz');
+    zh.textContent = t('VEVOR 868 MHz');
     frag.appendChild(zh);
     const byId = new Map(chans.map(c => [c.id, c]));
     const used = renderWxGauges(frag, WX_VEV_GAUGES, byId);
     const rest = vevList.filter(c => !used.has(c.id));
     if (rest.length) {
-      addSubHead('📻', 'Pozostałe (VEVOR)');
+      addSubHead('', 'Pozostałe (VEVOR)');
       rest.forEach(c => addCard(c, 'vev'));
     }
   }
@@ -2929,12 +3111,12 @@ async function loadStatus() {
   // mylić jej z wewnętrznym PM stacji .141 ani własnymi czujnikami stacji.
   const c3List = chans.filter(isC3);
   if (c3List.length) {
-    addZone('Stacja powietrza zewnątrz', c3List, 'out', '🌬️');
+    addZone('Stacja powietrza zewnątrz', c3List, 'out', 'radio');
   }
 
   // Pogoda z internetu (Open-Meteo) - do bezpośredniego porównania z naszymi
   // czujnikami i stacją VEVOR.
-  addZone('Internet (Open-Meteo)', chans.filter(isNet), 'net', '🌐');
+  addZone('Internet (Open-Meteo)', chans.filter(isNet), 'net', 'globe');
 
   // Kanały węzłów magistrali: osobna sekcja na każdy węzeł (adres węzła
   // przychodzi w /api/status jako remote_addr).
@@ -2944,7 +3126,7 @@ async function loadStatus() {
     if (!byAddr.has(a)) byAddr.set(a, []);
     byAddr.get(a).push(c);
   });
-  [...byAddr.keys()].sort((x, y) => x - y).forEach(a => addZone(r2NodeLabel(a), byAddr.get(a), 'node', '🔗'));
+  [...byAddr.keys()].sort((x, y) => x - y).forEach(a => addZone(r2NodeLabel(a), byAddr.get(a), 'node', 'bus'));
 
   if (!chans.length) {
     const e = document.createElement('div');
@@ -3007,6 +3189,16 @@ async function loadStatus() {
   setBadge('wifiBadge', w.connected ? `Wi-Fi ${w.ip}` : 'Wi-Fi: tryb AP', w.connected);
   setBadge('mqttBadge', m.connected ? 'MQTT OK' : 'MQTT off', m.connected);
   setBadge('sdBadge', sd.mounted ? 'SD OK' : 'SD brak', sd.mounted);
+
+  // Chip z wersją firmware i czasem pracy - po restarcie od razu widać, czy
+  // stacja wstała na nowym obrazie (przydaje się po aktualizacji przez OTA).
+  const fwEl = document.getElementById('fwBadge');
+  if (fwEl) {
+    const up = Number(s.uptime_s || 0);
+    const d = Math.floor(up / 86400), h = Math.floor((up % 86400) / 3600), mi = Math.floor((up % 3600) / 60);
+    const upTxt = d ? `${d}d ${h}h` : (h ? `${h}h ${mi}m` : `${mi}m ${up % 60}s`);
+    fwEl.textContent = (s.fw ? String(s.fw).split(' ')[0] + ' · ' : '') + upTxt;
+  }
 
   const rg = s.ring || {};
   if (rg.enabled) {
@@ -4745,14 +4937,24 @@ async function removeExtDev(index) {
 // ---------------- Węzły Wi-Fi / sieciowe (zakładka "Węzły Wi-Fi") ----------------
 // Te same urządzenia, co w zakładce "Urządzenia zewnętrzne", ale pokazane w jednym
 // miejscu ze stanem łączności: kiedy urządzenie ostatnio odpowiedziało i ile kanałów
-// stacja z niego ma. Żaden adres IP nie jest zaszyty w kodzie - wszystko pochodzi
-// z /api/extdev, a stacja powietrza wewnątrz sama podaje swój stan w odpowiedzi.
+// stacja z niego ma. Do tego kamera (moduł ESP32-CAM) - nie przysyła pomiarów, więc
+// jej stan bierzemy ze zdjęć (/api/camera). Żaden adres IP nie jest zaszyty w kodzie -
+// wszystko pochodzi z /api/extdev i /api/camera, a stacja powietrza wewnątrz sama
+// podaje swój stan w odpowiedzi.
 const WIFI_NODE_TYPES = {
   vevor:  { label: 'Stacja VEVOR (Wi-Fi)',      prefix: null },
   aq:     { label: 'Stacja powietrza wewnątrz', prefix: 'in_' },
   outaq:  { label: 'Węzeł powietrza zewn. C3',  prefix: 'c3_' },
+  camera: { label: 'Kamera (ESP32-CAM)',        prefix: 'cam_' },
   ble:    { label: 'Czujnik BLE',               prefix: null },
 };
+
+// Wiek zdarzenia w sekundach -> zapis dla człowieka ("42 s", "7 min", "2,5 h").
+function wfAge(s) {
+  if (s < 90) return s + ' s';
+  if (s < 5400) return Math.round(s / 60) + ' min';
+  return (s / 3600).toFixed(1).replace('.', ',') + ' h';
+}
 
 // Kanały importu mają stałe prefiksy (in_ z tabeli AIR_IMPORT, c3_ z OUTC3_IMPORT),
 // więc liczymy je po identyfikatorach zwracanych przez /api/sensors.
@@ -4769,6 +4971,11 @@ async function loadWifiNodes(manual) {
   try { devs = (await api('/api/extdev')).devices || []; } catch (e) { return; }
   let ids = [];
   try { ids = ((await api('/api/sensors')).sensors || []).map(s => s.id); } catch (e) { ids = []; }
+  // Czwarty węzeł sieci: kamera ESP32-CAM (nie ma jej w /api/extdev, bo nie
+  // przysyła pomiarów). Jej stan bierzemy z /api/camera: czy jest włączona,
+  // kiedy przyszło ostatnie zdjęcie (last_analysis.ts) i jaki zgłasza błąd.
+  let cam = null;
+  try { cam = await api('/api/camera'); } catch (e) { cam = null; }
 
   tbody.innerHTML = '';
   let online = 0;
@@ -4783,21 +4990,50 @@ async function loadWifiNodes(manual) {
     const chan = (n === null) ? '<span class="muted">—</span>'
                               : (n ? String(n) : '<span class="muted">0</span>');
     const stan = fresh
-      ? `<span style="color:#6bcb77">OK · ${e.last_sec} s temu</span>`
-      : `<span style="color:#ff8c8c">${escapeHtml(e.last_err || 'brak odpowiedzi')}</span>`;
+      ? `<span class="st-ok">OK · ${e.last_sec} s temu</span>`
+      : `<span class="st-bad">${escapeHtml(e.last_err || 'brak odpowiedzi')}</span>`;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${escapeHtml(e.name)}</td><td>${escapeHtml(t.label)}</td>
       <td>${escapeHtml(e.url)}</td><td>${e.interval} s</td><td>${stan}</td><td>${chan}</td>`;
     tbody.appendChild(tr);
   }
-  if (!devs.length) {
+
+  // Kamera jako osobny wiersz: życie widać po zdjęciach, nie po adresie IP.
+  let camAdded = false;
+  if (cam && cam.supported !== false) {
+    const ivMin = Math.max(Number(cam.interval_min) || 5, 1);
+    const limitS = Math.max(3 * ivMin * 60, 900);        // 3 interwały, z zapasem 15 min
+    const ts = (cam.last_analysis && cam.last_analysis.ts) ? Number(cam.last_analysis.ts) : 0;
+    const ageS = ts ? Math.max(0, Math.round(Date.now() / 1000 - ts)) : null;
+    const on = !!cam.enabled && ageS !== null && ageS <= limitS;
+    if (on) online++;
+    camAdded = true;
+    const adres = cam.mode === 'external' ? (cam.cam_remote_url || '—') : 'moduł na masterze';
+    const stan = !cam.enabled
+      ? '<span class="muted">wyłączona w ustawieniach</span>'
+      : (ageS === null
+         ? `<span class="st-bad">${escapeHtml(cam.error || 'brak zdjęć')}</span>`
+         : (on ? `<span class="st-ok">OK · zdjęcie ${wfAge(ageS)} temu</span>`
+               : `<span class="st-bad">ostatnie zdjęcie ${wfAge(ageS)} temu</span>`));
+    const nCam = wifiNodeChanCount('camera', ids);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(cam.mode === 'external' ? 'Kamera ESP32-CAM' : 'Kamera (na masterze)')}</td>
+      <td>${escapeHtml(WIFI_NODE_TYPES.camera.label)}</td><td>${escapeHtml(adres)}</td>
+      <td>${ivMin} min</td><td>${stan}</td>
+      <td>${nCam ? String(nCam) : '<span class="muted">0</span>'}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  if (!devs.length && !camAdded) {
     tbody.innerHTML = '<tr><td colspan="6" class="muted">Brak węzłów sieciowych — dodaj je w zakładce Urządzenia zewnętrzne.</td></tr>';
   }
-  setBadge('wfBadge', devs.length ? `${online} z ${devs.length} odpowiada` : 'brak węzłów', online > 0);
+  const total = devs.length + (camAdded ? 1 : 0);
+  setBadge('wfBadge', total ? `${online} z ${total} odpowiada` : 'brak węzłów', online > 0);
   const info = document.getElementById('wfInfo');
   if (info) {
     info.textContent = 'Odczyt ' + new Date().toLocaleTimeString() +
-      ' • kanały in_* = stacja powietrza wewnątrz, c3_* = węzeł zewnętrzny C3';
+      ' • kanały in_* = stacja powietrza wewnątrz, c3_* = węzeł zewnętrzny C3, ' +
+      'cam_* = analiza zdjęcia z kamery';
   }
   if (manual) showMsg('wfMsg', 'Stan węzłów odświeżony', true);
 }
@@ -7045,9 +7281,9 @@ function r2MarkSelected() {
 }
 
 function r2NodeIcon(n) {
-  if (n.online && n.active) return '🟢';
-  if (n.online) return '🟠';
-  return '⚪';
+  // Kropka stanu: zielona = online i aktywny, pomorska = online, szara = brak.
+  const cls = (n.online && n.active) ? 'on' : (n.online ? 'mid' : 'off');
+  return '<span class="st-dot ' + cls + '"></span>';
 }
 
 // Płytka tego węzła, którego dotyczą piny i konfiguracja: wybrany z listy,
