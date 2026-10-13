@@ -135,6 +135,38 @@ void setFontById(lgfx::LovyanGFX* d, uint8_t id) {
   }
 }
 
+// Czcionka o zadanej wysokości w pikselach (16/26/48/75). 0 = auto (nie zmienia).
+void setFontByPx(lgfx::LovyanGFX* d, int px) {
+  switch (px) {
+    case 16: d->setFont(&lgfx::fonts::Font2); break;
+    case 26: d->setFont(&lgfx::fonts::Font4); break;
+    case 48: d->setFont(&lgfx::fonts::Font6); break;
+    case 75: d->setFont(&lgfx::fonts::Font8); break;
+    default: break;
+  }
+}
+
+// "#RRGGBB" (albo samo "RRGGBB") -> 0xRRGGBB; pusty napis = 0 (kolor domyślny).
+uint32_t hexFromString(const String& s) {
+  if (!s.length()) return 0;
+  const char* p = s.c_str();
+  if (*p == '#') p++;
+  return (uint32_t)strtoul(p, nullptr, 16) & 0xFFFFFFu;
+}
+
+String hexString(uint32_t v) {
+  char b[9];
+  snprintf(b, sizeof(b), "#%06X", (unsigned)(v & 0xFFFFFFu));
+  return String(b);
+}
+
+// Kolor elementu z ustawień: 0 = kolor domyślny, inaczej z przygaszeniem
+// nocnym (nk), tak samo jak reszta ekranu.
+uint16_t uiColor(lgfx::LovyanGFX* d, uint32_t hex, uint16_t def, float nk) {
+  if (!hex) return def;
+  return dim565(hex565(d, hex), nk);
+}
+
 // Szerokość napisu z polskimi znakami (definicja niżej - potrzebna już przy
 // dobieraniu rozmiaru czcionki).
 static int plWidth(lgfx::LovyanGFX* d, const String& s);
@@ -556,6 +588,29 @@ void DisplayManager::applyConfig() {
     icPath_[i] = config.extraS(kIconKeys[i], "");
   }
 
+  // Wygląd i pozycje elementów ekranu (zakładka www "Wyświetlacz TFT").
+  // 0 / pusty kolor = wartość domyślna, więc stare konfiguracje wyglądają
+  // dokładnie tak, jak dotąd.
+  struct UiLoad { const char* p; UiCfg* u; };
+  const UiLoad uis[] = { { "top", &uiTop_ }, { "lbl", &uiLbl_ }, { "val", &uiVal_ },
+                         { "unit", &uiUnit_ }, { "info", &uiInfo_ }, { "wx", &uiWx_ } };
+  for (uint8_t i = 0; i < sizeof(uis) / sizeof(uis[0]); i++) {
+    const String k = String("disp_ui_") + uis[i].p + "_";
+    UiCfg& u = *uis[i].u;
+    u.size = (int)(config.extraF((k + "size").c_str(), 0.0f) + 0.5f);
+    u.dx   = (int)(config.extraF((k + "dx").c_str(), 0.0f));
+    u.dy   = (int)(config.extraF((k + "dy").c_str(), 0.0f));
+    u.on   = config.extraF((k + "on").c_str(), 1.0f) >= 0.5f;
+    u.col  = hexFromString(config.extraS((k + "col").c_str(), ""));
+  }
+  uiTopCam_ = config.extraF("disp_ui_top_cam", 1.0f) >= 0.5f;
+  uiTopOut_ = config.extraF("disp_ui_top_out", 1.0f) >= 0.5f;
+  uiTopIn_  = config.extraF("disp_ui_top_in", 1.0f) >= 0.5f;
+  uiBarOn_  = config.extraF("disp_ui_bar_on", 1.0f) >= 0.5f;
+  uiBarH_   = (int)(config.extraF("disp_ui_bar_h", 0.0f) + 0.5f);
+  uiBarCol_ = hexFromString(config.extraS("disp_ui_bar_col", ""));
+  uiWxIcon_ = (int)(config.extraF("disp_ui_wx_icon", 0.0f) + 0.5f);
+
   int ic = (int)(config.extraF("disp_ic", 0.0f) + 0.5f);
   if (ic < 0 || ic > 2) ic = 0;
   ic_ = (uint8_t)ic;
@@ -642,9 +697,14 @@ void DisplayManager::loop() {
 // =============================================================
 enum : uint8_t { ST_OFF = 0, ST_OK = 1, ST_BAD = 2 };   // brak / działa / nie odpowiada
 
-// Rozmiar znacznika (kropki) stanu - 5 px promienia, żeby kolor było widać
-// z odległości 2-3 m.
-int stateDotR(uint8_t st) { return st == ST_OFF ? 3 : 5; }
+// Rozmiar kropki stanu rośnie razem z czcionką opisu (12 px przy 26 px tekstu),
+// żeby kolor było widać z 2-3 m także przy większych znacznikach.
+int stateDotR(uint8_t st, int fontH) {
+  int r = fontH / 5;
+  if (r < 4) r = 4;
+  if (r > 10) r = 10;
+  return (st == ST_OFF) ? (r > 5 ? r - 2 : 4) : r;
+}
 
 // Kamera: wyłączona w ustawieniach = ST_OFF (szara), brak zdjęcia w oknie
 // 3 interwałów albo zgłoszony błąd = ST_BAD (czerwona).
@@ -695,67 +755,104 @@ uint16_t stateColor565(lgfx::LovyanGFX* d, uint8_t st, float nk, uint16_t dim) {
 }
 
 // Szerokość znacznika: opis + kropka stanu NA KOŃCU opisu (nie przed nim).
-int chipWidth(lgfx::LovyanGFX* d, const char* label, uint8_t st) {
-  d->setFont(&lgfx::fonts::Font2);
-  return 8 + (int)d->textWidth(label) + 8 + stateDotR(st) * 2;
+int chipWidth(lgfx::LovyanGFX* d, const char* label, uint8_t st, uint8_t fontId, int fontH) {
+  setFontById(d, fontId);
+  return 10 + (int)d->textWidth(label) + 8 + stateDotR(st, fontH) * 2;
 }
 
-// Znacznik stanu: zaokrąglona ramka + opis wersalikami + kropka w kolorze
-// stanu na końcu tekstu. Zwraca szerokość znacznika.
+// Znacznik stanu: zaokrąglona ramka + opis wersalikami + kropka w kolorze stanu
+// na końcu tekstu. txtCol = 0 znaczy "domyślny" (opis przygaszony, a przy braku
+// łączności czerwony). Zwraca szerokość znacznika.
 int chipDraw(lgfx::LovyanGFX* d, int x, int y, int h, const char* label, uint8_t st,
-             uint16_t bg, uint16_t dim, float nk) {
+             uint16_t bg, uint16_t dim, float nk, uint8_t fontId, uint16_t txtCol) {
+  setFontById(d, fontId);
   const int tw = (int)d->textWidth(label);
-  const int r  = stateDotR(st);
-  const int w  = chipWidth(d, label, st);
-  d->drawRoundRect(x, y, w, h, 4, dim);
+  const int fh = d->fontHeight();
+  const int r  = stateDotR(st, fh);
+  const int w  = chipWidth(d, label, st, fontId, fh);
+  d->drawRoundRect(x, y, w, h, 6, dim);
   d->setTextDatum(lgfx::textdatum_t::middle_left);
-  d->setTextColor(st == ST_BAD ? stateColor565(d, st, nk, dim) : dim, bg);
-  d->drawString(label, x + 8, y + h / 2);
-  d->fillCircle(x + 8 + tw + 8 + r, y + h / 2, r, stateColor565(d, st, nk, dim));
+  d->setTextColor(st == ST_BAD ? stateColor565(d, st, nk, dim) : (txtCol ? txtCol : dim), bg);
+  d->drawString(label, x + 10, y + h / 2);
+  d->fillCircle(x + 10 + tw + 8 + r, y + h / 2, r, stateColor565(d, st, nk, dim));
   d->setTextColor(dim, bg);
   return w;
 }
 
-// Górny pasek: TRZY znaczniki stanu widoczne jednocześnie (kamera, węzeł
-// powietrza na zewnątrz, węzeł powietrza w środku) + licznik cyklu + zegar.
-// Zestaw opisów dobieramy do szerokości panelu, żeby nie wjechać na zegar.
-void dispTopStatus(lgfx::LovyanGFX* d, int W, uint16_t bg, uint16_t fg, uint16_t dim,
-                   const char* hhmm, const char* counter, float nk) {
-  const int h = 20, y = 4;
-  d->setFont(&lgfx::fonts::Font2);
+// Górny pasek: znaczniki stanu węzłów (kamera, powietrze na zewnątrz, powietrze
+// w środku). Co pokazać, jakim rozmiarem, gdzie i w jakim kolorze ustawia się
+// w www - zakładka "Wyświetlacz TFT", sekcja "Wygląd i pozycje".
+void DisplayManager::dispTopStatus(void* dv, int W, uint16_t bg, uint16_t fg, uint16_t dim, float nk) {
+  lgfx::LovyanGFX* d = static_cast<lgfx::LovyanGFX*>(dv);
+  if (!uiTop_.on) return;
 
-  // Miejsce zarezerwowane po prawej stronie na zegar i licznik cyklu.
-  int trail = (int)d->textWidth(hhmm) + 10;
-  if (counter && counter[0]) trail += (int)d->textWidth(counter) + 14;
+  struct Chip { uint8_t st; const char* full; const char* shrt; };
+  Chip c[3];
+  uint8_t cnt = 0;
+  if (uiTopCam_) c[cnt++] = { camState(),     "KAMERA", "KAM" };
+  if (uiTopOut_) c[cnt++] = { airNodeState(), "C3",     "C3"  };
+  if (uiTopIn_)  c[cnt++] = { airInState(),   "WEW",    "WEW" };
+  if (!cnt) return;
 
-  const uint8_t sts[3] = { camState(), airNodeState(), airInState() };
-  const char* sets[3][3] = {
-    { "KAMERA", "C3 POW",  "WEW POW" },   // panel szeroki (np. 320 px)
-    { "KAMERA", "C3",      "WEW"     },   // panel 240 px
-    { "KAM",    "C3",      "WEW"     },   // awaryjnie, gdy brakuje miejsca
+  uint8_t fid = 1;                                  // Font4 = 26 px
+  if (uiTop_.size == 16)      fid = 5;              // Font2
+  else if (uiTop_.size == 48) fid = 2;              // Font6
+  else if (uiTop_.size == 75) fid = 3;              // Font8
+
+  // Gdy znaczniki nie mieszczą się na szerokość, najpierw skracamy opisy,
+  // a dopiero potem zmniejszamy czcionkę.
+  auto need = [&](uint8_t f, bool shrt) {
+    setFontById(d, f);
+    const int fh = d->fontHeight();
+    int n = 6 + uiTop_.dx;
+    for (uint8_t i = 0; i < cnt; i++) n += chipWidth(d, shrt ? c[i].shrt : c[i].full, c[i].st, f, fh) + 6;
+    return n;
   };
-  for (uint8_t s = 0; s < 3; s++) {
-    int need = 6;                          // lewy margines
-    for (uint8_t i = 0; i < 3; i++) need += chipWidth(d, sets[s][i], sts[i]) + 6;
-    if (s == 2 || need + trail <= W) {
-      int x = 6;
-      for (uint8_t i = 0; i < 3; i++) {
-        x += chipDraw(d, x, y, h, sets[s][i], sts[i], bg, dim, nk) + 6;
-      }
-      break;
+  bool shrt = false;
+  if (need(fid, false) > W - 4) {
+    shrt = true;
+    if (need(fid, true) > W - 4) fid = 5;
+  }
+  setFontById(d, fid);
+  const int h = d->fontHeight() + 8;
+  const int y = 4 + uiTop_.dy;
+  const uint16_t txtCol = uiColor(d, uiTop_.col, 0, nk);
+  int x = 6 + uiTop_.dx;
+  for (uint8_t i = 0; i < cnt; i++) {
+    x += chipDraw(d, x, y, h, shrt ? c[i].shrt : c[i].full, c[i].st, bg, dim, nk, fid, txtCol) + 6;
+  }
+  d->drawFastHLine(8, y + h + 4, W - 16, txtCol ? txtCol : dim);
+}
+
+// Dolny wiersz informacyjny (tuż nad paskiem jakości): zegar po lewej, licznik
+// cyklu po prawej, a na pulpicie na środku skrót stanu sieci.
+void DisplayManager::dispBottomInfo(void* dv, int W, int H, uint16_t bg, uint16_t dim,
+                    const char* hhmm, const char* counter, const char* center) {
+  lgfx::LovyanGFX* d = static_cast<lgfx::LovyanGFX*>(dv);
+  if (!uiInfo_.on) return;
+  uint8_t fid = 1;
+  if (uiInfo_.size == 16)      fid = 5;
+  else if (uiInfo_.size == 48) fid = 2;
+  else if (uiInfo_.size == 75) fid = 3;
+  setFontById(d, fid);
+  const int y = H - 26 + uiInfo_.dy;
+  const uint16_t col = uiColor(d, uiInfo_.col, dim, nightK_);
+  plDraw(d, 8 + uiInfo_.dx, y, hhmm, col, bg, lgfx::textdatum_t::middle_left);
+  const int cw = (int)d->textWidth(hhmm);
+  int rw = 0;
+  if (counter && counter[0]) {
+    rw = (int)d->textWidth(counter);
+    plDraw(d, W - 8 + uiInfo_.dx, y, counter, col, bg, lgfx::textdatum_t::middle_right);
+  }
+  // Środek tylko wtedy, gdy naprawdę zostaje na niego miejsce (i zostaje mały:
+  // to informacja dodatkowa).
+  if (center && center[0]) {
+    d->setFont(&lgfx::fonts::Font2);
+    const int avail = W - 16 - cw - rw - 24;
+    if ((int)d->textWidth(center) <= avail) {
+      plDraw(d, W / 2 + uiInfo_.dx, y, center, col, bg, lgfx::textdatum_t::middle_center);
     }
   }
-
-  int rx = W - 8;
-  d->setTextDatum(lgfx::textdatum_t::middle_right);
-  d->setTextColor(dim, bg);
-  d->drawString(hhmm, rx, y + h / 2);
-  if (counter && counter[0]) {
-    rx -= (int)d->textWidth(hhmm) + 12;
-    d->setTextColor(fg, bg);
-    d->drawString(counter, rx, y + h / 2);
-  }
-  d->drawFastHLine(8, 30, W - 16, dim);
 }
 
 // PM2.5 -> AQI (progi EPA, te same co legenda na stronie) - tylko na wypadek,
@@ -785,8 +882,12 @@ float airAqi() {
 // Dolny pasek: te same progi i kolory, co legenda jakości powietrza na stronie
 // www (0-50 zielony ... 300+ bordowy), rozciągnięte na całą szerokość ekranu.
 // Słupek pokazuje, gdzie jest aktualny pomiar.
-void dispBottomBar(lgfx::LovyanGFX* d, int W, int H, uint16_t bg, uint16_t fg, float nk) {
-  const int bh = 12;
+void DisplayManager::dispBottomBar(void* dv, int W, int H, uint16_t bg, uint16_t fg, float nk) {
+  lgfx::LovyanGFX* d = static_cast<lgfx::LovyanGFX*>(dv);
+  if (!uiBarOn_) return;
+  int bh = uiBarH_ > 0 ? uiBarH_ : 12;      // wysokość pasa z ustawień www
+  if (bh < 4)  bh = 4;
+  if (bh > 48) bh = 48;
   const int y  = H - bh;
   for (int i = 0; i < 6; i++) {
     int x0 = (int)((float)W * AQ_BAND_STOP[i] / AQ_BAND_STOP[6]);
@@ -802,8 +903,9 @@ void dispBottomBar(lgfx::LovyanGFX* d, int W, int H, uint16_t bg, uint16_t fg, f
   if (k > 1) k = 1;
   const int mx = (int)(k * (float)(W - 1));
   const int bx = (mx > 3) ? mx - 3 : 0;
-  d->fillRect(bx, y - 6, 7, bh + 6, fg);    // słupek znacznika
-  d->drawRect(bx, y - 6, 7, bh + 6, bg);    // obwódka w kolorze tła (czytelna na każdym pasie)
+  const uint16_t mark = uiColor(d, uiBarCol_, fg, nk);   // kolor znacznika z ustawień
+  d->fillRect(bx, y - 6, 7, bh + 6, mark);   // słupek znacznika
+  d->drawRect(bx, y - 6, 7, bh + 6, bg);     // obwódka w kolorze tła (czytelna na każdym pasie)
 }
 
 void DisplayManager::draw() {
@@ -864,15 +966,15 @@ void DisplayManager::draw() {
   d->fillScreen(bg);
 
   // Górny pasek stanu (kamera + węzeł powietrza na zewnątrz + węzeł powietrza
-  // w środku + zegar) jest wspólny dla wszystkich widoków - stale widoczny,
-  // żeby z 2-3 m było widać, czy urządzenia żyją. Licznik cyklu pokazujemy
-  // tylko w trybie cyklu wskazań.
+  // w środku) jest wspólny dla wszystkich widoków - stale widoczny i duży,
+  // żeby z 2-3 m było widać, czy urządzenia żyją. Zegar i licznik cyklu są
+  // przeniesione na dół, nad pasek jakości powietrza (patrz dispBottomInfo).
   String cyc;
   if (mode_ == 1) {
     const uint8_t n = channelCount();
     if (n > 1) cyc = String((unsigned)(idx_ % n) + 1) + "/" + String(n);
   }
-  dispTopStatus(d, W, bg, fg, dim, hhmm, cyc.length() ? cyc.c_str() : nullptr, nk);
+  dispTopStatus(d, W, bg, fg, dim, nk);
 
   switch (mode_) {
     case 1:  drawBig(d, W, H, bg, fg, dim, acc, hhmm, true);   break;  // cykl wskazań
@@ -880,6 +982,16 @@ void DisplayManager::draw() {
     case 3:  drawWeather(d, W, H, bg, fg, dim, acc, hhmm);     break;  // pogoda + grafika
     default: drawDashboard(d, W, H, bg, fg, dim, acc, hhmm);   break;  // pulpit
   }
+
+  // Dolny wiersz: zegar (lewo), stan sieci na pulpicie (środek), licznik cyklu
+  // (prawo) - tuż nad paskiem jakości powietrza.
+  String net;
+  if (mode_ == 0) {
+    net = String("WiFi ") + (WiFi.status() == WL_CONNECTED ? "OK" : "--") + "  MQTT " +
+          (mqtt.connected() ? "OK" : "--");
+  }
+  dispBottomInfo(d, W, H, bg, dim, hhmm, cyc.length() ? cyc.c_str() : nullptr,
+                 net.length() ? net.c_str() : nullptr);
 
   // Dolny pasek jakości powietrza - kolory i progi jak legenda na stronie www.
   dispBottomBar(d, W, H, bg, fg, nk);
@@ -910,45 +1022,47 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
   if (isnan(w)) w = sensors.valueOf("wind");
   const float pm  = sensors.valueOf("c3_pm25");
   const float aqi = sensors.valueOf("c3_aqi");
-  const float tout = sensors.valueOf("c3_temp");
 
-  String foot = String("WiFi ") + (WiFi.status() == WL_CONNECTED ? "OK" : "--");
-  foot += "  MQTT ";
-  foot += (mqtt.connected() ? "OK" : "--");
-  if (!isnan(tout)) foot += "  zewn. " + num(tout, 1) + " C";
-
-  // --- Nagłówek wspólny (stan urządzeń + zegar) rysuje draw(), więc tutaj
-  //     od razu przechodzimy do treści widoku. ---
+  // --- Treść widoku. Wspólny nagłówek (stan urządzeń) rysuje draw(), a skrót
+  //     stanu sieci trafia do dolnego wiersza (patrz dispBottomInfo). ---
 
   if (W >= H) {
     // ---------------- UKŁAD POZIOMY (np. panel zamontowany w poziomie) ----------------
     const int colX = W * 55 / 100;          // granica kolumn
-    d->drawFastVLine(colX, 32, H - 60, dim);
+    d->drawFastVLine(colX, 34, H - 48, dim);
 
     // Lewa kolumna: duża temperatura (kolor wg skali: błękit = zimno, żółty =
     // ciepło, czerwień = upał) + wilgotność i wiatr pod nią
     d->setTextColor(fg, bg);
-    d->setFont(&lgfx::fonts::Font6);
-    plDraw(d, 12, 34, num(t, 1), isnan(t) ? fg : tempColor565(d, t, nightK_),
+    if (uiWx_.size) setFontByPx(d, uiWx_.size);
+    else            d->setFont(&lgfx::fonts::Font6);
+    plDraw(d, 12 + uiWx_.dx, 34 + uiWx_.dy, num(t, 1),
+           uiColor(d, uiWx_.col, isnan(t) ? fg : tempColor565(d, t, nightK_), nightK_),
            bg, lgfx::textdatum_t::top_left);
     d->setFont(&lgfx::fonts::Font2);
     plDraw(d, 12, 88, "°C", acc, bg, lgfx::textdatum_t::top_left);
 
     auto leftRow = [&](int y, const char* label, const String& value) {
+      const int yy = y + uiWx_.dy;
       d->setFont(&lgfx::fonts::Font2);
-      plDraw(d, 12, y, label, dim, bg, lgfx::textdatum_t::top_left);
-      d->setFont(&lgfx::fonts::Font4);
-      plDraw(d, 12, y + 18, value, fg, bg, lgfx::textdatum_t::top_left);
+      plDraw(d, 12 + uiWx_.dx, yy, label, dim, bg, lgfx::textdatum_t::top_left);
+      if (uiWx_.size) setFontByPx(d, uiWx_.size);
+      else            d->setFont(&lgfx::fonts::Font4);
+      plDraw(d, 12 + uiWx_.dx, yy + 18, value, uiColor(d, uiWx_.col, fg, nightK_), bg,
+             lgfx::textdatum_t::top_left);
     };
-    leftRow(116, "Wilgotność", num(h, 0) + " %");
-    leftRow(166, "Wiatr",      num(w, 1) + " km/h");
+    leftRow(110, "Wilgotność", num(h, 0) + " %");
+    leftRow(156, "Wiatr",      num(w, 1) + " km/h");
 
     // Prawa kolumna: ciśnienie, pył i AQI z C3
     auto rightRow = [&](int y, const char* label, const String& value, uint16_t color) {
+      const int yy = y + uiWx_.dy;
       d->setFont(&lgfx::fonts::Font2);
-      plDraw(d, colX + 10, y, label, dim, bg, lgfx::textdatum_t::top_left);
-      d->setFont(&lgfx::fonts::Font4);
-      plDraw(d, right, y + 16, value, color, bg, lgfx::textdatum_t::top_right);
+      plDraw(d, colX + 10 + uiWx_.dx, yy, label, dim, bg, lgfx::textdatum_t::top_left);
+      if (uiWx_.size) setFontByPx(d, uiWx_.size);
+      else            d->setFont(&lgfx::fonts::Font4);
+      plDraw(d, right + uiWx_.dx, yy + 16, value, uiColor(d, uiWx_.col, color, nightK_), bg,
+             lgfx::textdatum_t::top_right);
     };
     rightRow(40,  "Ciśnienie",   num(p, 1) + " hPa",   fg);
     rightRow(86,  "PM2.5 (C3)",  num(pm, 0) + " µg/m³", acc);
@@ -957,20 +1071,25 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
     // ---------------- UKŁAD PIONOWY (240x320) ----------------
     const int cx = W / 2;
 
-    d->setFont(&lgfx::fonts::Font6);
-    plDraw(d, cx, 40, num(t, 1), fg, bg, lgfx::textdatum_t::top_center);
+    if (uiWx_.size) setFontByPx(d, uiWx_.size);
+    else            d->setFont(&lgfx::fonts::Font6);
+    plDraw(d, cx + uiWx_.dx, 40 + uiWx_.dy, num(t, 1),
+           uiColor(d, uiWx_.col, isnan(t) ? fg : tempColor565(d, t, nightK_), nightK_),
+           bg, lgfx::textdatum_t::top_center);
     d->setFont(&lgfx::fonts::Font2);
     plDraw(d, cx, 92, "°C", acc, bg, lgfx::textdatum_t::top_center);
     d->drawFastHLine(8, 112, W - 16, dim);
 
     const int rowTop  = 140;
-    const int rowStep = (H - rowTop - 36) / 4;
+    const int rowStep = (H - rowTop - 46) / 4;
     auto row = [&](int idx, const char* label, const String& value, uint16_t color) {
-      const int y = rowTop + idx * rowStep;
+      const int y = rowTop + idx * rowStep + uiWx_.dy;
       d->setFont(&lgfx::fonts::Font2);
-      plDraw(d, 12, y, label, dim, bg, lgfx::textdatum_t::middle_left);
-      d->setFont(&lgfx::fonts::Font4);
-      plDraw(d, right, y, value, color, bg, lgfx::textdatum_t::middle_right);
+      plDraw(d, 12 + uiWx_.dx, y, label, dim, bg, lgfx::textdatum_t::middle_left);
+      if (uiWx_.size) setFontByPx(d, uiWx_.size);
+      else            d->setFont(&lgfx::fonts::Font4);
+      plDraw(d, right + uiWx_.dx, y, value, uiColor(d, uiWx_.col, color, nightK_), bg,
+             lgfx::textdatum_t::middle_right);
     };
     row(0, "Wilgotność",  num(h, 0) + " %",        fg);
     row(1, "Ciśnienie",   num(p, 1) + " hPa",      fg);
@@ -978,10 +1097,6 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
     row(3, "PM2.5 (C3)",  num(pm, 0) + " µg/m³",   acc);
     row(4, "AQI (C3)",    num(aqi, 0),             acc);
   }
-
-  // --- Stopka (wspólna) - nad dolnym paskiem jakości powietrza ---
-  d->setFont(&lgfx::fonts::Font2);
-  plDraw(d, W / 2, H - 20, foot, dim, bg, lgfx::textdatum_t::bottom_center);
 }
 
 // ---------------- Widoki 1 i 2: duże wskazania ----------------
@@ -1109,39 +1224,59 @@ void DisplayManager::drawBig(void* dv, int W, int H, uint16_t bg, uint16_t fg, u
                       (unit.indexOf("C") >= 0 && unit.indexOf("%") < 0);
   const uint16_t valCol = (!isnan(raw) && tempCh) ? tempColor565(d, raw, nightK_) : fg;
 
-  // Opis TEGO, co pokazują cyfry: krótki napis, wyśrodkowany, dużą czcionką
-  // (Font6 = 48 px, a gdy się nie mieści - Font4 = 26 px ze skróceniem napisu).
-  // Poniżej Font4 nie schodzimy, bo z 2-3 m byłoby to nieczytelne.
+  // Opis TEGO, co pokazują cyfry. Rozmiar, przesunięcie i kolor biorą się
+  // z ustawień www (zakładka TFT -> "Wygląd i pozycje"), domyślnie: Font6 (48 px),
+  // a gdy się nie mieści - Font4 (26 px) ze skróceniem napisu. Poniżej Font4 nie
+  // schodzimy, bo z 2-3 m byłoby to nieczytelne.
   String label = channelLabel(id, name);
-  d->setFont(&lgfx::fonts::Font6);
-  if (plWidth(d, label) > W - 24) d->setFont(&lgfx::fonts::Font4);
-  while (label.length() > 3 && plWidth(d, label) > W - 24) label.remove(label.length() - 1);
-  plDraw(d, W / 2, H * 31 / 100, label, acc, bg, lgfx::textdatum_t::middle_center);
+  const int lblMaxW = W - 24 - abs(uiLbl_.dx);
+  if (uiLbl_.size) {
+    setFontByPx(d, uiLbl_.size);
+  } else {
+    d->setFont(&lgfx::fonts::Font6);
+    if (plWidth(d, label) > lblMaxW) d->setFont(&lgfx::fonts::Font4);
+  }
+  while (label.length() > 3 && plWidth(d, label) > lblMaxW) label.remove(label.length() - 1);
+  plDraw(d, W / 2 + uiLbl_.dx, H * 30 / 100 + uiLbl_.dy, label,
+         uiColor(d, uiLbl_.col, acc, nightK_), bg, lgfx::textdatum_t::middle_center);
 
-  // Jednostka jest dorysowana ZARAZ ZA liczbą (na końcu tekstu), więc przy
-  // doborze rozmiaru cyfr uwzględniamy jej szerokość - cyfry mają zostać jak
-  // największe, a cały blok liczba+jednostka jest wyśrodkowany co do piksela.
+  // Jednostka: rozmiar i kolor z ustawień (domyślnie 26 px, kolor akcentu).
   const String unitSafe = plSafe(unit);
-  d->setFont(&lgfx::fonts::Font4);
+  if (uiUnit_.size) setFontByPx(d, uiUnit_.size);
+  else              d->setFont(&lgfx::fonts::Font4);
   const int unitW = unitSafe.length() ? plWidth(d, unitSafe) : 0;
   const int gapW  = unitW ? 10 : 0;
   const int maxV  = W - 16 - unitW - gapW;
-  if (fontMode_ != 0) {
+
+  // Rozmiar cyfr: z ustawień; bez ustawienia - największa czcionka, w której
+  // liczba mieści się razem z jednostką (Font8 -> Font6 -> Font4).
+  static const uint8_t kTry[] = { 3, 2, 1 };
+  if (uiVal_.size) {
+    setFontByPx(d, uiVal_.size);
+    if (plWidth(d, val) > maxV) {
+      for (uint8_t i = 0; i < sizeof(kTry); i++) {
+        setFontById(d, kTry[i]);
+        if (plWidth(d, val) <= maxV) break;
+      }
+    }
+  } else if (fontMode_ != 0) {
     setBigFont(d, val, maxV, fontMode_);            // czcionka wymuszona w ustawieniach
   } else {
-    static const uint8_t kTry[] = { 3, 2, 1 };      // Font8 -> Font6 -> Font4
     for (uint8_t i = 0; i < sizeof(kTry); i++) {
       setFontById(d, kTry[i]);
       if (plWidth(d, val) <= maxV) break;
     }
   }
   const int vw   = plWidth(d, val);
-  const int x0   = (W - (vw + unitW + gapW)) / 2;   // środek bloku: liczba + jednostka
-  const int valY = H * 67 / 100;
-  plDraw(d, x0, valY, val, valCol, bg, lgfx::textdatum_t::middle_left);
+  const int x0   = (W - (vw + unitW + gapW)) / 2 + uiVal_.dx;   // środek + przesunięcie
+  const int valY = H * 62 / 100 + uiVal_.dy;
+  plDraw(d, x0, valY, val, uiColor(d, uiVal_.col, valCol, nightK_), bg,
+         lgfx::textdatum_t::middle_left);
   if (unitW) {
-    d->setFont(&lgfx::fonts::Font4);
-    plDraw(d, x0 + vw + gapW, valY, unitSafe, acc, bg, lgfx::textdatum_t::middle_left);
+    if (uiUnit_.size) setFontByPx(d, uiUnit_.size);
+    else              d->setFont(&lgfx::fonts::Font4);
+    plDraw(d, x0 + vw + gapW, valY, unitSafe, uiColor(d, uiUnit_.col, acc, nightK_), bg,
+           lgfx::textdatum_t::middle_left);
   }
 }
 
@@ -1151,7 +1286,13 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
   lgfx::LovyanGFX* d = static_cast<lgfx::LovyanGFX*>(dv);
   const uint8_t st = weatherState();
   const bool wide = (W >= H);
-  const int  side = wide ? (H * 45 / 100) : (W * 55 / 100);
+  int side = wide ? (H * 45 / 100) : (W * 55 / 100);
+  if (uiWxIcon_) {                                  // rozmiar grafiki z ustawień (%)
+    side = side * uiWxIcon_ / 100;
+    const int lim = wide ? (H - 40) : (W - 20);
+    if (side < 40) side = 40;
+    if (side > lim) side = lim;
+  }
 
   int ix = icX_;
   int iy = icY_;
@@ -1185,7 +1326,7 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
     plDraw(d, W / 2, ty, weatherStateName(st), fg, bg, lgfx::textdatum_t::top_center);
     ty += 34;
   }
-  const int tx = wide ? (ix + side + 14) : 12;
+  const int tx = (wide ? (ix + side + 14) : 12) + uiWx_.dx;
   for (uint8_t i = 0; i < n && i < 4; i++) {
     const String id = channelAt(i);
     String name, unit;
@@ -1194,20 +1335,21 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
     // Opis jak w dużym widoku: krótki napis bez znaków, których nie ma czcionka
     // (obce nazwy z węzłów rysowały się jako "?").
     d->setFont(&lgfx::fonts::Font2);
-    plDraw(d, tx, ty, channelLabel(id, name), dim, bg, lgfx::textdatum_t::top_left);
+    plDraw(d, tx, ty + uiWx_.dy, channelLabel(id, name), dim, bg, lgfx::textdatum_t::top_left);
     // Temperatura wg skali kolorów, pozostałe wartości w kolorze akcentu.
     const float raw = sensors.valueOf(id);
     const bool tempCh = (id.indexOf("temp") >= 0) ||
                         (unit.indexOf("C") >= 0 && unit.indexOf("%") < 0);
     const uint16_t vc = (!isnan(raw) && tempCh) ? tempColor565(d, raw, nightK_) : acc;
-    d->setFont(&lgfx::fonts::Font4);
-    plDraw(d, W - 8, ty, num(raw, dec), vc, bg,
-           lgfx::textdatum_t::top_right);
+    if (uiWx_.size) setFontByPx(d, uiWx_.size);
+    else            d->setFont(&lgfx::fonts::Font4);
+    plDraw(d, W - 8 + uiWx_.dx, ty + uiWx_.dy, num(raw, dec),
+           uiColor(d, uiWx_.col, vc, nightK_), bg, lgfx::textdatum_t::top_right);
     if (unit.length()) {
       d->setFont(&lgfx::fonts::Font2);
-      plDraw(d, tx, ty + 22, plSafe(unit), dim, bg, lgfx::textdatum_t::top_left);
+      plDraw(d, tx, ty + 22 + uiWx_.dy, plSafe(unit), dim, bg, lgfx::textdatum_t::top_left);
     }
-    ty += 40;
+    ty += 38;
   }
 }
 
@@ -1389,6 +1531,30 @@ String DisplayManager::json() {
   p["cs"]   = pinMap.pin("tft_cs");
   p["dc"]   = pinMap.pin("tft_dc");
   p["rst"]  = pinMap.pin("tft_rst");
+
+  // Wygląd i pozycje elementów - te same klucze przyjmuje POST /api/display
+  // (sekcja "Wygląd i pozycje" w zakładce TFT).
+  JsonObject u = d["ui"].to<JsonObject>();
+  struct UiOut { const char* p; const UiCfg* u; };
+  const UiOut outs[] = { { "top", &uiTop_ }, { "lbl", &uiLbl_ }, { "val", &uiVal_ },
+                         { "unit", &uiUnit_ }, { "info", &uiInfo_ }, { "wx", &uiWx_ } };
+  for (uint8_t i = 0; i < sizeof(outs) / sizeof(outs[0]); i++) {
+    JsonObject o = u[outs[i].p].to<JsonObject>();
+    const UiCfg& c = *outs[i].u;
+    o["on"]    = c.on;
+    o["size"]  = c.size;
+    o["dx"]    = c.dx;
+    o["dy"]    = c.dy;
+    o["color"] = c.col ? hexString(c.col) : String("");
+  }
+  u["top_cam"]   = uiTopCam_;
+  u["top_out"]   = uiTopOut_;
+  u["top_in"]    = uiTopIn_;
+  u["bar_on"]    = uiBarOn_;
+  u["bar_h"]     = uiBarH_;
+  u["bar_color"] = uiBarCol_ ? hexString(uiBarCol_) : String("");
+  u["wx_icon"]   = uiWxIcon_;
+
   String s;
   serializeJson(d, s);
   return s;
@@ -1471,6 +1637,64 @@ bool DisplayManager::applyJson(const char* json, size_t len) {
   config.setExtraF("disp_ic_x", (float)icx);
   config.setExtraF("disp_ic_y", (float)icy);
   for (uint8_t i = 0; i < DISP_IC_COUNT; i++) config.setExtraS(kIconKeys[i], icons[i]);
+
+  // --- Wygląd i pozycje elementów (sekcja "Wygląd i pozycje" w www) ---
+  // Każdy element: on (pokazywać), size (wysokość czcionki: 16/26/48/75, 0 = auto),
+  // dx/dy (przesunięcie w pikselach), color ("#RRGGBB", puste = kolor domyślny).
+  JsonObjectConst uj = d["ui"];
+  if (!uj.isNull()) {
+    struct UiRef { const char* p; UiCfg* u; };
+    const UiRef refs[] = { { "top", &uiTop_ }, { "lbl", &uiLbl_ }, { "val", &uiVal_ },
+                           { "unit", &uiUnit_ }, { "info", &uiInfo_ }, { "wx", &uiWx_ } };
+    for (uint8_t i = 0; i < sizeof(refs) / sizeof(refs[0]); i++) {
+      JsonObjectConst o = uj[refs[i].p];
+      if (o.isNull()) continue;
+      UiCfg& u = *refs[i].u;
+      if (!o["on"].isNull())    u.on   = o["on"].as<int>() >= 1;
+      if (!o["size"].isNull())  u.size = o["size"].as<int>();
+      if (!o["dx"].isNull())    u.dx   = o["dx"].as<int>();
+      if (!o["dy"].isNull())    u.dy   = o["dy"].as<int>();
+      if (!o["color"].isNull()) u.col  = hexFromString(o["color"].as<String>());
+      // Zakresy - żeby po wpisaniu przypadkowej liczby nic nie zniknęło z ekranu.
+      if (u.size != 16 && u.size != 26 && u.size != 48 && u.size != 75) u.size = 0;
+      if (u.dx < -200) u.dx = -200;
+      if (u.dx >  200) u.dx =  200;
+      if (u.dy < -200) u.dy = -200;
+      if (u.dy >  200) u.dy =  200;
+    }
+    if (!uj["top_cam"].isNull()) uiTopCam_ = uj["top_cam"].as<int>() >= 1;
+    if (!uj["top_out"].isNull()) uiTopOut_ = uj["top_out"].as<int>() >= 1;
+    if (!uj["top_in"].isNull())  uiTopIn_  = uj["top_in"].as<int>() >= 1;
+    if (!uj["bar_on"].isNull())  uiBarOn_  = uj["bar_on"].as<int>() >= 1;
+    if (!uj["bar_h"].isNull()) {
+      uiBarH_ = uj["bar_h"].as<int>();
+      if (uiBarH_ < 0)  uiBarH_ = 0;
+      if (uiBarH_ > 48) uiBarH_ = 48;
+    }
+    if (!uj["bar_color"].isNull()) uiBarCol_ = hexFromString(uj["bar_color"].as<String>());
+    if (!uj["wx_icon"].isNull()) {
+      uiWxIcon_ = uj["wx_icon"].as<int>();
+      if (uiWxIcon_ < 0)   uiWxIcon_ = 0;
+      if (uiWxIcon_ > 300) uiWxIcon_ = 300;
+    }
+    for (uint8_t i = 0; i < sizeof(refs) / sizeof(refs[0]); i++) {
+      const String k = String("disp_ui_") + refs[i].p + "_";
+      const UiCfg& u = *refs[i].u;
+      config.setExtraF((k + "size").c_str(), (float)u.size);
+      config.setExtraF((k + "dx").c_str(),   (float)u.dx);
+      config.setExtraF((k + "dy").c_str(),   (float)u.dy);
+      config.setExtraF((k + "on").c_str(),   u.on ? 1.0f : 0.0f);
+      config.setExtraS((k + "col").c_str(),  u.col ? hexString(u.col) : String(""));
+    }
+    config.setExtraF("disp_ui_top_cam", uiTopCam_ ? 1.0f : 0.0f);
+    config.setExtraF("disp_ui_top_out", uiTopOut_ ? 1.0f : 0.0f);
+    config.setExtraF("disp_ui_top_in",  uiTopIn_  ? 1.0f : 0.0f);
+    config.setExtraF("disp_ui_bar_on",  uiBarOn_  ? 1.0f : 0.0f);
+    config.setExtraF("disp_ui_bar_h",   (float)uiBarH_);
+    config.setExtraS("disp_ui_bar_col", uiBarCol_ ? hexString(uiBarCol_) : String(""));
+    config.setExtraF("disp_ui_wx_icon", (float)uiWxIcon_);
+  }
+
   config.save();
 
   LOG_I("Wyświetlacz TFT: zapis ustawień (on=%d, %u s, obrót %d, motyw %d, inwersja %d, IC %d, offrot %d, offx %d, offy %d, BGR %d)",

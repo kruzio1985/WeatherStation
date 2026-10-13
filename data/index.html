@@ -1445,6 +1445,52 @@
     </div>
 
     <div class="box">
+      <h3>Wygląd i pozycje elementów</h3>
+      <p class="muted">Każdy element ekranu możesz <b>pokazać lub ukryć</b>, zmienić mu <b>rozmiar czcionki</b>,
+        <b>przesunąć</b> (X/Y w pikselach — wartości ujemne też działają) i nadać <b>własny kolor</b>.
+        Rozmiar <b>auto</b> i puste pole koloru znaczą „tak jak dotąd”. Zapisane zmiany widać po
+        najbliższym odświeżeniu ekranu.</p>
+      <table>
+        <thead><tr>
+          <th>Element</th><th>Pokaż</th><th>Rozmiar czcionki</th><th>X (px)</th><th>Y (px)</th><th>Kolor</th>
+        </tr></thead>
+        <tbody id="uiRows"></tbody>
+      </table>
+      <h4 style="margin:14px 0 6px">Górny pasek i pas jakości</h4>
+      <div class="form-grid">
+        <div>
+          <div class="muted" style="font-size:11.5px">Statusy na górnym pasku</div>
+          <div class="row">
+            <label class="checkbox"><input type="checkbox" id="ui_top_cam"> kamera (KAMERA)</label>
+            <label class="checkbox"><input type="checkbox" id="ui_top_out"> powietrze zewn. (C3)</label>
+            <label class="checkbox"><input type="checkbox" id="ui_top_in"> powietrze wewn. (WEW)</label>
+          </div>
+        </div>
+        <label>Rozmiar grafiki pogody (%, 0 = domyślny)
+          <input type="number" id="ui_wx_icon" min="0" max="300" step="5">
+        </label>
+        <label class="checkbox"><input type="checkbox" id="ui_bar_on"> Pokazuj pas jakości powietrza (dół ekranu)</label>
+        <label>Wysokość pasa (px, 0 = domyślna)
+          <input type="number" id="ui_bar_h" min="0" max="48" step="1">
+        </label>
+        <label>Kolor znacznika na pasie
+          <span class="row" style="flex-wrap:nowrap;gap:4px">
+            <input type="text" id="ui_bar_color" placeholder="domyślny">
+            <input type="color" value="#ffffff" style="width:34px;padding:2px"
+                   oninput="document.getElementById('ui_bar_color').value=this.value">
+            <button class="btn ghost tiny" type="button"
+                    onclick="document.getElementById('ui_bar_color').value=''">×</button>
+          </span>
+        </label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" onclick="saveDisplay()">Zapisz ustawienia</button>
+        <button class="btn ghost" onclick="uiDefaults()">Przywróć domyślne</button>
+        <span class="muted">Kolor wybierzesz też próbnikiem obok pola; „×” czyści kolor.</span>
+      </div>
+    </div>
+
+    <div class="box">
       <h3>Podłączenie (GMT024-10, 7 pinów)</h3>
       <p class="muted">Moduł z linku to <b>ST7789</b> 2,4" 240×320 (7 pinów). Jeśli obraz jest lustrzany,
         przesunięty albo na krawędzi widać szum — popraw <b>Kontroler ekranu</b> i <b>Mapowanie obrotu</b>
@@ -6358,7 +6404,9 @@ function displayApply(s) {
 
 async function loadDisplay() {
   await loadDisplayChannels();
-  displayApply(await api('/api/display'));
+  const d = await api('/api/display');
+  displayApply(d);
+  uiFill(d && d.ui);
 }
 
 // Lista kanałów do wyboru (tryby: cykl, jedna wartość, pogoda). Pobierana raz -
@@ -6407,6 +6455,99 @@ function readDispChannels() {
     .filter(cb => cb.checked).map(cb => cb.value).join(',');
 }
 
+// ---------------- Wygląd i pozycje elementów ekranu ----------------
+// Klucze są takie same, jak w /api/display -> "ui" (i w NVS jako disp_ui_*).
+const UI_ELEMENTS = [
+  ['top',  'Górny pasek statusów',       'znaczniki węzłów (kamera, C3, WEW)'],
+  ['lbl',  'Opis wskazania',             'czego dotyczą duże cyfry'],
+  ['val',  'Wartość',                    'duże cyfry na środku ekranu'],
+  ['unit', 'Jednostka',                  'np. °C, % — tuż za liczbą'],
+  ['info', 'Dolny wiersz',               'zegar, licznik cyklu, stan sieci'],
+  ['wx',   'Wskaźniki pogody i pulpitu', 'wiersze wartości w widoku pogody/pulpitu']
+];
+const UI_SIZES = [['0', 'auto'], ['16', '16 px (mała)'], ['26', '26 px (średnia)'],
+                  ['48', '48 px (duża)'], ['75', '75 px (ogromna)']];
+
+function uiRowsBuild() {
+  const tb = document.getElementById('uiRows');
+  if (!tb || tb.childElementCount) return;
+  const opts = UI_SIZES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  const frag = document.createDocumentFragment();
+  UI_ELEMENTS.forEach(([k, name, hint]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td><b>${name}</b><small class="legend-cat">${hint}</small></td>` +
+      `<td><input type="checkbox" id="ui_${k}_on"></td>` +
+      `<td><select id="ui_${k}_size">${opts}</select></td>` +
+      `<td><input type="number" id="ui_${k}_dx" step="1" value="0" style="width:76px"></td>` +
+      `<td><input type="number" id="ui_${k}_dy" step="1" value="0" style="width:76px"></td>` +
+      `<td><span class="row" style="flex-wrap:nowrap;gap:4px">` +
+        `<input type="text" id="ui_${k}_color" placeholder="domyślny" style="width:92px">` +
+        `<input type="color" value="#ffffff" style="width:34px;padding:2px" ` +
+        `oninput="document.getElementById('ui_${k}_color').value=this.value">` +
+        `<button class="btn ghost tiny" type="button" ` +
+        `onclick="document.getElementById('ui_${k}_color').value=''">×</button>` +
+      `</span></td>`;
+    frag.appendChild(tr);
+  });
+  tb.replaceChildren(frag);
+}
+
+function uiFill(ui) {
+  uiRowsBuild();
+  const el = id => document.getElementById(id);
+  UI_ELEMENTS.forEach(([k]) => {
+    const v = ui ? ui[k] : null;
+    if (!el('ui_' + k + '_on')) return;
+    el('ui_' + k + '_on').checked  = v ? (v.on !== false) : true;
+    el('ui_' + k + '_size').value  = String((v && v.size) ? v.size : 0);
+    el('ui_' + k + '_dx').value    = String((v && v.dx) ? v.dx : 0);
+    el('ui_' + k + '_dy').value    = String((v && v.dy) ? v.dy : 0);
+    el('ui_' + k + '_color').value = (v && v.color) ? v.color : '';
+  });
+  const u = ui || {};
+  el('ui_top_cam').checked = u.top_cam !== false;
+  el('ui_top_out').checked = u.top_out !== false;
+  el('ui_top_in').checked  = u.top_in  !== false;
+  el('ui_wx_icon').value   = String(u.wx_icon || 0);
+  el('ui_bar_on').checked  = u.bar_on !== false;
+  el('ui_bar_h').value     = String(u.bar_h || 0);
+  el('ui_bar_color').value = u.bar_color || '';
+}
+
+// Zbieramy wygląd do wysyłki (POST /api/display, klucz "ui").
+function uiCollect() {
+  const el = id => document.getElementById(id);
+  const ui = {};
+  UI_ELEMENTS.forEach(([k]) => {
+    ui[k] = {
+      on:    el('ui_' + k + '_on').checked,
+      size:  Number(el('ui_' + k + '_size').value),
+      dx:    Number(el('ui_' + k + '_dx').value) || 0,
+      dy:    Number(el('ui_' + k + '_dy').value) || 0,
+      color: el('ui_' + k + '_color').value.trim()
+    };
+  });
+  ui.top_cam   = el('ui_top_cam').checked;
+  ui.top_out   = el('ui_top_out').checked;
+  ui.top_in    = el('ui_top_in').checked;
+  ui.wx_icon   = Number(el('ui_wx_icon').value) || 0;
+  ui.bar_on    = el('ui_bar_on').checked;
+  ui.bar_h     = Number(el('ui_bar_h').value) || 0;
+  ui.bar_color = el('ui_bar_color').value.trim();
+  return ui;
+}
+
+// „Przywróć domyślne”: czyści pola do wartości domyślnych i od razu zapisuje.
+function uiDefaults() {
+  uiFill(null);
+  ['ui_top_cam', 'ui_top_out', 'ui_top_in', 'ui_bar_on'].forEach(id => {
+    const e = document.getElementById(id);
+    if (e) e.checked = true;
+  });
+  saveDisplay();
+}
+
 async function saveDisplay() {
   const el = id => document.getElementById(id);
   const btn = el('dispSaveBtn');
@@ -6438,7 +6579,8 @@ async function saveDisplay() {
       snow: el('disp_i_snow').value.trim(),
       fog: el('disp_i_fog').value.trim(),
       night: el('disp_i_night').value.trim()
-    }
+    },
+    ui: uiCollect()
   });
   btn.disabled = false;
   if (r && !r.error) {
