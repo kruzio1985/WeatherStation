@@ -236,6 +236,17 @@ void ExtDevManager::pollOne(ExtDevice& d) {
       if (d.type == "outaq") sensors.ingestOutdoorAir(aq);
       else sensors.ingestAirStation(aq);
     }
+    // Urządzenie podaje WŁASNY czas pracy i stan MQTT - to jest dowód życia
+    // (sama odpowiedź HTTP mogłaby przyjść z resztek, a licznik czasu pracy
+    // rośnie tylko na działającym urządzeniu). Zapisujemy to razem z chwilą
+    // odbioru, żeby wyświetlacz mógł pokazać stan bez sprawdzania IP.
+    JsonVariant up = doc["uptime_s"];
+    if (!up.isNull()) {
+      d.peerUptimeS = up.as<uint32_t>();
+      d.peerMs = millis();
+    }
+    JsonVariant mq = doc["mqtt"];
+    if (mq.is<bool>()) d.peerMqtt = mq.as<bool>();
     d.ok = n > 0;
     d.lastErr = n ? String(n) + " odczytów" : "brak rozpoznanych kanałów";
     return;

@@ -710,8 +710,15 @@ void handleJson() {
 }
 
 // ============================ Wi-Fi ============================
+// Pełna moc nadawania + brak usypiania modemu Wi-Fi (wymaganie projektu).
+static void wifiApplyMaxPower() {
+  WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+}
+
 void setupWifi() {
   WiFi.mode(WIFI_STA);
+  wifiApplyMaxPower();
   if (C_transport == "rs485") { Serial1.begin(115200, SERIAL_8N1, 20, 21); Serial.println("[BLE] transport RS485"); }
   if (C_static) {
     IPAddress ip, gw, mk;
@@ -722,10 +729,12 @@ void setupWifi() {
     for (int i = 0; i < 30 && WiFi.status() != WL_CONNECTED; i++) delay(500);
   }
   if (WiFi.status() == WL_CONNECTED) {
+    wifiApplyMaxPower();
     Serial.printf("[BLE] IP: %s\n", WiFi.localIP().toString().c_str());
     return;
   }
   WiFi.mode(WIFI_AP);
+  wifiApplyMaxPower();
   WiFi.softAP(devName().c_str(), C_apPass.c_str());
   Serial.printf("[BLE] AP %s: %s\n", devName().c_str(), WiFi.softAPIP().toString().c_str());
 }

@@ -12,6 +12,8 @@
 
 #if STACJA_ROLE_MASTER
 
+#include "camera.h"
+#include "extdev.h"
 #include "mqtt_client.h"
 #include "pinmap.h"
 #include "sd_card.h"
@@ -96,6 +98,31 @@ uint16_t dim565(uint16_t c, float k) {
   return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
+// 0xRRGGBB -> RGB565 (kolory zapisane tak, jak w legendzie na stronie www).
+uint16_t hex565(lgfx::LovyanGFX* d, uint32_t hex) {
+  return d->color565((uint8_t)((hex >> 16) & 0xFF), (uint8_t)((hex >> 8) & 0xFF),
+                     (uint8_t)(hex & 0xFF));
+}
+
+// Kolor wartości temperatury: poniżej +10 °C zimne błękity (im zimniej, tym
+// ciemniej - przy minusie granat), powyżej od jasnożółtego przez pomarańczowy
+// do czerwonego. Wartości dobrane tak, żeby na 2-3 m różnica była oczywista.
+uint16_t tempColor565(lgfx::LovyanGFX* d, float c, float nk) {
+  float r, g, b;
+  if (c <= -15.0f)      { r =  10; g =  35; b = 115; }
+  else if (c <   0.0f)  { const float k = (c + 15.0f) / 15.0f; r =  10 + k *  55; g =  35 + k * 105; b = 115 + k * 115; }
+  else if (c <  10.0f)  { const float k = c / 10.0f;           r =  65 + k *  45; g = 140 + k *  60; b = 230 + k *  25; }
+  else if (c <  20.0f)  { const float k = (c - 10.0f) / 10.0f; r = 235 + k *  20; g = 225 - k *  25; b = 120 - k *  60; }
+  else if (c <  30.0f)  { const float k = (c - 20.0f) / 10.0f; r = 255;           g = 200 - k *  95; b =  60 - k *  30; }
+  else                  { float k = (c - 30.0f) / 10.0f; if (k > 1) k = 1; r = 255 - k *  25; g = 105 - k *  50; b =  30 - k *  20; }
+  return dim565(d->color565((uint8_t)r, (uint8_t)g, (uint8_t)b), nk);
+}
+
+// Progi barw jakości powietrza - dokładnie te same wartości hex, co pasek IAQ
+// i legenda na stronie www (data/index.html, .aqi-track).
+static const uint32_t AQ_BAND_HEX[6] = { 0x00C853, 0xFFD600, 0xFF9100, 0xE53935, 0x8E24AA, 0x7B1F1F };
+static const float    AQ_BAND_STOP[7] = { 0, 50, 100, 150, 200, 300, 500 };
+
 // Czcionka wg numeru z ustawień "disp_font" (0 = auto - wybiera setBigFont).
 void setFontById(lgfx::LovyanGFX* d, uint8_t id) {
   switch (id) {
@@ -115,6 +142,13 @@ static int plWidth(lgfx::LovyanGFX* d, const String& s);
 // Największa czcionka, w której tekst zmieści się na szerokość maxW.
 void setBigFont(lgfx::LovyanGFX* d, const String& text, int maxW, uint8_t fontMode) {
   if (fontMode != 0) {
+    // Font7 to czcionka 7-segmentowa: ma cyfry, kropkę i minus, ale NIE MA
+    // przecinka, więc "17,2" wyszłoby jako "17 2". Przy przecinku bierzemy Font8.
+    if (fontMode == 4 && text.indexOf(',') >= 0) {
+      setFontById(d, 3);
+      if (plWidth(d, text) > maxW) setBigFont(d, text, maxW, 0);   // nie mieści się? dobierz mniejszą
+      return;
+    }
     setFontById(d, fontMode);
     return;
   }
@@ -594,6 +628,184 @@ void DisplayManager::loop() {
   draws_++;
 }
 
+// =============================================================
+//  Pasek stanu urządzeń (góra) + pasek jakości powietrza (dół)
+//
+//  Stan "działa / nie działa" bierzemy WYŁĄCZNIE z tego, co urządzenia same
+//  zgłaszają - nigdzie nie ma odpytywania wpisanego na sztywno adresu IP:
+//   * węzły powietrza (ExtDevice typu "outaq" = na zewnątrz, np. stacja C3
+//     .147, oraz "aq" = w środku, np. .141) w każdym
+//     /api/status przysyłają swój czas pracy i stan MQTT, a master zapisuje
+//     chwilę odebrania tej odpowiedzi (extdev: ok, lastMs, peerMs),
+//   * kamera (moduł ESP32-CAM) przysyła zdjęcie na /api/camera/upload, więc
+//     wystarczy pamiętać chwilę ostatnio odebranego zdjęcia (camera.lastIngestMs).
+// =============================================================
+enum : uint8_t { ST_OFF = 0, ST_OK = 1, ST_BAD = 2 };   // brak / działa / nie odpowiada
+
+// Rozmiar znacznika (kropki) stanu - 5 px promienia, żeby kolor było widać
+// z odległości 2-3 m.
+int stateDotR(uint8_t st) { return st == ST_OFF ? 3 : 5; }
+
+// Kamera: wyłączona w ustawieniach = ST_OFF (szara), brak zdjęcia w oknie
+// 3 interwałów albo zgłoszony błąd = ST_BAD (czerwona).
+uint8_t camState() {
+  if (!camera.enabled()) return ST_OFF;
+  const unsigned long last = camera.lastIngestMs();
+  const uint32_t ivMin = config.camIntervalMin();
+  // Okno oceny: 3 interwały zdjęć (min. 10 min), plus minutę zapasu na transmisję.
+  const unsigned long window = (ivMin > 0 ? (unsigned long)ivMin * 180000UL
+                                          : 10UL * 60000UL) + 60000UL;
+  if (last && (millis() - last) <= window) return ST_OK;   // zdjęcie dotarło niedawno
+  if (camera.error().length()) return ST_BAD;              // sterownik zgłasza problem
+  if (camera.remoteUrl().length() > 0) {
+    // Kamera zewnętrzna: jedynym dowodem, że działa, jest przysłane zdjęcie.
+    if (last) return ST_BAD;
+    return millis() < 300000UL ? ST_OFF : ST_BAD;          // pierwsze 5 min - jeszcze nie oceniamy
+  }
+  return camera.present() ? ST_OK : ST_BAD;                // kamera podłączona do mastera
+}
+
+// Węzeł powietrza danego typu: brak urządzenia w konfiguracji = ST_OFF,
+// brak odpowiedzi albo odpowiedź starsza niż 3 interwały = ST_BAD. Typ
+// ("aq" = powietrze w środku, "outaq" = powietrze na zewnątrz) i adres bierzemy
+// z konfiguracji urządzenia - nic nie jest wpisane na sztywno.
+uint8_t airStateByType(const char* type) {
+  const unsigned long now = millis();
+  for (int i = 0; i < extdev.count(); i++) {
+    const ExtDevice* e = extdev.at(i);
+    if (!e || e->type != type) continue;
+    if (!e->ok || !e->lastMs) return ST_BAD;
+    const unsigned long iv = (unsigned long)(e->interval > 0 ? e->interval : 30) * 1000UL;
+    if (now - e->lastMs > iv * 3UL) return ST_BAD;         // milczy od trzech odczytów
+    if (e->peerMs && now - e->peerMs > iv * 3UL) return ST_BAD;
+    return ST_OK;
+  }
+  return ST_OFF;
+}
+
+// Węzeł powietrza na zewnątrz (np. stacja C3) i w środku - dwa osobne znaczniki.
+uint8_t airNodeState() { return airStateByType("outaq"); }
+uint8_t airInState()   { return airStateByType("aq"); }
+
+// Kolor stanu (przygaszany w trybie nocnym razem z resztą ekranu).
+uint16_t stateColor565(lgfx::LovyanGFX* d, uint8_t st, float nk, uint16_t dim) {
+  if (st == ST_OK)  return dim565(d->color565( 70, 210,  95), nk);
+  if (st == ST_BAD) return dim565(d->color565(235,  70,  55), nk);
+  return dim;
+}
+
+// Szerokość znacznika: opis + kropka stanu NA KOŃCU opisu (nie przed nim).
+int chipWidth(lgfx::LovyanGFX* d, const char* label, uint8_t st) {
+  d->setFont(&lgfx::fonts::Font2);
+  return 8 + (int)d->textWidth(label) + 8 + stateDotR(st) * 2;
+}
+
+// Znacznik stanu: zaokrąglona ramka + opis wersalikami + kropka w kolorze
+// stanu na końcu tekstu. Zwraca szerokość znacznika.
+int chipDraw(lgfx::LovyanGFX* d, int x, int y, int h, const char* label, uint8_t st,
+             uint16_t bg, uint16_t dim, float nk) {
+  const int tw = (int)d->textWidth(label);
+  const int r  = stateDotR(st);
+  const int w  = chipWidth(d, label, st);
+  d->drawRoundRect(x, y, w, h, 4, dim);
+  d->setTextDatum(lgfx::textdatum_t::middle_left);
+  d->setTextColor(st == ST_BAD ? stateColor565(d, st, nk, dim) : dim, bg);
+  d->drawString(label, x + 8, y + h / 2);
+  d->fillCircle(x + 8 + tw + 8 + r, y + h / 2, r, stateColor565(d, st, nk, dim));
+  d->setTextColor(dim, bg);
+  return w;
+}
+
+// Górny pasek: TRZY znaczniki stanu widoczne jednocześnie (kamera, węzeł
+// powietrza na zewnątrz, węzeł powietrza w środku) + licznik cyklu + zegar.
+// Zestaw opisów dobieramy do szerokości panelu, żeby nie wjechać na zegar.
+void dispTopStatus(lgfx::LovyanGFX* d, int W, uint16_t bg, uint16_t fg, uint16_t dim,
+                   const char* hhmm, const char* counter, float nk) {
+  const int h = 20, y = 4;
+  d->setFont(&lgfx::fonts::Font2);
+
+  // Miejsce zarezerwowane po prawej stronie na zegar i licznik cyklu.
+  int trail = (int)d->textWidth(hhmm) + 10;
+  if (counter && counter[0]) trail += (int)d->textWidth(counter) + 14;
+
+  const uint8_t sts[3] = { camState(), airNodeState(), airInState() };
+  const char* sets[3][3] = {
+    { "KAMERA", "C3 POW",  "WEW POW" },   // panel szeroki (np. 320 px)
+    { "KAMERA", "C3",      "WEW"     },   // panel 240 px
+    { "KAM",    "C3",      "WEW"     },   // awaryjnie, gdy brakuje miejsca
+  };
+  for (uint8_t s = 0; s < 3; s++) {
+    int need = 6;                          // lewy margines
+    for (uint8_t i = 0; i < 3; i++) need += chipWidth(d, sets[s][i], sts[i]) + 6;
+    if (s == 2 || need + trail <= W) {
+      int x = 6;
+      for (uint8_t i = 0; i < 3; i++) {
+        x += chipDraw(d, x, y, h, sets[s][i], sts[i], bg, dim, nk) + 6;
+      }
+      break;
+    }
+  }
+
+  int rx = W - 8;
+  d->setTextDatum(lgfx::textdatum_t::middle_right);
+  d->setTextColor(dim, bg);
+  d->drawString(hhmm, rx, y + h / 2);
+  if (counter && counter[0]) {
+    rx -= (int)d->textWidth(hhmm) + 12;
+    d->setTextColor(fg, bg);
+    d->drawString(counter, rx, y + h / 2);
+  }
+  d->drawFastHLine(8, 30, W - 16, dim);
+}
+
+// PM2.5 -> AQI (progi EPA, te same co legenda na stronie) - tylko na wypadek,
+// gdy węzeł nie poda gotowego AQI.
+float pm2Aqi(float pm) {
+  static const float bp[7] = { 0.0f, 12.1f, 35.5f, 55.5f, 150.5f, 250.5f, 500.5f };
+  static const float ai[7] = { 0.0f,  50.0f, 100.0f, 150.0f, 200.0f, 300.0f, 500.0f };
+  if (pm <= 0) return 0;
+  for (int i = 1; i < 7; i++) {
+    if (pm <= bp[i]) {
+      return ai[i - 1] + (pm - bp[i - 1]) * (ai[i] - ai[i - 1]) / (bp[i] - bp[i - 1]);
+    }
+  }
+  return 500.0f;
+}
+
+// AQI do paska: najpierw gotowe AQI z węzła C3, potem jego PM2.5, na końcu AQI
+// liczone z czujników mastera.
+float airAqi() {
+  const float a = sensors.valueOf("c3_aqi");
+  if (!isnan(a)) return a;
+  const float pm = sensors.valueOf("c3_pm25");
+  if (!isnan(pm)) return pm2Aqi(pm);
+  return sensors.valueOf("aqi");
+}
+
+// Dolny pasek: te same progi i kolory, co legenda jakości powietrza na stronie
+// www (0-50 zielony ... 300+ bordowy), rozciągnięte na całą szerokość ekranu.
+// Słupek pokazuje, gdzie jest aktualny pomiar.
+void dispBottomBar(lgfx::LovyanGFX* d, int W, int H, uint16_t bg, uint16_t fg, float nk) {
+  const int bh = 12;
+  const int y  = H - bh;
+  for (int i = 0; i < 6; i++) {
+    int x0 = (int)((float)W * AQ_BAND_STOP[i] / AQ_BAND_STOP[6]);
+    int x1 = (int)((float)W * AQ_BAND_STOP[i + 1] / AQ_BAND_STOP[6]);
+    if (x0 < 0) x0 = 0;
+    if (x1 > W) x1 = W;
+    if (x1 > x0) d->fillRect(x0, y, x1 - x0, bh, dim565(hex565(d, AQ_BAND_HEX[i]), nk));
+  }
+  const float aqi = airAqi();
+  if (isnan(aqi)) return;                   // brak pomiaru - zostaje sam pas legendy
+  float k = aqi / AQ_BAND_STOP[6];
+  if (k < 0) k = 0;
+  if (k > 1) k = 1;
+  const int mx = (int)(k * (float)(W - 1));
+  const int bx = (mx > 3) ? mx - 3 : 0;
+  d->fillRect(bx, y - 6, 7, bh + 6, fg);    // słupek znacznika
+  d->drawRect(bx, y - 6, 7, bh + 6, bg);    // obwódka w kolorze tła (czytelna na każdym pasie)
+}
+
 void DisplayManager::draw() {
   if (!gfx_) return;
   lgfx::LGFX_Device* g = static_cast<lgfx::LGFX_Device*>(gfx_);
@@ -632,6 +844,7 @@ void DisplayManager::draw() {
   nightNow_ = isNight();
   const bool light = theme_ && !nightNow_;
   const float nk = nightNow_ ? 0.38f : 1.0f;
+  nightK_ = nk;                                   // kolorów używają też widoki
   const uint16_t bg  = light ? (uint16_t)0xFFFF : (uint16_t)0x0000;
   const uint16_t fg  = light ? (uint16_t)0x0000 : dim565(0xFFFF, nk);
   const uint16_t dim = dim565(d->color565(130, 140, 150), nk);
@@ -650,12 +863,26 @@ void DisplayManager::draw() {
   d->startWrite();
   d->fillScreen(bg);
 
+  // Górny pasek stanu (kamera + węzeł powietrza na zewnątrz + węzeł powietrza
+  // w środku + zegar) jest wspólny dla wszystkich widoków - stale widoczny,
+  // żeby z 2-3 m było widać, czy urządzenia żyją. Licznik cyklu pokazujemy
+  // tylko w trybie cyklu wskazań.
+  String cyc;
+  if (mode_ == 1) {
+    const uint8_t n = channelCount();
+    if (n > 1) cyc = String((unsigned)(idx_ % n) + 1) + "/" + String(n);
+  }
+  dispTopStatus(d, W, bg, fg, dim, hhmm, cyc.length() ? cyc.c_str() : nullptr, nk);
+
   switch (mode_) {
     case 1:  drawBig(d, W, H, bg, fg, dim, acc, hhmm, true);   break;  // cykl wskazań
     case 2:  drawBig(d, W, H, bg, fg, dim, acc, hhmm, false);  break;  // jedna wartość
     case 3:  drawWeather(d, W, H, bg, fg, dim, acc, hhmm);     break;  // pogoda + grafika
     default: drawDashboard(d, W, H, bg, fg, dim, acc, hhmm);   break;  // pulpit
   }
+
+  // Dolny pasek jakości powietrza - kolory i progi jak legenda na stronie www.
+  dispBottomBar(d, W, H, bg, fg, nk);
 
   d->endWrite();
 
@@ -690,22 +917,20 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
   foot += (mqtt.connected() ? "OK" : "--");
   if (!isnan(tout)) foot += "  zewn. " + num(tout, 1) + " C";
 
-  // --- Nagłówek (wspólny) ---
-  d->setFont(&lgfx::fonts::Font2);
-  d->setTextColor(dim, bg);
-  plDraw(d, 8, 6, "Stacja Pogody", dim, bg, lgfx::textdatum_t::top_left);
-  plDraw(d, right, 6, hhmm, dim, bg, lgfx::textdatum_t::top_right);
-  d->drawFastHLine(8, 26, W - 16, dim);
+  // --- Nagłówek wspólny (stan urządzeń + zegar) rysuje draw(), więc tutaj
+  //     od razu przechodzimy do treści widoku. ---
 
   if (W >= H) {
     // ---------------- UKŁAD POZIOMY (np. panel zamontowany w poziomie) ----------------
     const int colX = W * 55 / 100;          // granica kolumn
     d->drawFastVLine(colX, 32, H - 60, dim);
 
-    // Lewa kolumna: duża temperatura + wilgotność i wiatr pod nią
+    // Lewa kolumna: duża temperatura (kolor wg skali: błękit = zimno, żółty =
+    // ciepło, czerwień = upał) + wilgotność i wiatr pod nią
     d->setTextColor(fg, bg);
     d->setFont(&lgfx::fonts::Font6);
-    plDraw(d, 12, 34, num(t, 1), fg, bg, lgfx::textdatum_t::top_left);
+    plDraw(d, 12, 34, num(t, 1), isnan(t) ? fg : tempColor565(d, t, nightK_),
+           bg, lgfx::textdatum_t::top_left);
     d->setFont(&lgfx::fonts::Font2);
     plDraw(d, 12, 88, "°C", acc, bg, lgfx::textdatum_t::top_left);
 
@@ -754,9 +979,9 @@ void DisplayManager::drawDashboard(void* dv, int W, int H, uint16_t bg, uint16_t
     row(4, "AQI (C3)",    num(aqi, 0),             acc);
   }
 
-  // --- Stopka (wspólna) ---
+  // --- Stopka (wspólna) - nad dolnym paskiem jakości powietrza ---
   d->setFont(&lgfx::fonts::Font2);
-  plDraw(d, W / 2, H - 4, foot, dim, bg, lgfx::textdatum_t::bottom_center);
+  plDraw(d, W / 2, H - 20, foot, dim, bg, lgfx::textdatum_t::bottom_center);
 }
 
 // ---------------- Widoki 1 i 2: duże wskazania ----------------
@@ -768,18 +993,10 @@ void DisplayManager::drawBig(void* dv, int W, int H, uint16_t bg, uint16_t fg, u
   lgfx::LovyanGFX* d = static_cast<lgfx::LovyanGFX*>(dv);
   const uint8_t n = channelCount();
 
-  d->setFont(&lgfx::fonts::Font2);
-  d->setTextColor(dim, bg);
-  d->setTextDatum(lgfx::textdatum_t::top_left);
-  d->drawString(hhmm, 8, 6);
-  if (cycle && n > 1) {
-    d->setTextDatum(lgfx::textdatum_t::top_right);
-    d->drawString(String((unsigned)(idx_ % n) + 1) + "/" + String(n), W - 8, 6);
-  }
-  d->drawFastHLine(8, 26, W - 16, dim);
-
+  // Nagłówek (stan urządzeń + zegar) rysuje draw() - wspólny dla wszystkich
+  // widoków, a licznik cyklu jest na górnym pasku. Tutaj od razu treść.
   if (n == 0) {
-    d->setTextDatum(lgfx::textdatum_t::middle_center);
+    d->setFont(&lgfx::fonts::Font4);
     plDraw(d, W / 2, H / 2, "Brak kanałów w disp_ch", dim, bg,
            lgfx::textdatum_t::middle_center);
     return;
@@ -792,32 +1009,61 @@ void DisplayManager::drawBig(void* dv, int W, int H, uint16_t bg, uint16_t fg, u
     name = id;
     unit = "";
   }
-  const String val = num(sensors.valueOf(id), dec);
+  const float raw = sensors.valueOf(id);
+  const String val = num(raw, dec);
 
-  // Nazwa kanału
+  // Kolor wartości: temperatura wg skali (poniżej 10 C błękity - im zimniej, tym
+  // ciemniej, przy minusie granat; powyżej żółty -> pomarańcz -> czerwień).
+  // Pozostałe kanały zostają jasne jak dotąd, brak odczytu = kolor neutralny.
+  const bool tempCh = (id.indexOf("temp") >= 0) ||
+                      (unit.indexOf("C") >= 0 && unit.indexOf("%") < 0);
+  const uint16_t valCol = (!isnan(raw) && tempCh) ? tempColor565(d, raw, nightK_) : fg;
+
+  // Jednostka jest dorysowana ZARAZ ZA liczbą (na końcu tekstu, nie w środku
+  // ekranu), więc przy doborze rozmiaru cyfr uwzględniamy jej szerokość.
   d->setFont(&lgfx::fonts::Font4);
-  plDraw(d, W / 2, H * 28 / 100, name, acc, bg, lgfx::textdatum_t::middle_center);
+  const int uw = unit.length() ? plWidth(d, unit) + 12 : 0;
+  if (fontMode_ != 0) {
+    setBigFont(d, val, W - 20, fontMode_);
+    // Wymuszona czcionka może nie zmieścić się z jednostką - wtedy bierzemy
+    // mniejszą automatycznie, żeby nic nie uciekło za ekran.
+    if (plWidth(d, val) + uw > W - 16) setBigFont(d, val, W - 20 - uw, 0);
+  } else {
+    static const uint8_t kTry[] = { 3, 2, 1, 5 };   // Font8 -> Font6 -> Font4 -> Font2
+    for (uint8_t i = 0; i < sizeof(kTry); i++) {
+      setFontById(d, kTry[i]);
+      if (plWidth(d, val) + uw <= W - 16) break;
+    }
+  }
+  const int vw  = plWidth(d, val);
+  const int gx  = (W - (vw + uw)) / 2;      // lewy brzeg bloku: liczba + jednostka
+  const int valY = H * 58 / 100;
 
-  // Wartość - największa czcionka, jaka się zmieści
-  setBigFont(d, val, W - 20, fontMode_);
-  const int valY = H * 55 / 100;
-  plDraw(d, W / 2, valY, val, fg, bg, lgfx::textdatum_t::middle_center);
+  // Opis TEGO, co pokazują cyfry - duży tekst (do czytania z 2-3 m), wyrównany
+  // do lewej krawędzi liczby.
+  d->setFont(&lgfx::fonts::Font6);
+  if (plWidth(d, name) > W - 16) d->setFont(&lgfx::fonts::Font4);
+  if (plWidth(d, name) > W - 16) d->setFont(&lgfx::fonts::Font2);
+  const int nx = (gx > 8 && plWidth(d, name) <= W - 16) ? gx : 8;
+  plDraw(d, nx, H * 27 / 100, name, acc, bg, lgfx::textdatum_t::middle_left);
 
-  // Jednostka pod wartością
+  // Wartość i jednostka tuż za nią.
+  plDraw(d, gx, valY, val, valCol, bg, lgfx::textdatum_t::middle_left);
   if (unit.length()) {
     d->setFont(&lgfx::fonts::Font4);
-    plDraw(d, W / 2, valY + d->fontHeight() * 3 / 4 + 22, unit, acc, bg,
-           lgfx::textdatum_t::middle_center);
+    plDraw(d, gx + vw + 12, valY, unit, acc, bg, lgfx::textdatum_t::middle_left);
   }
 
-  // Kropki pokazujące pozycję w cyklu
+  // Kropki pokazujące pozycję w cyklu - nad dolnym paskiem jakości powietrza
+  // (z zapasem, żeby nie nachodziły na znacznik na pasku).
   if (cycle && n > 1) {
     const int gap = 10;
+    const int dy  = H - 38;
     const int x0 = W / 2 - (n * gap) / 2;
     for (uint8_t i = 0; i < n && i < 16; i++) {
       const int x = x0 + i * gap;
-      if (i == idx_ % n) d->fillCircle(x, H - 12, 3, acc);
-      else               d->drawCircle(x, H - 12, 3, dim);
+      if (i == idx_ % n) d->fillCircle(x, dy, 3, acc);
+      else               d->drawCircle(x, dy, 3, dim);
     }
   }
 }
@@ -837,10 +1083,9 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
     iy = 40;
   }
 
-  d->setFont(&lgfx::fonts::Font2);
-  plDraw(d, 8, 6, hhmm, dim, bg, lgfx::textdatum_t::top_left);
-  plDraw(d, W - 8, 6, weatherStateName(st), dim, bg, lgfx::textdatum_t::top_right);
-  d->drawFastHLine(8, 26, W - 16, dim);
+  // Nagłówek (stan urządzeń + zegar) rysuje draw() - wspólny dla wszystkich
+  // widoków. Nazwa stanu pogody jest w widoku pionowym pod grafiką, a w
+  // poziomym widać ją z grafiki obok wartości.
 
   void* isp = iconSprite(st);
   if (isp) {
@@ -871,8 +1116,13 @@ void DisplayManager::drawWeather(void* dv, int W, int H, uint16_t bg, uint16_t f
     if (!sensors.channelMeta(id, name, unit, dec)) continue;
     d->setFont(&lgfx::fonts::Font2);
     plDraw(d, tx, ty, name, dim, bg, lgfx::textdatum_t::top_left);
+    // Temperatura wg skali kolorów, pozostałe wartości w kolorze akcentu.
+    const float raw = sensors.valueOf(id);
+    const bool tempCh = (id.indexOf("temp") >= 0) ||
+                        (unit.indexOf("C") >= 0 && unit.indexOf("%") < 0);
+    const uint16_t vc = (!isnan(raw) && tempCh) ? tempColor565(d, raw, nightK_) : acc;
     d->setFont(&lgfx::fonts::Font4);
-    plDraw(d, W - 8, ty, num(sensors.valueOf(id), dec), acc, bg,
+    plDraw(d, W - 8, ty, num(raw, dec), vc, bg,
            lgfx::textdatum_t::top_right);
     if (unit.length()) {
       d->setFont(&lgfx::fonts::Font2);

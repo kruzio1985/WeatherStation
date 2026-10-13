@@ -30,4 +30,10 @@ private:
 // /api/ota/diag (GET, diagnostyka obrazu) i /api/ota/activate (POST, ręczna aktywacja).
 void registerOtaRoutes(AsyncWebServer& server);
 
+// Sprawdza hasło z nagłówka X-OTA-Key (ustawienia -> ota_password). Gdy hasło
+// nie jest ustawione, zwraca true - tak samo jak trasy OTA, które są wtedy
+// otwarte. Używane też przez operacje nieodwracalne poza OTA (format karty SD,
+// reset do ustawień fabrycznych).
+bool otaAuthorized(AsyncWebServerRequest* r);
+
 extern OtaManager ota;

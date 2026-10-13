@@ -93,6 +93,10 @@ public:
   String modelName() const { return modelName_; }
   String lastFile() const { return lastFile_; }
   unsigned long lastCaptureMs() const { return lastCaptureMs_; }
+  // millis() ostatniego zdjęcia, które faktycznie ODEBRALIŚMY (upload z modułu
+  // albo odczyt lokalny). Tylko po tym można poznać, że kamera naprawdę żyje -
+  // bez odpytywania jej adresu IP.
+  unsigned long lastIngestMs() const { return lastJpegMs_; }
   uint16_t intervalMin() const { return intervalMin_; }
 
   const CamAnalysis& lastAnalysis() const { return lastAnalysis_; }

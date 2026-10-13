@@ -13,6 +13,33 @@
 
 MqttManager mqtt;
 
+// Bufor MQTT: domyślne 256 B nie mieści payloadu discovery (nazwa encji, temat
+// stanu, blok "device"), a 1024 B potrafiło zostać przekroczone przy długiej
+// nazwie urządzenia i prefiksie - publish() zwracał wtedy false i encja cicho
+// nie pojawiała się w Home Assistant.
+static const uint16_t MQTT_BUF_SIZE = 2048;
+
+// Limit czasu pojedynczej operacji MQTT. Domyślne 15 s blokowało pętlę główną
+// (razem z impulsem życia dla zewnętrznego watchdoga), gdy broker przestał
+// odpowiadać - wymiana pakietu z brokerem w sieci lokalnej to milisekundy.
+static const uint16_t MQTT_SOCKET_TIMEOUT_S = 3;
+
+// Publikacja z kontrolą wyniku. PubSubClient zwraca false także wtedy, gdy
+// temat i treść nie mieszczą się w buforze - bez tego komunikatu brakująca
+// encja w Home Assistant była niewidoczna w diagnostyce.
+static bool pubChecked(PubSubClient* c, const String& topic, const String& payload,
+                       const char* what) {
+  if (!c) return false;
+  if (c->publish(topic.c_str(), payload.c_str(), true)) return true;
+  static unsigned long lastWarn = 0;
+  if (millis() - lastWarn > 60000UL) {
+    lastWarn = millis();
+    LOG_W("MQTT: nie wysłano %s - temat i treść zajmują %u B (bufor %u B)",
+          what, (unsigned)(topic.length() + payload.length()), (unsigned)MQTT_BUF_SIZE);
+  }
+  return false;
+}
+
 bool MqttManager::isConfigured() {
   return config.mqttHost().length() > 0;
 }
@@ -24,7 +51,8 @@ void MqttManager::begin(WiFiClient& client) {
   if (configured_) {
     host_ = config.mqttHost();
     mqtt_->setServer(host_.c_str(), config.mqttPort());
-    mqtt_->setBufferSize(1024);
+    mqtt_->setBufferSize(MQTT_BUF_SIZE);
+    mqtt_->setSocketTimeout(MQTT_SOCKET_TIMEOUT_S);
     LOG_I("MQTT: skonfigurowano %s:%u, prefiks '%s'", host_.c_str(),
           (unsigned)config.mqttPort(), config.mqttPrefix().c_str());
   } else {
@@ -42,7 +70,7 @@ String MqttManager::discoveryTopic(const Channel& c) {
 
 bool MqttManager::publishTopic(const String& topic, const String& payload) {
   if (!connected()) return false;
-  return mqtt_->publish(topic.c_str(), payload.c_str(), true);
+  return pubChecked(mqtt_, topic, payload, topic.c_str());
 }
 
 bool MqttManager::setLastWill() {
@@ -91,7 +119,8 @@ bool MqttManager::reconnectWithConfig(String& info) {
 
   host_ = config.mqttHost();
   mqtt_->setServer(host_.c_str(), config.mqttPort());
-  mqtt_->setBufferSize(1024);
+  mqtt_->setBufferSize(MQTT_BUF_SIZE);
+  mqtt_->setSocketTimeout(MQTT_SOCKET_TIMEOUT_S);
 
   unsigned long t0 = millis();
   bool ok = setLastWill();
@@ -188,7 +217,8 @@ void MqttManager::announceDiscovery(const Channel& c) {
 
   String payload;
   serializeJson(d, payload);
-  mqtt_->publish(discoveryTopic(c).c_str(), payload.c_str(), true);
+  String topic = discoveryTopic(c);
+  pubChecked(mqtt_, topic, payload, topic.c_str());
 }
 
 void MqttManager::publishReadings(const std::vector<Channel>& channels) {
@@ -211,7 +241,8 @@ void MqttManager::publishReadings(const std::vector<Channel>& channels) {
     float v = c.value * c.haFactor;
     char buf[32];
     dtostrf(v, 0, 3, buf);
-    mqtt_->publish(stateTopic(c).c_str(), buf, true);
+    String topic = stateTopic(c);
+    pubChecked(mqtt_, topic, String(buf), topic.c_str());
   }
 
   // Kierunek wiatru jako strona świata (N/NE/E...). Osobny temat tekstowy,
@@ -220,7 +251,7 @@ void MqttManager::publishReadings(const std::vector<Channel>& channels) {
   if (dir.length()) {
     if (announce) announceCompassDiscovery();
     String t = config.mqttPrefix() + "/vane_dir/state";
-    mqtt_->publish(t.c_str(), dir.c_str(), true);
+    pubChecked(mqtt_, t, dir, t.c_str());
   }
 
   publishStatus("online");
@@ -246,11 +277,11 @@ void MqttManager::announceCompassDiscovery() {
   String payload;
   serializeJson(d, payload);
   String topic = "homeassistant/sensor/" + config.mqttPrefix() + "_vane_dir/config";
-  mqtt_->publish(topic.c_str(), payload.c_str(), true);
+  pubChecked(mqtt_, topic, payload, topic.c_str());
 }
 
 void MqttManager::publishStatus(const char* status) {
   if (!connected()) return;
   String t = config.mqttPrefix() + "/status";
-  mqtt_->publish(t.c_str(), status, true);
+  pubChecked(mqtt_, t, status, t.c_str());
 }

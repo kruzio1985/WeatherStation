@@ -1165,17 +1165,18 @@ void SensorManager::readPMS5003() {
   if (!Serial2.available()) return;
   if (Serial2.read() != 0x4D) return;
 
-  // Długość ramki (2 bajty big-endian)
-  unsigned long timeout = millis() + 500;
-  while (Serial2.available() < 2 && millis() < timeout) delay(1);
+  // Długość ramki (2 bajty big-endian). Porównanie przez różnicę czasu jest
+  // odporne na przepełnienie millis() po 49,7 dniach pracy.
+  const unsigned long startedMs = millis();
+  while (Serial2.available() < 2 && (millis() - startedMs) < 500UL) delay(1);
   if (Serial2.available() < 2) return;
   uint16_t len = ((uint16_t)Serial2.read() << 8) | Serial2.read();
   if (len < 28) return;
 
   uint8_t buf[28];
-  timeout = millis() + 500;
+  const unsigned long bodyMs = millis();
   size_t got = 0;
-  while (got < 28 && millis() < timeout) {
+  while (got < 28 && (millis() - bodyMs) < 500UL) {
     if (Serial2.available()) buf[got++] = Serial2.read();
   }
   if (got < 28) return;
@@ -1275,24 +1276,37 @@ void SensorManager::computeRain() {
   rainPulses_ = 0;
   interrupts();
 
-  if (pulses == 0) return;
-  config.state.rainTipsTotal += pulses;
-
-  // Wykryj zmianę doby (rok*1000 + dzień roku)
+  // Zmiana doby musi być sprawdzana także wtedy, gdy nie ma nowego impulsu -
+  // inaczej po suchej dobie "Opad dziś" zostałyby na wczorajszej sumie aż do
+  // pierwszego deszczu.
   time_t now = time(nullptr);
+  // Bez synchronizacji czasu (świeży restart, brak NTP) nie wiadomo, która jest
+  // doba - potraktowanie 1970 jako "nowej doby" zerowałoby licznik opadu.
+  const bool clockOk = now >= 1000000000;
   struct tm tmv;
   localtime_r(&now, &tmv);
-  int dayKey = (tmv.tm_year + 1900) * 1000 + tmv.tm_yday;
+  const int dayKey = (tmv.tm_year + 1900) * 1000 + tmv.tm_yday;
+  const bool newDay = clockOk && (config.state.rainDay != dayKey);
 
-  if (config.state.rainDay != dayKey) {
+  if (pulses == 0 && !newDay) return;
+
+  config.state.rainTipsTotal += pulses;
+
+  if (newDay) {
     config.state.rainDay = dayKey;
     config.state.rainStartTips = config.state.rainTipsTotal - pulses;
   }
+  // Uszkodzony licznik w NVS nie może dać ujemnej sumy dobowej.
+  if (config.state.rainStartTips > config.state.rainTipsTotal) {
+    config.state.rainStartTips = config.state.rainTipsTotal;
+  }
 
-  float mm = (config.state.rainTipsTotal - config.state.rainStartTips) * RAIN_MM_PER_TIP;
+  const float mm = (config.state.rainTipsTotal - config.state.rainStartTips) * RAIN_MM_PER_TIP;
   if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
-  putValue("rain", mm);   // wywołane tylko po realnym impulsie deszczomierza
-  setDetected("rain", true); // pierwszy impuls = deszczomierz naprawdę jest podłączony
+  putValue("rain", mm);
+  // Deszczomierz potwierdzamy tylko realnym impulsem - sama zmiana doby nie
+  // jest dowodem, że czujnik jest podłączony.
+  if (pulses) setDetected("rain", true);
   if (mutex_) xSemaphoreGive(mutex_);
 
   config.saveState();

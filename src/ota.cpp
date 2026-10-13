@@ -91,7 +91,7 @@ static void abortUpload(const char* why) {
         why, (unsigned)s_upBytes, (unsigned long)millis(), (unsigned long)s_upLastMs);
 }
 
-static bool authorized(AsyncWebServerRequest* r) {
+bool otaAuthorized(AsyncWebServerRequest* r) {
   String pass = config.otaPassword();
   if (pass.length() == 0) return true;  // brak hasła w konfiguracji = OTA otwarte
   if (!r->hasHeader(OTA_HEADER)) return false;
@@ -766,7 +766,7 @@ static void otaSdUpload(AsyncWebServerRequest* r, const String& filename, size_t
     s_sdBytes  = 0;
     s_sdStatus = 200;
     s_sdError  = "";
-    if (!authorized(r)) {
+    if (!otaAuthorized(r)) {
       s_sdStatus = 401;
       s_sdError  = "Brak lub błędne hasło OTA (nagłówek " + String(OTA_HEADER) + ")";
       return;
@@ -840,7 +840,7 @@ static void startUpload(AsyncWebServerRequest* r, int command, const String& fil
   s_upStatus = 200;
   s_upCommand = command;
 
-  if (!authorized(r)) {
+  if (!otaAuthorized(r)) {
     s_upStatus = 401;
     s_upError = "Brak lub błędne hasło OTA (nagłówek " + String(OTA_HEADER) + ")";
     return;
@@ -992,7 +992,7 @@ void registerOtaRoutes(AsyncWebServer& server) {
   // Nie restartuje stacji - mówi tylko, czy obraz da się ustawić jako startowy.
   server.on("/api/ota/activate", HTTP_POST, [](AsyncWebServerRequest* r) {
     JsonDocument d;
-    if (!authorized(r)) {
+    if (!otaAuthorized(r)) {
       d["ok"] = false;
       d["error"] = "Brak lub błędne hasło OTA (nagłówek " + String(OTA_HEADER) + ")";
     } else if (Update.isRunning()) {

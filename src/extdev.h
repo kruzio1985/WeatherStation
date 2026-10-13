@@ -17,12 +17,18 @@
 struct ExtDevice {
   String name;
   String url;
-  String type;            // "vevor" / "ble"
+  String type;            // "vevor" / "ble" / "aq" / "outaq"
   int    interval = 20;   // sekundy między odczytami
   bool   ok = false;      // ostatni odczyt udany
   unsigned long lastMs = 0;   // millis() ostatniego odczytu
   String lastErr;
   int    failCount = 0;   // kolejne nieudane odczyty (do backoffu)
+  // Żywotność zgłaszana przez samo urządzenie: stacja powietrza przysyła
+  // w /api/status pole "uptime_s" (i "mqtt"), więc wiemy, że naprawdę działa -
+  // bez sprawdzania po wpisanym na sztywno adresie IP.
+  uint32_t peerUptimeS = 0;   // ostatnio zgłoszony czas pracy urządzenia [s]
+  unsigned long peerMs = 0;   // millis(), kiedy tę wartość odebrano
+  bool     peerMqtt = false;  // czy urządzenie samo raportuje połączenie z MQTT
 };
 
 class ExtDevManager {

@@ -94,9 +94,12 @@ void ConfigManager::ensureDefaults() {
   if (!o["ap_always_on"].is<bool>()) o["ap_always_on"] = true;
   if (!o["mqtt_port"].is<uint16_t>()) o["mqtt_port"] = 1883;
   if (!o["log_interval_s"].is<uint32_t>()) o["log_interval_s"] = 60;
-  // Retencja plików na karcie SD (0 = wyłączone)
-  if (!o["sd_retention_days"].is<uint16_t>()) o["sd_retention_days"] = 0;
-  if (!o["sd_retention_photos_days"].is<uint16_t>()) o["sd_retention_photos_days"] = 0;
+  // Retencja plików na karcie SD (0 = wyłączone). Domyślnie WŁĄCZONA: karta ma
+  // pracować non stop, a nie zapychać się i zużywać od ciągłego nadpisywania.
+  // 180 dni logów CSV (~0,1-0,4 GB) i 14 dni zdjęć to bezpieczny zapas dla
+  // timelapse co 5 min (~20-45 MB/dzień), razem z limitem galerii niżej.
+  if (!o["sd_retention_days"].is<uint16_t>()) o["sd_retention_days"] = 180;
+  if (!o["sd_retention_photos_days"].is<uint16_t>()) o["sd_retention_photos_days"] = 14;
   if (!o["aq_type"].is<uint8_t>()) o["aq_type"] = 0;   // 0 = wykryj sam
 
   // Kamera (opcjonalna). Domyślnie wyłączona - włącza się dopiero, gdy
@@ -107,9 +110,11 @@ void ConfigManager::ensureDefaults() {
   if (!o["cam_quality"].is<uint8_t>()) o["cam_quality"] = 12;
   if (!o["cam_model"].is<uint8_t>()) o["cam_model"] = 0;            // 0 = wykryj sam
   // Limity miejsca na zdjęcia (0 = bez limitu). Po przekroczeniu najstarsze
-  // zdjęcia są kasowane razem z ich plikami analizy (.json).
+  // zdjęcia są kasowane razem z ich plikami analizy (.json). Limit rozmiaru
+  // działa na całą kartę (uwzględnia też logi), więc domyślne 1 GB trzyma
+  // galerię w ryzach, gdyby interwał zdjęć był krótki.
   if (!o["cam_max_photos"].is<uint16_t>()) o["cam_max_photos"] = 0;
-  if (!o["cam_max_mb"].is<uint16_t>()) o["cam_max_mb"] = 0;
+  if (!o["cam_max_mb"].is<uint16_t>()) o["cam_max_mb"] = 1000;
   // Adres zewnętrznej kamery (ESP32-CAM). Puste = kamera lokalna na pinach.
   // Po ustawieniu master tylko odbiera zdjęcia (HTTP POST /api/camera/upload).
   if (!o["cam_remote_url"].is<const char*>()) o["cam_remote_url"] = "";
@@ -328,6 +333,22 @@ bool ConfigManager::applyJson(const char* json, size_t len) {
   return save();
 }
 
+// Scalanie zamiast podmiany całego obiektu: strona www wysyła tylko zmienione
+// pola kanału (np. samą nazwę), a dotychczasowe przypisanie `dst[key] = obj`
+// zastępowało cały obiekt razem z zapisanym offsetem kalibracji. Klucze z danych
+// nadpisują wartości, brakujące zostają nietknięte (null czyści wpis).
+static void mergeInto(JsonObject dst, JsonObjectConst src) {
+  for (JsonPairConst kv : src) {
+    JsonObjectConst sub = kv.value().as<JsonObjectConst>();
+    JsonVariant cur = dst[kv.key()];
+    if (sub && cur.is<JsonObject>()) {
+      mergeInto(cur.as<JsonObject>(), sub);
+    } else {
+      cur.set(kv.value());
+    }
+  }
+}
+
 bool ConfigManager::applyChannelOverrides(const char* json, size_t len) {
   JsonDocument nd;
   DeserializationError err = deserializeJson(nd, json, len);
@@ -337,14 +358,14 @@ bool ConfigManager::applyChannelOverrides(const char* json, size_t len) {
   JsonObject ch = nd["channels"].as<JsonObject>();
   if (ch) {
     JsonObject dst = objIn(doc_["channels"]);
-    for (JsonPair kv : ch) dst[kv.key()] = kv.value();
+    mergeInto(dst, ch);
   }
   // Wartości kalibracji dodatkowych czujników analogowych (gleba, pyranometr)
   // oraz deklinacja magnetyczna dla kompasu.
   JsonObject extra = nd["extra"].as<JsonObject>();
   if (extra) {
     JsonObject dst = objIn(doc_["extra"]);
-    for (JsonPair kv : extra) dst[kv.key()] = kv.value();
+    mergeInto(dst, extra);
   }
   unlock();
   return save();

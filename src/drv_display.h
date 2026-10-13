@@ -129,6 +129,7 @@ private:
   bool     nightOn_ = false;        // przygaszanie włączone w ustawieniach
   uint8_t  nightFrom_ = 21, nightTo_ = 7;
   bool     nightNow_ = false;       // wyliczone dla bieżącej klatki
+  float    nightK_ = 1.0f;          // mnożnik przygaszenia kolorów (tryb nocny)
   // --- Grafiki pogody z karty SD ---
   int16_t  icX_ = 8, icY_ = 56;
   String   icPath_[DISP_IC_COUNT];
