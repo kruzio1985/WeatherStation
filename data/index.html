@@ -9,6 +9,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stacja Pogody</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/favicon.svg">
+<meta name="description" content="Stacja Pogody — własna stacja meteorologiczna na ESP32-S3: temperatura, wilgotność, ciśnienie, jakość powietrza i kamera.">
+<meta name="theme-color" content="#0b0e13">
 <style>
   /* ==========================================================================
      Stacja Pogody - arkusz stylów panelu.
@@ -6383,6 +6387,14 @@ function displayApply(s) {
     if (e) e.value = ip[k] || '';
   });
   renderDispChannels(s.channels);
+}
+
+// Tylko wiersze "Stan" (bez dotykania formularza). Używane przez odpytywanie
+// w tle, żeby wpisywane przez użytkownika ustawienia nie były nadpisywane
+// co 5 s - inaczej zaznaczony checkbox "znikał" przy przewijaniu.
+function displayStatus(s) {
+  if (!s || typeof s !== 'object') return;
+  const el = id => document.getElementById(id);
   const MODES = ['Pulpit', 'Cykl dużych wskazań', 'Jedna wartość na stałe', 'Pogoda (grafika)'];
   el('dispInfoMode').textContent =
     (MODES[s.mode ?? 0] || '—') + (s.channel_now ? ' · teraz: ' + s.channel_now : '');
@@ -6402,10 +6414,13 @@ function displayApply(s) {
   el('dispInfoDraws').textContent = s.draws ?? 0;
 }
 
+// Pełne wypełnienie formularza (wywoływane przy wejściu na zakładkę i przycisku
+// "Odśwież") - nadpisuje pola, więc nie wolno go wywoływać w trakcie edycji.
 async function loadDisplay() {
   await loadDisplayChannels();
   const d = await api('/api/display');
   displayApply(d);
+  displayStatus(d);
   uiFill(d && d.ui);
 }
 
@@ -6627,7 +6642,11 @@ async function uploadDispIcon() {
 
 function displayPollStart() {  if (dispPollTimer) return;
   dispPollTimer = setInterval(() => {
-    if (document.getElementById('tab-display').classList.contains('active')) loadDisplay();
+    // W tle odświeżamy WYŁĄCZNIE wiersze "Stan" - formularz zostaje w spokoju,
+    // bo jego przepisywanie kasowałoby wpisywane przez użytkownika wartości.
+    if (document.getElementById('tab-display').classList.contains('active')) {
+      api('/api/display').then(displayStatus);
+    }
   }, 5000);
 }
 
