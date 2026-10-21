@@ -10,6 +10,7 @@
 #include "sensors.h"
 #include "syslog.h"
 #include <ArduinoJson.h>
+#include <esp_heap_caps.h>
 #include <time.h>
 #include <string.h>
 #include <math.h>
@@ -18,7 +19,6 @@
 #if STACJA_HAS_CAMERA
 #include "esp_camera.h"
 #include "img_converters.h"
-#include <esp_heap_caps.h>
 #include <WiFiClient.h>
 #include <HTTPClient.h>
 #endif
@@ -252,6 +252,7 @@ void CameraManager::applyConfig() {
 }
 
 void CameraManager::loop() {
+  processPendingUpload();
 #if STACJA_HAS_CAMERA
   // Zdjęcie zlecone z www ma pierwszeństwo - działa też przy timelapsie
   // ustawionym na 0 (tylko zdjęcia ręczne). Wykonujemy je tutaj, a nie w
@@ -354,6 +355,26 @@ bool CameraManager::ingestJpeg(const uint8_t* data, size_t len) {
   capturing_ = false;
   return ok;
 #endif
+}
+
+bool CameraManager::queueUpload(uint8_t* data, size_t len) {
+  if (!data || len < 4) return false;
+  if (pendBuf_) return false;      // poprzednie zdjęcie jeszcze się zapisuje
+  pendBuf_ = data;
+  pendLen_ = len;
+  return true;
+}
+
+void CameraManager::processPendingUpload() {
+  if (!pendBuf_) return;
+  uint8_t* buf = pendBuf_;
+  const size_t len = pendLen_;
+  pendBuf_ = nullptr;
+  pendLen_ = 0;
+  if (!ingestJpeg(buf, len)) {
+    LOG_W("Kamera: zdjęcie z modułu nieprzyjęte - %s", lastError_.c_str());
+  }
+  heap_caps_free(buf);
 }
 
 // Zdjęcie z zewnętrznej kamery. Adres w config cam_remote_url wskazuje
