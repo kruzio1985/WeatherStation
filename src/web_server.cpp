@@ -912,8 +912,16 @@ void WebServerManager::registerRoutes() {
       bool ok = false;
       String err = "brak danych zdjęcia";
       if (r == s_imgReq && !s_imgTooBig && s_imgLen >= 4) {
-        ok = camera.ingestJpeg(s_imgBuf, s_imgLen);
-        if (!ok) err = camera.error();
+        // Zapis na kartę, dekodowanie JPEG i publikacja w MQTT trwają dłużej niż
+        // limit watchdoga zadania, a to zadanie (serwer www) jest przez niego
+        // pilnowane. Dlatego tylko przekazujemy bufor - zapisze go pętla główna.
+        if (camera.queueUpload(s_imgBuf, s_imgLen)) {
+          s_imgBuf = nullptr;      // bufor przechodzi na własność kamery
+          s_imgCap = 0;
+          ok = true;
+        } else {
+          err = "poprzednie zdjęcie jeszcze się zapisuje";
+        }
       } else if (s_imgTooBig) {
         err = "zdjęcie przekracza maksymalny rozmiar (512 KB)";
       }
@@ -924,11 +932,11 @@ void WebServerManager::registerRoutes() {
       s_imgLen = 0;
       s_imgReq = nullptr;
       d["ok"] = ok;
-      if (ok) d["path"] = camera.lastFile();
+      if (ok) d["queued"] = true;
       else    d["error"] = err;
       String s;
       serializeJson(d, s);
-      r->send(ok ? 200 : 413, "application/json", s);
+      r->send(ok ? 200 : (s_imgTooBig ? 413 : 503), "application/json", s);
     }, nullptr, imgBodySink);
 
   // Piny kamery (sekcja "pins" ustawień). Zarządzane osobno od zakładki

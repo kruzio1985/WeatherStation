@@ -77,6 +77,11 @@ public:
 
   bool capture();            // zdjęcie lokalne (kamera podłączona do pinów)
   bool ingestJpeg(const uint8_t* data, size_t len);  // odbiór zdjęcia z ESP32-CAM
+  // Przekazanie zdjęcia odebranego przez serwer www do pętli głównej.
+  // Zapis na SD, dekodowanie JPEG i publikacja w MQTT trwają dłużej niż limit
+  // watchdoga zadania, a serwer www działa w zadaniu pilnowanym przez watchdog.
+  // Bufor (PSRAM) przechodzi na własność kamery i jest zwalniany po zapisie.
+  bool queueUpload(uint8_t* data, size_t len);
   bool triggerRemote();      // zdjęcie z kamery zewnętrznej: pobierz JPEG albo wyzwól ujęcie
   // Zlecenie zdjęcia z kamery zewnętrznej do wykonania w pętli głównej.
   // Pobieranie zdjęcia trwa kilka sekund, więc nie może się odbywać w wątku
@@ -120,6 +125,7 @@ private:
   // Wystawia wynik analizy jako kanały stacji (pulpit, dziennik, MQTT/HA).
   void publishAnalysis();
   void writeAnalysisJson(const String& jpgPath);
+  void processPendingUpload();                  // zapis zdjęcia przekazanego przez www
   void enforceQuota();                          // kasowanie najstarszych zdjęć ponad limit
   void deletePhotoWithMeta(const String& jpgPath);
 
@@ -139,6 +145,10 @@ private:
   uint32_t    lastJpegHash_ = 0;
   uint32_t    lastJpegLen_ = 0;
   unsigned long lastJpegMs_ = 0;
+
+  // Zdjęcie odebrane przez serwer www, czekające na zapis w pętli głównej.
+  uint8_t*    pendBuf_ = nullptr;
+  size_t      pendLen_ = 0;
   String      modelName_;
 
   // Wynik analizy ostatniego zdjęcia + siatka luminancji poprzedniej klatki
