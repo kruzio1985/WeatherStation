@@ -90,6 +90,12 @@
     border-radius: var(--r-s); background: var(--panel2); color: var(--text);
     border: 1px solid var(--line); cursor: pointer;
   }
+  /* Przycisk restartu w nagłówku - zawsze pod ręką */
+  .restart-btn { display: inline-flex; align-items: center; justify-content: center;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--warn);
+    border-radius: var(--r-s); padding: 4px 9px; font-size: 14px; line-height: 1;
+    cursor: pointer; font-weight: 600; }
+  .restart-btn:hover { background: var(--err); color: #1a0a09; border-color: var(--err); }
 
   /* --- Układ: menu boczne + treść --- */
   .layout { flex: 1 1 auto; display: grid; grid-template-columns: 236px 1fr; min-height: 0; }
@@ -481,6 +487,7 @@
   <span class="badge" id="mqttBadge">MQTT --</span>
   <span class="badge" id="sdBadge">SD --</span>
   <span class="badge" id="ringBadge">Led --</span>
+  <button id="restartBtn" class="restart-btn" type="button" title="Zrestartuj stację" onclick="reboot()">↻</button>
   <select class="lang" id="langSel" aria-label="Język / Language / Sprache"></select>
 </header>
 
