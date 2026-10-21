@@ -315,7 +315,10 @@ static void handleRoot() {
   String h;
   h.reserve(7000);
   h += "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  h += "<title>Kamera Stacja Pogody</title><style>";
+  h += "<title>Kamera Stacja Pogody</title>";
+  // Favicon kamery wprost w nagłówku (data URI) - bez osobnej trasy i bez plików.
+  h += "<link rel='icon' type='image/svg+xml' href='data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2064%2064%22%20width=%2264%22%20height=%2264%22%3E%3Crect%20width=%2264%22%20height=%2264%22%20rx=%2214%22%20fill=%22%230b0e13%22/%3E%3Cg%20fill=%22none%22%20stroke=%22%234f8fdd%22%20stroke-width=%223.4%22%20stroke-linejoin=%22round%22%3E%3Crect%20x=%2210%22%20y=%2221%22%20width=%2244%22%20height=%2230%22%20rx=%225%22/%3E%3Cpath%20d=%22M24%2021l3-5h10l3%205%22/%3E%3C/g%3E%3Ccircle%20cx=%2232%22%20cy=%2236%22%20r=%228.5%22%20fill=%22%234f8fdd%22/%3E%3C/svg%3E'>";
+  h += "<style>";
   h += "body{font-family:system-ui,sans-serif;max-width:720px;margin:16px auto;padding:0 14px;background:#111;color:#eee}";
   h += "h2{color:#8cf}fieldset{border:1px solid #333;border-radius:8px;margin:12px 0;padding:10px 14px}";
   h += "legend{color:#8cf;font-weight:600;padding:0 6px}";
