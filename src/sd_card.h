@@ -52,6 +52,11 @@ public:
   bool usingSdmmc() { return sdmmc_; }
   // Opis interfejsu użytego (albo próbowanego) przy ostatnim montażu.
   String interfaceInfo();
+  // Pomiar karty: zapis 128 kB i odczyt w blokach 512 B / 4 kB.
+  // Wolna karta (duża latencja) daje otwarcie pliku liczone w sekundach -
+  // ten pomiar pokazuje, czy problem jest w danych, czy w metadanych.
+  // dir != "" tworzy plik w podanym katalogu (test wpływu liczby wpisów).
+  String benchJson(const String& dir = String());
 
   bool listDir(const String& dir, std::vector<SdFileInfo>& out);
   // Skan katalogu z ograniczeniem. maxEntries > 0 ucina liczbę wpisów:

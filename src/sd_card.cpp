@@ -101,6 +101,64 @@ String SdCardManager::interfaceInfo() {
   return info_;
 }
 
+String SdCardManager::benchJson(const String& dir) {
+  if (!mounted_) return String("{\"mounted\":false}");
+  const size_t SZ = 128 * 1024;
+  uint8_t* buf = (uint8_t*)heap_caps_malloc(SZ, MALLOC_CAP_SPIRAM);
+  if (!buf) buf = (uint8_t*)malloc(SZ);
+  if (!buf) return String("{\"mounted\":true,\"error\":\"brak pamieci\"}");
+  for (size_t i = 0; i < SZ; i++) buf[i] = (uint8_t)(i * 31u + 7u);
+
+  const String path = (dir.length() ? dir : String("")) + "/bench.tmp";
+  deleteFile(path);
+  esp_task_wdt_reset();
+  unsigned long t0 = millis();
+  const bool ok = writeBlock(path, buf, SZ);
+  const unsigned long tw = millis() - t0;
+  esp_task_wdt_reset();
+
+  uint8_t tmp[512];
+  unsigned long tr512 = 0;
+  File f = openRead(path);
+  if (f) {
+    t0 = millis();
+    while (f.available()) {
+      if (f.read(tmp, sizeof(tmp)) <= 0) break;
+    }
+    tr512 = millis() - t0;
+    f.close();
+  }
+  esp_task_wdt_reset();
+
+  static uint8_t tmp4[4096];
+  unsigned long tr4k = 0;
+  f = openRead(path);
+  if (f) {
+    t0 = millis();
+    while (f.available()) {
+      if (f.read(tmp4, sizeof(tmp4)) <= 0) break;
+    }
+    tr4k = millis() - t0;
+    f.close();
+  }
+
+  deleteFile(path);
+  heap_caps_free(buf);
+
+  char out[288];
+  snprintf(out, sizeof(out),
+           "{\"mounted\":true,\"dir\":\"%s\",\"size\":%u,\"write_ms\":%lu,"
+           "\"read512_ms\":%lu,\"read4k_ms\":%lu,\"write_kBs\":%lu,\"read512_kBs\":%lu,"
+           "\"read4k_kBs\":%lu,\"ok\":%s}",
+           (dir.length() ? dir.c_str() : "/"), (unsigned)SZ, (unsigned long)tw,
+           (unsigned long)tr512, (unsigned long)tr4k,
+           (unsigned long)(tw ? (SZ / 1024UL) * 1000UL / tw : 0),
+           (unsigned long)(tr512 ? (SZ / 1024UL) * 1000UL / tr512 : 0),
+           (unsigned long)(tr4k ? (SZ / 1024UL) * 1000UL / tr4k : 0),
+           ok ? "true" : "false");
+  return String(out);
+}
+
 bool SdCardManager::mountSdmmc() {
 #if defined(SOC_SDMMC_HOST_SUPPORTED) || defined(CONFIG_SOC_SDMMC_HOST_SUPPORTED)
   SD_MMC.setPins(pinMap.pin("sdmmc_clk"), pinMap.pin("sdmmc_cmd"), pinMap.pin("sdmmc_d0"));

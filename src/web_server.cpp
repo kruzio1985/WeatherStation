@@ -864,6 +864,12 @@ void WebServerManager::registerRoutes() {
   // Ponowne wykrycie karty bez restartu stacji: zwalnia poprzedni montaż
   // i próbuje od nowa (SDMMC, potem SPI) - przydaje się, gdy kartę włożono
   // już po starcie albo po poprawieniu pinów na stronie www.
+  // Pomiar karty SD: zapis 128 kB + odczyt w blokach 512 B i 4 kB.
+  server.on("/api/sd/bench", HTTP_GET, [](AsyncWebServerRequest* r) {
+    const String dir = r->hasArg("dir") ? r->arg("dir") : String();
+    r->send(200, "application/json", sdCard.benchJson(dir));
+  });
+
   server.on("/api/sd/remount", HTTP_POST, [](AsyncWebServerRequest* r) {
     bool ok = sdCard.remount();
     if (ok) logger.begin();
