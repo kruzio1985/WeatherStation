@@ -106,18 +106,25 @@ Zapis: `POST /api/display` z kluczem `ui`; w NVS jako `disp_ui_*`.
 - favicon.svg + `meta description` + `theme-color` w nagłówku strony
 - `9726644` Kamera: zdjęcie z modułu zapisywane w pętli głównej — koniec
   restartów stacji co ~48 s (`watchdog zadania`) i migania ekranu
+- `f2885ca` Diagnostyka restartów: ślad etapu obiegu i ostatniego żądania www
+  w pamięci RTC (przeżywa reset), podsumowanie analizy co 5 min zamiast co 1 min,
+  limit czekania na kartę SD i cache `usedBytes()`
 
-## Stan obecny (21.10.2026)
+## Stan obecny (24.10.2026)
 
-- Firmware na urządzeniu: build `21.10.2026 23:11`, ekran rysuje ~76 ms
-- **Restarty z watchdoga usunięte** — uptime > 100 s (wcześniej nigdy > 48 s).
-  Przyczyna: `POST /api/camera/upload` robił zapis na SD + dekodowanie JPEG
-  + MQTT w zadaniu serwera www, które `AsyncTCP` rejestruje w watchdogu
-  zadania (5 s, panic). Teraz bufor przechodzi do pętli głównej
-  (`queueUpload()` → `processPendingUpload()` w `camera.loop()`).
-- Znane, osobne: etap „analiza, alerty, retencja" w pętli głównej zajmuje
-  **5,3 s** tuż po starcie (dosiewanie rekordów z miesięcznego CSV) — nie
-  powoduje restartu (pętla główna nie jest w watchdogu), ale opóźnia obieg.
+- **Karta SD jest bardzo wolna:** zapis 16 KB trwa **3,8 s** (powinno <50 ms).
+  To źródło zatorów: obieg pętli 8 s przy każdym zdjęciu (co 5 min).
+  Do rozważenia wymiana karty.
+- Restarty z watchdoga: ślad w RTC wskazał etap `www/MQTT/OTA` tuż po
+  `/api/status`; po naprawach (cache `usedBytes`, limit czekania na SD,
+  tańsze podsumowanie analizy) brak restartów w obserwacji — następny
+  nieoczekiwany restart wypisze w logu `Przed resetem: etap …, ostatnie żądanie: …`.
+- Obieg pętli przy starcie: 4-6 s (pierwsze podsumowanie analizy), potem spokój.
+- **Restarty z watchdoga — pierwsza naprawa** (`9726644`): uptime > 100 s
+  (wcześniej nigdy > 48 s). Przyczyna: `POST /api/camera/upload` robił zapis
+  na SD + dekodowanie JPEG + MQTT w zadaniu serwera www, które `AsyncTCP`
+  rejestruje w watchdogu zadania (5 s, panic). Teraz bufor przechodzi do
+  pętli głównej (`queueUpload()` → `processPendingUpload()`).
 - Strona: `GET /` ≈ 397 kB, `i18n.js` ≈ 205 kB
 - MQTT połączony (`192.168.1.14:1883`, user `StacjaP`), węzły 3/3 OK, SD zamontowana
 - Dodany **przycisk restartu** (↻) w nagłówku strony → `POST /api/reboot`
