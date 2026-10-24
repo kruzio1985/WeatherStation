@@ -196,13 +196,14 @@ bool SdCardManager::listDirFat(const String& dir, std::vector<SdFileInfo>& out,
         info.isDir = (fi.fattrib & AM_DIR) != 0;
         if (keepLast && maxEntries > 0 && out.size() >= maxEntries) out.erase(out.begin());
         out.push_back(info);
+        if (!keepLast && maxEntries > 0 && out.size() >= maxEntries) break;
       }
-      // Przy setkach wpisów oddajemy procesor i karmimy watchdoga, żeby długi
-      // skan nie kończył się resetem stacji.
-      if (((++entries) & 0x3Fu) == 0) {
-        esp_task_wdt_reset();
-        vTaskDelay(1);
-      }
+      // Na tej karcie jeden wpis katalogu kosztuje ~100 ms, więc watchdog
+      // zadania (5 s) trzeba karmić po KAŻDYM wpisie - przy karmieniu co 64
+      // wpisy przerwa sięgała 6 s i stacja restartowała się przy listowaniu
+      // katalogu ze zdjęciami.
+      esp_task_wdt_reset();
+      if (((++entries) & 0x0Fu) == 0) vTaskDelay(1);
     }
     f_closedir(&d);
   }
@@ -248,14 +249,13 @@ bool SdCardManager::listDir(const String& dir, std::vector<SdFileInfo>& out,
         info.isDir = f.isDirectory();
         if (keepLast && maxEntries > 0 && out.size() >= maxEntries) out.erase(out.begin());
         out.push_back(info);
+        if (!keepLast && maxEntries > 0 && out.size() >= maxEntries) break;
       }
-      // Skan katalogu ze setkami wpisów trwa sekundy. Podkarmiamy watchdog
-      // zadania (inaczej kończy się to resetem "watchdog zadania") i oddajemy
-      // procesor na jedną taktę, żeby nie zagłodzić Wi-Fi ani serwera www.
-      if (((++entries) & 0x1Fu) == 0) {
-        esp_task_wdt_reset();
-        vTaskDelay(1);
-      }
+      // Skan katalogu ze setkami wpisów trwa sekundy (na tej karcie ~100 ms na
+      // wpis). Karmimy watchdog zadania po każdym wpisie - inaczej kończy się
+      // to resetem "watchdog zadania" przy listowaniu galerii zdjęć.
+      esp_task_wdt_reset();
+      if (((++entries) & 0x0Fu) == 0) vTaskDelay(1);
       f = root.openNextFile();
     }
   }
@@ -314,11 +314,16 @@ bool SdCardManager::readFile(const String& path, String& out, size_t maxLen) {
 
 bool SdCardManager::appendFile(const String& path, const String& line) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+  if (mutex_ && xSemaphoreTakeRecursive(mutex_, pdMS_TO_TICKS(SD_LOCK_MS)) != pdTRUE) {
+    LOG_W("SD: zajęta karta, pominięto dopisanie do %s", path.c_str());
+    return false;
+  }
   // SD.open() nie tworzy katalogów, więc pierwszy zapis do /logs na świeżej
   // (albo sformatowanej) karcie kończył się cicho błędem.
+  const unsigned long t0 = millis();
   const int slash = path.lastIndexOf('/');
   if (slash > 0) mkdirsRaw(path.substring(0, slash));
+  const unsigned long tMk = millis();
   File f;
 #if SD_MMC_AVAILABLE
   if (sdmmc_) f = SD_MMC.open(path, FILE_APPEND);
@@ -326,9 +331,17 @@ bool SdCardManager::appendFile(const String& path, const String& line) {
 #endif
   f = SD.open(path, FILE_APPEND);
   if (!f) { if (mutex_) xSemaphoreGiveRecursive(mutex_); return false; }
+  const unsigned long tOpen = millis();
   bool ok = f.print(line);
+  const unsigned long tWrite = millis();
   f.close();
+  const unsigned long tClose = millis();
   if (mutex_) xSemaphoreGiveRecursive(mutex_);
+  if (tClose - t0 > 500) {
+    LOG_W("SD: dopisanie %s - katalog %lu, otwarcie %lu, dane %lu, zamkniecie %lu ms",
+          path.c_str(), (unsigned long)(tMk - t0), (unsigned long)(tOpen - tMk),
+          (unsigned long)(tWrite - tOpen), (unsigned long)(tClose - tWrite));
+  }
   return ok;
 }
 
@@ -597,8 +610,10 @@ bool SdCardManager::writeBlock(const String& path, const uint8_t* data, size_t l
     LOG_W("SD: zajęta karta, pominięto zapis %s", path.c_str());
     return false;
   }
+  const unsigned long t0 = millis();
   const int slash = path.lastIndexOf('/');
   if (slash > 0) mkdirsRaw(path.substring(0, slash));
+  const unsigned long tMk = millis();
   File f;
 #if SD_MMC_AVAILABLE
   if (sdmmc_) f = SD_MMC.open(path, FILE_APPEND);
@@ -606,8 +621,19 @@ bool SdCardManager::writeBlock(const String& path, const uint8_t* data, size_t l
 #endif
   f = SD.open(path, FILE_APPEND);
   if (!f) { if (mutex_) xSemaphoreGiveRecursive(mutex_); return false; }
+  const unsigned long tOpen = millis();
   size_t w = f.write(data, len);
+  const unsigned long tWrite = millis();
   f.close();
+  const unsigned long tClose = millis();
   if (mutex_) xSemaphoreGiveRecursive(mutex_);
+  // Na tej karcie zapis potrafi trwać sekundy - rozbicie pokazuje, który
+  // etap (katalog / otwarcie / dane / zamknięcie) jest wolny.
+  if (tClose - t0 > 500) {
+    LOG_W("SD: %s (%u B) - katalog %lu, otwarcie %lu, dane %lu, zamkniecie %lu ms",
+          path.c_str(), (unsigned)len, (unsigned long)(tMk - t0),
+          (unsigned long)(tOpen - tMk), (unsigned long)(tWrite - tOpen),
+          (unsigned long)(tClose - tWrite));
+  }
   return w == len;
 }
