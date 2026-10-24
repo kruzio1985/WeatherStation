@@ -25,6 +25,7 @@
 #include "syslog.h"
 #include "led_ring.h"
 #include "drv_display.h"
+#include "loop_stats.h"
 #include "nvs_store.h"
 #include "gps.h"
 #include "astro.h"
@@ -398,6 +399,7 @@ static String bodyOf(AsyncWebServerRequest* r) {
 void WebServerManager::registerRoutes() {
   // --- Status ---
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* r) {
+    crashTraceMark(LOOP_WWW, "/api/status");
     r->send(200, "application/json", apiStatusJson());
   });
 
@@ -763,6 +765,7 @@ void WebServerManager::registerRoutes() {
 
   // --- Karta SD ---
   server.on("/api/sd/list", HTTP_GET, [](AsyncWebServerRequest* r) {
+    crashTraceMark(LOOP_WWW, "/api/sd/list");
     std::vector<SdFileInfo> files;
     String dir = "/logs";
     if (r->hasArg("dir")) dir = r->arg("dir");
@@ -912,6 +915,7 @@ void WebServerManager::registerRoutes() {
       bool ok = false;
       String err = "brak danych zdjęcia";
       if (r == s_imgReq && !s_imgTooBig && s_imgLen >= 4) {
+        crashTraceMark(LOOP_WWW, "/api/camera/upload");
         // Zapis na kartę, dekodowanie JPEG i publikacja w MQTT trwają dłużej niż
         // limit watchdoga zadania, a to zadanie (serwer www) jest przez niego
         // pilnowane. Dlatego tylko przekazujemy bufor - zapisze go pętla główna.
@@ -965,6 +969,7 @@ void WebServerManager::registerRoutes() {
 
   // --- Galeria zdjęć: rekurencyjnie /photos (katalogi miesięczne) ---
   server.on("/api/photos", HTTP_GET, [](AsyncWebServerRequest* r) {
+    crashTraceMark(LOOP_WWW, "/api/photos");
     PsramAllocator alloc;
     JsonDocument d(&alloc);
     d["mounted"] = sdCard.mounted();
@@ -1012,6 +1017,7 @@ void WebServerManager::registerRoutes() {
 
   // --- Wykresy / logi ---
   server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest* r) {
+    crashTraceMark(LOOP_WWW, "/api/logs");
     String period = r->hasArg("period") ? r->arg("period") : "day";
     String metric = r->hasArg("metric") ? r->arg("metric") : "temp";
 
