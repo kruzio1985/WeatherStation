@@ -41,15 +41,21 @@ void loopStatsBeginIteration();
 void loopStatsRecord(LoopStage stage, uint32_t ms);
 void loopStatsEndIteration();
 
+// Ostatni etap obiegu (i miejsce w obsłudze żądania) w pamięci RTC - po
+// restarcie z watchdoga pierwsza linia logu mówi, gdzie stacja stanęła.
+void crashTraceMark(uint8_t stage, const char* where);
+void crashTraceBootLog();
+
 const char* loopStatsStageName(LoopStage stage);
 const char* loopStatsWorstStage();
 uint32_t    loopStatsWorstStageMs();
 uint32_t    loopStatsWorstIterationMs();
 uint32_t    loopStatsLastIterationMs();
 
-// Mierzy czas życia obiektu - jeden etap obiegu pętli.
+// Mierzy czas życia obiektu - jeden etap obiegu pętli. Przy okazji znaczy
+// etap w pamięci RTC (ślad dla diagnozy restartów z watchdoga).
 struct LoopStageTimer {
-  LoopStageTimer(LoopStage s) : stage_(s), t0_(millis()) {}
+  LoopStageTimer(LoopStage s) : stage_(s), t0_(millis()) { crashTraceMark((uint8_t)s, nullptr); }
   ~LoopStageTimer() { loopStatsRecord(stage_, (uint32_t)(millis() - t0_)); }
 
   LoopStage stage_;

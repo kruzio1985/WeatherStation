@@ -253,6 +253,9 @@ void setup() {
 
   // Bufor logów jako pierwszy - żeby uchwycić komunikaty startowe
   syslog.begin();
+  // Ślad z poprzedniego uruchomienia (pamięć RTC) - mówi, co stacja robiła
+  // w chwili restartu z watchdoga.
+  crashTraceBootLog();
 
   // System plików
   if (!LittleFS.begin(true)) {

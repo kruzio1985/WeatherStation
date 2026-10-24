@@ -467,6 +467,7 @@ int CameraManager::fetchRemoteJpeg() {
 
   long contentLen = -1;
   while (client.connected() || client.available()) {
+    if (millis() > deadline) break;
     String line = client.readStringUntil('\n');
     line.trim();
     if (line.length() == 0) break;                 // koniec nagłówków
@@ -596,21 +597,29 @@ bool CameraManager::saveAndAnalyze(const uint8_t* jpg, size_t len, String& outPa
            t.tm_hour, t.tm_min, t.tm_sec);
   sdCard.mkdirs(dir);
 
+  const unsigned long sdT0 = millis();
   if (!sdCard.writeBlock(path, jpg, len)) {
     lastError_ = "nie udało się zapisać zdjęcia na karcie SD";
     LOG_E("Kamera: zapis %s nieudany", path);
     return false;
   }
+  const unsigned long sdMs = millis() - sdT0;
 
   lastFile_ = path;
   lastCaptureMs_ = millis();
   lastError_ = "";
-  LOG_I("Kamera: zapisano %s (%u B)", path, (unsigned)len);
+  LOG_I("Kamera: zapisano %s (%u B, SD %lu ms)", path, (unsigned)len, (unsigned long)sdMs);
 
+  const unsigned long anT0 = millis();
   if (!analyzeJpeg(jpg, len)) {
     LOG_W("Kamera: analiza zdjęcia nieudana");
   } else {
     publishAnalysis();
+  }
+  const unsigned long anMs = millis() - anT0;
+  if (anMs > 500 || sdMs > 500) {
+    LOG_W("Kamera: wolny zapis - SD %lu ms, analiza %lu ms", (unsigned long)sdMs,
+          (unsigned long)anMs);
   }
   writeAnalysisJson(path);
   enforceQuota();

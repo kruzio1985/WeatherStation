@@ -7,6 +7,7 @@
  */
 #include "loop_stats.h"
 #include "syslog.h"
+#include <string.h>
 
 static const char* const STAGE_NAMES[LOOP_STAGE_COUNT] = {
   "www/MQTT/OTA",
@@ -47,6 +48,50 @@ void loopStatsRecord(LoopStage stage, uint32_t ms) {
   if (stage >= LOOP_STAGE_COUNT) return;
   s_stageLast[stage] += ms;
   if (s_stageLast[stage] > s_stageMax[stage]) s_stageMax[stage] = s_stageLast[stage];
+}
+
+// ------------------------------------------------------------
+//  Ślad przed resetem (pamięć RTC przeżywa restart z watchdoga)
+//
+//  Reset "watchdog zadania" nie zostawia w logu miejsca, w którym stacja
+//  stanęła, a bufor logów jest kasowany przy starcie. Dlatego ostatni etap
+//  obiegu (i opcjonalnie miejsce w obsłudze żądania www) zapisujemy w pamięci
+//  RTC - po restarcie widać je w pierwszej linii logu.
+// ------------------------------------------------------------
+RTC_NOINIT_ATTR static uint32_t s_rtcMagic;
+RTC_NOINIT_ATTR static uint32_t s_rtcStage;
+RTC_NOINIT_ATTR static uint32_t s_rtcMs;
+RTC_NOINIT_ATTR static char     s_rtcWhere[40];
+RTC_NOINIT_ATTR static uint32_t s_rtcWhereMs;
+static const uint32_t RTC_MAGIC = 0x53505254u;   // "SPRT"
+
+void crashTraceMark(uint8_t stage, const char* where) {
+  s_rtcMagic = RTC_MAGIC;
+  if (where) {
+    strncpy(s_rtcWhere, where, sizeof(s_rtcWhere) - 1);
+    s_rtcWhere[sizeof(s_rtcWhere) - 1] = 0;
+    s_rtcWhereMs = millis();
+    return;
+  }
+  s_rtcStage = stage;
+  s_rtcMs    = millis();
+}
+
+void crashTraceBootLog() {
+  if (s_rtcMagic != RTC_MAGIC) return;
+  // Tylko po restarcie, którego nikt nie zamawiał - zwykłe restarty (OTA,
+  // restart dobowy, przycisk) mają swoje linie w logu i nie są awarią.
+  const esp_reset_reason_t rr = esp_reset_reason();
+  const bool unexpected = (rr == ESP_RST_TASK_WDT || rr == ESP_RST_INT_WDT ||
+                           rr == ESP_RST_WDT || rr == ESP_RST_PANIC);
+  if (unexpected) {
+    LOG_W("Przed resetem: etap %s (millis %lu), ostatnie żądanie: %s (millis %lu)",
+          loopStatsStageName((LoopStage)(s_rtcStage < LOOP_STAGE_COUNT ? s_rtcStage
+                                                                       : LOOP_WWW)),
+          (unsigned long)s_rtcMs, s_rtcWhere[0] ? s_rtcWhere : "-",
+          (unsigned long)s_rtcWhereMs);
+  }
+  s_rtcMagic = 0;
 }
 
 void loopStatsEndIteration() {

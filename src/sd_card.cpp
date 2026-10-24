@@ -160,8 +160,12 @@ static time_t fatTimeToEpoch(uint16_t fdate, uint16_t ftime) {
   return mktime(&t);
 }
 
-// Odczyt katalogu przez niskopoziomowe FatFS (f_opendir/f_readdir). Warstwa
-// Arduino (File::openNextFile) na tym sprzęcie kosztuje ~50 ms na wpis i przy
+// Limit czekania na dostęp do karty. Zapis zdjęcia na wolnej karcie potrafi
+// trwać ~4 s; serwer www i OTA działają w zadaniu pilnowanym przez watchdog
+// zadania (5 s), więc lepiej zwrócić błąd niż zablokować zadanie na dłużej.
+static const uint32_t SD_LOCK_MS = 3000;
+
+// Odczyt katalogu przez niskopoziomowe FatFS (f_opendir/f_readdir). Warstwa// Arduino (File::openNextFile) na tym sprzęcie kosztuje ~50 ms na wpis i przy
 // katalogu ze 300 zdjęciami blokuje stację na 17 s - tyle trwał wpis w galerii
 // i tyle wystarczyło, żeby watchdog zadania zrestartował stację. f_readdir
 // zwraca nazwę, rozmiar i czas z wpisu katalogu, bez dodatkowych odwołań do
@@ -170,7 +174,7 @@ static time_t fatTimeToEpoch(uint16_t fdate, uint16_t ftime) {
 bool SdCardManager::listDirFat(const String& dir, std::vector<SdFileInfo>& out,
                                size_t maxEntries, bool keepLast, const char* ext) {
   if (!mounted_ || sdmmc_) return false;
-  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+  if (mutex_ && xSemaphoreTakeRecursive(mutex_, pdMS_TO_TICKS(SD_LOCK_MS)) != pdTRUE) return false;
 
   const String base = dir.isEmpty() ? String("/") : dir;
   const String full = String(SD_FATFS_DRIVE) + base;   // np. "0:/photos"
@@ -215,7 +219,7 @@ bool SdCardManager::listDir(const String& dir, std::vector<SdFileInfo>& out,
   if (listDirFat(dir, out, maxEntries, keepLast, ext)) return true;
 
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+  if (mutex_ && xSemaphoreTakeRecursive(mutex_, pdMS_TO_TICKS(SD_LOCK_MS)) != pdTRUE) return false;
 
   const String base = dir.isEmpty() ? "/" : dir;
   File root;
@@ -554,13 +558,22 @@ uint64_t SdCardManager::totalBytes() {
 
 uint64_t SdCardManager::usedBytes() {
   if (!mounted_) return 0;
-  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+  // SD.usedBytes() przechodzi przez tablicę alokacji FAT - na wolnej karcie
+  // trwa sekundy. /api/status pyta o to co 10 s z zadania serwera www, które
+  // pilnuje watchdog zadania (5 s), więc wartość trzymamy minutę w pamięci.
+  static uint64_t cached = 0;
+  static unsigned long cachedMs = 0;
+  if (cachedMs && millis() - cachedMs < 60000UL) return cached;
+  if (mutex_ && xSemaphoreTakeRecursive(mutex_, pdMS_TO_TICKS(SD_LOCK_MS)) != pdTRUE) 
+    return cached;
 #if SD_MMC_AVAILABLE
   uint64_t v = sdmmc_ ? SD_MMC.usedBytes() : SD.usedBytes();
 #else
   uint64_t v = SD.usedBytes();
 #endif
   if (mutex_) xSemaphoreGiveRecursive(mutex_);
+  cached = v;
+  cachedMs = millis();
   return v;
 }
 
@@ -580,7 +593,10 @@ fs::FS& SdCardManager::fs() {
 
 bool SdCardManager::writeBlock(const String& path, const uint8_t* data, size_t len) {
   if (!mounted_) return false;
-  if (mutex_) xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+  if (mutex_ && xSemaphoreTakeRecursive(mutex_, pdMS_TO_TICKS(SD_LOCK_MS)) != pdTRUE) {
+    LOG_W("SD: zajęta karta, pominięto zapis %s", path.c_str());
+    return false;
+  }
   const int slash = path.lastIndexOf('/');
   if (slash > 0) mkdirsRaw(path.substring(0, slash));
   File f;

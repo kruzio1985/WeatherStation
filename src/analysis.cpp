@@ -180,9 +180,56 @@ static void scanWideFile(const String& path, WideCb cb, void* ctx, size_t maxByt
   f.close();
 }
 
-// ------------------------------------------------------------
-//  Rekordy (ekstrema)
-// ------------------------------------------------------------
+// Skanuje TYLKO koniec szerokiego CSV (maxBytes od końca pliku). Dzisiejsze
+// wiersze leżą na końcu, a miesięczny plik ma kilka MB - pełny skan blokował
+// pętlę główną na 7-8 s przy każdej przebudowie podsumowania.
+static void scanWideFileTail(const String& path, WideCb cb, void* ctx, size_t maxBytes) {
+  File f = sdCard.openRead(path);
+  if (!f) return;
+
+  const size_t size = f.size();
+  if (size > maxBytes) {
+    f.seek(size - maxBytes);
+    // Pomiń urwany pierwszy wiersz (zaczynamy w środku linii).
+    while (f.available()) {
+      if (f.read() == '\n') break;
+    }
+  }
+
+  char buf[512];
+  char line[2048];
+  size_t lineLen = 0;
+  bool header = false;          // nagłówek został na początku pliku
+  int lines = 0;
+  while (f.available()) {
+    int n = f.read((uint8_t*)buf, sizeof(buf));
+    if (n <= 0) break;
+    for (int i = 0; i < n; i++) {
+      char c = buf[i];
+      if (c == '\n') {
+        if (lineLen && line[lineLen - 1] == '\r') lineLen--;
+        while (lineLen && (line[lineLen - 1] == ' ' || line[lineLen - 1] == '\t')) lineLen--;
+        if (lineLen) {
+          line[lineLen] = 0;
+          parseWideLine(line, header, cb, ctx);
+        }
+        lineLen = 0;
+        if ((++lines & 0x3F) == 0) { yield(); }
+      } else if (lineLen < sizeof(line) - 1) {
+        line[lineLen++] = c;
+      }
+    }
+  }
+  if (lineLen) {
+    if (line[lineLen - 1] == '\r') lineLen--;
+    while (lineLen && (line[lineLen - 1] == ' ' || line[lineLen - 1] == '\t')) lineLen--;
+    if (lineLen) {
+      line[lineLen] = 0;
+      parseWideLine(line, header, cb, ctx);
+    }
+  }
+  f.close();
+}
 void Analysis::noteValue(time_t ts, const String& metric, float v) {
   if (isnan(v) || metric.length() == 0) return;
 
@@ -272,7 +319,9 @@ void Analysis::loop() {
   }
 
   // Faza 2: okresowa przebudowa podsumowania (rekordy + dziś + ciśnienie).
-  if (cacheValid_ && millis() - lastBuildMs_ < 60000UL) return;
+  // Przebudowa skanuje pliki CSV, więc nie może iść co minutę - przy 60 s
+  // pętla główna stawała na 7-8 s (i w tym czasie MQTT traciło keepalive).
+  if (cacheValid_ && millis() - lastBuildMs_ < 300000UL) return;
   buildCache();
   lastBuildMs_ = millis();
   cacheValid_ = true;
@@ -339,7 +388,9 @@ void Analysis::todayJson(String& out) {
 
   out += "\"today\":";
   std::vector<TodayAgg> aggs(DataLogger::columnCount());
-  scanWideFile(String(pathBuf), todayCb, &aggs, 8 * 1024 * 1024);
+  // Dzisiejsze wiersze są na końcu pliku - wystarczy ostatnie 768 kB
+  // (doba przy interwale 60 s to ~1440 wierszy, czyli ~0,4 MB).
+  scanWideFileTail(String(pathBuf), todayCb, &aggs, 768UL * 1024UL);
 
   static const char* TODAY_METRICS[] = {
     "temp", "hum", "press", "wind", "pm25", "co2", "uv", "light", "rain"
@@ -376,6 +427,15 @@ void Analysis::todayJson(String& out) {
 }
 
 void Analysis::pressureTrendJson(String& out) {
+  // Skan dwóch plików CSV (dzień + tydzień) trwał ~5 s i blokował pętlę główną,
+  // a trend zmienia się w skali godzin - wynik trzymamy 10 minut.
+  static String cached;
+  static unsigned long cachedMs = 0;
+  if (cached.length() && millis() - cachedMs < 600000UL) {
+    out += cached;
+    return;
+  }
+
   std::vector<SeriesPoint> day, week;
   String e1, e2;
   bool okDay = logger.getSeries("day", "press", day, e1);
@@ -397,13 +457,19 @@ void Analysis::pressureTrendJson(String& out) {
     p24h = week.size() >= 2 ? week[week.size() - 2].avg : NAN;
   }
 
-  out += "\"pressure_trend\":{";
-  out += "\"now\":";   out += isnan(nowP) ? "null" : fmt(nowP);
-  out += ",\"h3\":";   out += isnan(p3h)  ? "null" : fmt(p3h);
-  out += ",\"h24\":";  out += isnan(p24h) ? "null" : fmt(p24h);
-  if (!isnan(nowP) && !isnan(p3h))  { out += ",\"delta3h\":";  out += fmt(nowP - p3h); }
-  if (!isnan(nowP) && !isnan(p24h)) { out += ",\"delta24h\":"; out += fmt(nowP - p24h); }
-  out += "}";
+  String tmp;
+  tmp.reserve(160);
+  tmp += "\"pressure_trend\":{";
+  tmp += "\"now\":";   tmp += isnan(nowP) ? "null" : fmt(nowP);
+  tmp += ",\"h3\":";   tmp += isnan(p3h)  ? "null" : fmt(p3h);
+  tmp += ",\"h24\":";  tmp += isnan(p24h) ? "null" : fmt(p24h);
+  if (!isnan(nowP) && !isnan(p3h))  { tmp += ",\"delta3h\":";  tmp += fmt(nowP - p3h); }
+  if (!isnan(nowP) && !isnan(p24h)) { tmp += ",\"delta24h\":"; tmp += fmt(nowP - p24h); }
+  tmp += "}";
+
+  cached = tmp;
+  cachedMs = millis();
+  out += tmp;
 }
 
 // ------------------------------------------------------------
