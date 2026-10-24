@@ -975,7 +975,7 @@ void WebServerManager::registerRoutes() {
     r->send(200, "application/json", camera.toJson());
   });
 
-  // --- Galeria zdjęć: rekurencyjnie /photos (katalogi miesięczne) ---
+  // --- Galeria zdjęć: /photos (bez podkatalogów) + stare katalogi miesięczne ---
   server.on("/api/photos", HTTP_GET, [](AsyncWebServerRequest* r) {
     crashTraceMark(LOOP_WWW, "/api/photos");
     PsramAllocator alloc;
@@ -987,9 +987,10 @@ void WebServerManager::registerRoutes() {
     std::vector<PhotoItem> items;
 
     if (sdCard.mounted()) {
-      // Zdjęcia leżą w katalogach miesięcznych - przeglądamy kilka najnowszych
-      // (lista jest pokazywana od najnowszych). Odczyt katalogu idzie przez
-      // FatFS (sd_card), więc setki zdjęć nie blokują już serwera www.
+      // Zdjęcia leżą teraz bezpośrednio w /photos (jeden katalog). Starsze
+      // leżą jeszcze w katalogach miesięcznych - przeglądamy kilka najnowszych,
+      // dopóki retencja ich nie usunie. Odczyt katalogu idzie przez FatFS
+      // (sd_card), więc setki zdjęć nie blokują już serwera www.
       const size_t PHOTO_MAX_MONTHS = 3;
       const size_t PHOTO_MAX        = 600;
       std::vector<String> months;

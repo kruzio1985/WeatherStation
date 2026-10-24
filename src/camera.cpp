@@ -11,6 +11,7 @@
 #include "syslog.h"
 #include <ArduinoJson.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 #include <time.h>
 #include <string.h>
 #include <math.h>
@@ -253,6 +254,16 @@ void CameraManager::applyConfig() {
 
 void CameraManager::loop() {
   processPendingUpload();
+  // Porządkowanie galerii w tle: po obniżeniu limitu trzeba skasować stare
+  // zdjęcia, a na tej karcie jedno usunięcie kosztuje ~1,5 s. Kasujemy po
+  // jednym na obieg, żeby nie zamrozić pętli na kwadrans; gdy nie ma już
+  // nic do kasowania, sprawdzamy rzadko (raz na minutę).
+  const unsigned long trimEvery = trimActive_ ? 1500UL : 60000UL;
+  if (lastTrimMs_ == 0 || millis() - lastTrimMs_ > trimEvery) {
+    lastTrimMs_ = millis();
+    trimActive_ = (trimNow(1) > 0);
+    esp_task_wdt_reset();
+  }
 #if STACJA_HAS_CAMERA
   // Zdjęcie zlecone z www ma pierwszeństwo - działa też przy timelapsie
   // ustawionym na 0 (tylko zdjęcia ręczne). Wykonujemy je tutaj, a nie w
@@ -588,14 +599,14 @@ bool CameraManager::saveAndAnalyze(const uint8_t* jpg, size_t len, String& outPa
   time_t now = time(nullptr);
   struct tm t;
   localtime_r(&now, &t);
-  char dir[32];
-  snprintf(dir, sizeof(dir), "/photos/%04d-%02d", t.tm_year + 1900, t.tm_mon + 1);
+  // JEDEN katalog na zdjęcia (bez podkatalogów miesięcznych): zakładanie
+  // nowego pliku w katalogu z setkami wpisów kosztuje na tej karcie ~3-4 s,
+  // a katalogi miesięczne rosły bez końca. Nazwa pliku zawiera datę i godzinę.
   char path[64];
-  snprintf(path, sizeof(path), "/photos/%04d-%02d/%04d-%02d-%02d_%02d%02d%02d.jpg",
-           t.tm_year + 1900, t.tm_mon + 1,
+  snprintf(path, sizeof(path), "/photos/%04d-%02d-%02d_%02d%02d%02d.jpg",
            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
            t.tm_hour, t.tm_min, t.tm_sec);
-  sdCard.mkdirs(dir);
+  sdCard.mkdirs("/photos");
 
   const unsigned long sdT0 = millis();
   if (!sdCard.writeBlock(path, jpg, len)) {
@@ -916,38 +927,61 @@ static void collectPhotoFiles(const String& dir, std::vector<SdFileInfo>& out) {
 
 // Kasowanie najstarszych zdjęć (razem z plikami .json analizy), dopóki
 // liczba plików i łączny rozmiar mieszczą się w limitach config.
-void CameraManager::enforceQuota() {
+// maxDel ogranicza liczbę usunięć w jednym wywołaniu - na tej karcie jedno
+// usunięcie trwa ~1,5 s, więc kasujemy po kilka, a nie setki naraz.
+// Lista kandydatów do usunięcia jest liczona RAZ i trzymana w kolejce -
+// powtarzanie listowania katalogu przy każdym usunięciu kosztowałoby drugie tyle.
+static std::vector<String> s_trimQueue;
+static size_t s_trimIdx = 0;
+
+int CameraManager::trimNow(int maxDel) {
   uint16_t maxPhotos = config.camMaxPhotos();
   uint16_t maxMb = config.camMaxMb();
-  if (maxPhotos == 0 && maxMb == 0) return;
+  if (maxPhotos == 0 && maxMb == 0) return 0;
 
   const uint64_t maxBytes = (uint64_t)maxMb * 1024ULL * 1024ULL;
   // Szybka ścieżka: skanowanie katalogu zdjęć jest drogie, a gdy cała karta
   // zajmuje mniej niż limit rozmiaru zdjęć, limit na pewno nie został
   // przekroczony. Bez tego każde zdjęcie z timelapse blokowało pętlę główną na
   // dziesiątki sekund (setki wpisów katalogu po ~37 ms).
-  if (maxPhotos == 0 && maxMb > 0 && sdCard.usedBytes() < maxBytes) return;
+  if (maxPhotos == 0 && maxMb > 0 && sdCard.usedBytes() < maxBytes) return 0;
 
-  std::vector<SdFileInfo> files;
-  collectPhotoFiles("/photos", files);
-  if (files.empty()) return;
+  if (s_trimIdx >= s_trimQueue.size()) {
+    s_trimQueue.clear();
+    s_trimIdx = 0;
 
-  std::sort(files.begin(), files.end(),
-            [](const SdFileInfo& a, const SdFileInfo& b) { return a.mtime < b.mtime; });
+    std::vector<SdFileInfo> files;
+    collectPhotoFiles("/photos", files);
+    if (files.empty()) return 0;
 
-  uint64_t totalBytes = 0;
-  uint32_t count = 0;
-  for (const auto& f : files) { totalBytes += f.size; count++; }
+    std::sort(files.begin(), files.end(),
+              [](const SdFileInfo& a, const SdFileInfo& b) { return a.mtime < b.mtime; });
 
-  for (const auto& f : files) {
-    bool overCount = (maxPhotos > 0 && count > maxPhotos);
-    bool overBytes = (maxMb > 0 && totalBytes > maxBytes);
-    if (!overCount && !overBytes) break;
-    deletePhotoWithMeta(f.path);
-    totalBytes -= f.size;
-    count--;
+    size_t excessCount = (maxPhotos > 0 && files.size() > maxPhotos)
+                             ? files.size() - maxPhotos : 0;
+    size_t excessBytes = 0;
+    if (maxMb > 0) {
+      uint64_t total = 0;
+      for (const auto& f : files) total += f.size;
+      for (const auto& f : files) {
+        if (total <= maxBytes) break;
+        total -= f.size;
+        excessBytes++;
+      }
+    }
+    const size_t want = std::max(excessCount, excessBytes);
+    for (size_t i = 0; i < files.size() && i < want; i++) s_trimQueue.push_back(files[i].path);
   }
+
+  int deleted = 0;
+  while (deleted < maxDel && s_trimIdx < s_trimQueue.size()) {
+    deletePhotoWithMeta(s_trimQueue[s_trimIdx++]);
+    deleted++;
+  }
+  return deleted;
 }
+
+void CameraManager::enforceQuota() { trimNow(1000); }
 
 // Usuwa zdjęcie oraz ewentualny plik analizy .json obok niego.
 void CameraManager::deletePhotoWithMeta(const String& jpgPath) {

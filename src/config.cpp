@@ -105,7 +105,7 @@ void ConfigManager::ensureDefaults() {
   // Kamera (opcjonalna). Domyślnie wyłączona - włącza się dopiero, gdy
   // fizycznie podłączona (i skonfigurowane piny w sekcji "pins").
   if (!o["cam_enabled"].is<bool>()) o["cam_enabled"] = false;
-  if (!o["cam_interval_min"].is<uint16_t>()) o["cam_interval_min"] = 15;
+  if (!o["cam_interval_min"].is<uint16_t>()) o["cam_interval_min"] = 30;
   if (!o["cam_resolution"].is<uint8_t>()) o["cam_resolution"] = 8;  // 8 = VGA (640x480)
   if (!o["cam_quality"].is<uint8_t>()) o["cam_quality"] = 12;
   if (!o["cam_model"].is<uint8_t>()) o["cam_model"] = 0;            // 0 = wykryj sam
@@ -113,7 +113,7 @@ void ConfigManager::ensureDefaults() {
   // zdjęcia są kasowane razem z ich plikami analizy (.json). Limit rozmiaru
   // działa na całą kartę (uwzględnia też logi), więc domyślne 1 GB trzyma
   // galerię w ryzach, gdyby interwał zdjęć był krótki.
-  if (!o["cam_max_photos"].is<uint16_t>()) o["cam_max_photos"] = 0;
+  if (!o["cam_max_photos"].is<uint16_t>()) o["cam_max_photos"] = 100;
   if (!o["cam_max_mb"].is<uint16_t>()) o["cam_max_mb"] = 1000;
   // Adres zewnętrznej kamery (ESP32-CAM). Puste = kamera lokalna na pinach.
   // Po ustawieniu master tylko odbiera zdjęcia (HTTP POST /api/camera/upload).

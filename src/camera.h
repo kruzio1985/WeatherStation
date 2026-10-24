@@ -126,7 +126,13 @@ private:
   void publishAnalysis();
   void writeAnalysisJson(const String& jpgPath);
   void processPendingUpload();                  // zapis zdjęcia przekazanego przez www
-  void enforceQuota();                          // kasowanie najstarszych zdjęć ponad limit
+  // Kasowanie najstarszych zdjęć ponad limit. Na tej karcie jedno usunięcie
+  // kosztuje ~1,5 s, więc trimNow() kasuje ograniczoną liczbę plików na raz
+  // (wołane z pętli głównej), a enforceQuota() zostaje dla zgodności.
+  int  trimNow(int maxDel);
+  void enforceQuota();
+  unsigned long lastTrimMs_ = 0;
+  bool trimActive_ = false;      // trwa porządkowanie galerii ponad limit
   void deletePhotoWithMeta(const String& jpgPath);
 
   bool        enabled_ = false;
