@@ -773,7 +773,9 @@ void WebServerManager::registerRoutes() {
       r->send(200, "application/json", "{\"mounted\":false,\"files\":[]}");
       return;
     }
-    sdCard.listDir(dir, files);
+    // Limit wpisów: na tej karcie jeden wpis katalogu to ~100 ms, więc
+    // listowanie katalogu ze zdjęciami bez limitu blokowało serwer na minutę.
+    sdCard.listDir(dir, files, 300, false, nullptr);
 
     PsramAllocator alloc;
     JsonDocument d(&alloc);
