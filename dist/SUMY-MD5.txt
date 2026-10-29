@@ -1,0 +1,2 @@
+2b2b22c804c8f17465ab1b0a15b22525  StacjaPogody-1.0.0-master-16mb-ota.bin  1927280 B
+8987084c901b917e82a5095f9da9be10  StacjaPogody-1.0.0-master-16mb.bin  1992816 B
