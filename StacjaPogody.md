@@ -549,6 +549,6 @@ C3 (`c3air/`):
 ## 11. SEKRETY
 
 - Hasło MQTT (user `StacjaP`) i hasła WiFi są w pliku sekretów projektu — **nie drukować w czacie, nie commitować do gita**. Broker: 192.168.1.14:1883.
-- WiFi mastera: SSID "<twoja-siec>", static 192.168.1.143, brama .1.
+- WiFi mastera: SSID „<twoja-siec>", static 192.168.1.143, brama .1.
 - Poświadczenia Wi-Fi są też zapisane w NVS sterownika Wi-Fi (`sta.ssid`, `sta.pswd`) — firmware używa ich jako fallbacku.
 - **Nie zapisywać haseł w plikach na PC** (użytkownik zabronił). Zrzuty NVS trzymać wyłącznie w `%TEMP%` i **usuwać natychmiast** po użyciu.
