@@ -14,6 +14,11 @@ i animowane wskaźniki pogodowe.
 > każdy czujnik jest **opcjonalny** i wykrywany przy starcie. Brak czujnika nie powoduje
 > błędu, po prostu nie pojawia się na stronie ani w MQTT.
 
+> 🖨️ **Obudowy do druku 3D (MakerWorld):**
+> [stacja pogody — ESP32-S3 + czujniki](https://makerworld.com/pl/models/3516159-weather-station-for-esp32s3-and-sensors)
+> &nbsp;·&nbsp;
+> [stacja powietrza zewnętrznego — PMS7003](https://makerworld.com/pl/models/3516185-air-station-pms-7003)
+
 <a id="english"></a>
 
 ## 🇬🇧 English — full description
@@ -25,6 +30,11 @@ analysis, a VEVOR 868 MHz station sniffer, air-quality panels and animated weath
 > **Project status:** the sensors are not soldered yet. The code is ready to flash — every sensor
 > is **optional** and detected at boot. A missing sensor does not cause an error; it simply does
 > not appear on the page or in MQTT.
+
+> 🖨️ **3D-printed enclosures (MakerWorld):**
+> [weather station — ESP32-S3 + sensors](https://makerworld.com/pl/models/3516159-weather-station-for-esp32s3-and-sensors)
+> &nbsp;·&nbsp;
+> [outdoor air station — PMS7003](https://makerworld.com/pl/models/3516185-air-station-pms-7003)
 
 ### Features
 
@@ -121,6 +131,19 @@ analysis, a VEVOR 868 MHz station sniffer, air-quality panels and animated weath
 > ADS1115** (`src/drv_i2c.*`) and **SEN5x / SPS30** (`src/drv_pm.*`); the layer that connects
 > them to channels, calibration and CSV is [src/sensors_extra.cpp](src/sensors_extra.cpp).
 > Each one auto-detects at boot — no hardware = no channel, no error.
+
+### Enclosure (3D print)
+
+Free printable enclosures for this project are published on MakerWorld:
+
+| Enclosure | Model | For |
+|---|---|---|
+| **Weather station** | [makerworld.com/pl/models/3516159](https://makerworld.com/pl/models/3516159-weather-station-for-esp32s3-and-sensors) | ESP32-S3 WROOM-1, 2.4" TFT display, I²C multiplexer and indoor sensors |
+| **Outdoor air station** | [makerworld.com/pl/models/3516185](https://makerworld.com/pl/models/3516185-air-station-pms-7003) | ESP32 + PMS7003 (PM1/PM2.5/PM10) and outdoor temperature/humidity sensors |
+
+The outdoor model matches the air node described in **Sensor zones (indoor / outdoor)** —
+node environments live in [platformio.ini](platformio.ini) (`esp32c3-node`,
+`esp32c6-node`, `esp32s3-node-8mb-quad`).
 
 ### Pin map (defaults)
 
@@ -415,6 +438,19 @@ Polish section below).
 
 Pełny katalog obsługiwanych czujników (z magistralami, adresami I²C i kalibracją) jest w
 [docs/CZUJNIKI.md](docs/CZUJNIKI.md) oraz w zakładce **Czujniki → legenda** na stronie www.
+
+## Obudowa (druk 3D)
+
+Modele obudów do tego projektu są opublikowane na MakerWorld (darmowe, z plikami STL/3MF):
+
+| Obudowa | Model | Do czego |
+|---|---|---|
+| **Stacja pogody** | [makerworld.com/pl/models/3516159](https://makerworld.com/pl/models/3516159-weather-station-for-esp32s3-and-sensors) | ESP32-S3 WROOM-1, wyświetlacz TFT 2,4", rozdzielacz I²C i czujniki wewnętrzne |
+| **Stacja powietrza zewnętrznego** | [makerworld.com/pl/models/3516185](https://makerworld.com/pl/models/3516185-air-station-pms-7003) | ESP32 + PMS7003 (PM1/PM2.5/PM10) i czujniki temperatury/wilgotności na zewnątrz |
+
+Obudowa zewnętrzna pasuje do węzła powietrza opisanego w sekcji **Strefy czujników
+(wewnątrz / na zewnątrz)** — środowiska węzła są w [platformio.ini](platformio.ini)
+(`esp32c3-node`, `esp32c6-node`, `esp32s3-node-8mb-quad`).
 
 ## Sterowniki i obsługiwane czujniki
 

@@ -104,6 +104,7 @@ Zapis: `POST /api/display` z kluczem `ui`; w NVS jako `disp_ui_*`.
 - `7e6e649` TFT: duże wskazania na środku, krótkie opisy bez „?", usunięte kropki cyklu
 - `6a94d95` panel „Wygląd i pozycje" (rozmiar/pozycja/kolor/widoczność elementów ekranu)
 - favicon.svg + `meta description` + `theme-color` w nagłówku strony
+- Linki do obudów 3D (MakerWorld) w README — wersja PL i EN
 - `9726644` Kamera: zdjęcie z modułu zapisywane w pętli głównej — koniec
   restartów stacji co ~48 s (`watchdog zadania`) i migania ekranu
 - `f2885ca` Diagnostyka restartów: ślad etapu obiegu i ostatniego żądania www
