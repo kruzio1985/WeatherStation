@@ -23,6 +23,13 @@
 #define CAM_WIFI_PASS  ""
 #define CAM_MASTER_URL "http://192.168.1.100"
 
+// Nadpisania dla KONKRETNEJ instalacji (Wi-Fi, adres mastera). Plik
+// config_private.h jest w .gitignore i nie trafia do repo ani do kopii
+// publicznej - dzięki temu wersja offline ma Twoje dane, a online jest czysta.
+#if __has_include("config_private.h")
+#include "config_private.h"
+#endif
+
 // Hasło aktualizacji OTA kamery (ArduinoOTA, port 3232). Zmień je!
 #define CAM_OTA_PASS   "stacja-cam-ota"
 

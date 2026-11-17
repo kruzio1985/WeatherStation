@@ -14,3 +14,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Dane konkretnej instalacji (Wi-Fi, adresy) - tylko lokalnie, nigdy do repo
+config_private.h
+esp32cam/src/config_private.h

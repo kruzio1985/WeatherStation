@@ -385,7 +385,7 @@ static void handleRoot() {
   h += "<fieldset><legend>Wi-Fi</legend>";
   h += "<label>SSID: <input name='ssid' value='" + htmlEsc(g_ssid) + "'></label>";
   h += "<label>Hasło: <input name='pass' type='password' value='" + htmlEsc(g_pass) + "'></label>";
-  h += "<label>Adres mastera: <input name='url' value='" + htmlEsc(g_url) + "' placeholder='http://192.168.1.143'></label>";
+  h += "<label>Adres mastera: <input name='url' value='" + htmlEsc(g_url) + "' placeholder='http://192.168.1.100'></label>";
   h += "<label>Hasło AP (tryb awaryjny): <input name='appass' value='" + htmlEsc(g_ap_pass) + "'></label>";
   h += "<p class='hint'>Gdy kamera nie połączy się z Wi-Fi, uruchomi punkt dostępowy <b>StacjaKam</b> (192.168.4.1) z podanym hasłem.</p>";
   h += "</fieldset>";
