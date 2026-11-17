@@ -670,7 +670,10 @@ void DisplayManager::loop() {
   unsigned long now = millis();
   // W trybie cyklu wskazania zmieniają się co "disp_step_s", więc odświeżanie
   // musi być szybsze niż "disp_int" - inaczej lista by stała w miejscu.
-  const uint32_t period = (mode_ == 1 && channelCount() > 1) ? stepMs_ : intervalMs_;
+  uint32_t period = (mode_ == 1 && channelCount() > 1) ? stepMs_ : intervalMs_;
+  // Nocą (disp_slow_night) ekran i tak jest przygaszony i nikt go nie czyta -
+  // rzadkie odświeżanie oszczędza prąd podświetlenia i czas CPU.
+  if (config.dispSlowNight() && isNight()) period = 300000UL;
   if (lastDrawMs_ != 0 && (now - lastDrawMs_) < period) return;
   lastDrawMs_ = now;
   // W cyklu przechodzimy do następnego kanału (pierwszy kanał pokazuje draw()

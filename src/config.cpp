@@ -140,6 +140,22 @@ void ConfigManager::ensureDefaults() {
     }
   }
 
+  // Oszczędzanie energii (master). Domyślnie wyłączone, bo projekt wymaga
+  // minimalnych opóźnień - ale na stacji zasilanej z sieci warto je włączyć.
+  // wifi_ps: modem sleep (WIFI_PS_MIN_MODEM) - ~0,2-0,3 W mniej, wyższe pingi.
+  if (!o["wifi_ps"].is<bool>()) o["wifi_ps"] = false;
+  // mqtt_pub_s: co ile sekund publikować odczyty do MQTT (0 lub brak = 5 s).
+  if (!o["mqtt_pub_s"].is<uint16_t>()) o["mqtt_pub_s"] = 5;
+  // wifi_tx: moc nadawania Wi-Fi w dBm (8..19.5). Przy dobrym zasięgu
+  // (RSSI > -65 dBm) 13 dBm wystarcza i pobiera mniej prądu.
+  if (!o["wifi_tx"].is<float>()) o["wifi_tx"] = 19.5f;
+  // cpu_mhz: taktowanie CPU (80/160/240). 240 = domyślne Arduino;
+  // 160 MHz wystarcza stacji (rysowanie ekranu, dekodowanie JPEG) i pobiera
+  // wyraźnie mniej prądu. Zmiana działa po restarcie.
+  if (!o["cpu_mhz"].is<uint16_t>()) o["cpu_mhz"] = 240;
+  // disp_slow_night: w nocy odświeżać ekran rzadko (raz na 5 min) zamiast co krok.
+  if (!o["disp_slow_night"].is<bool>()) o["disp_slow_night"] = false;
+
   // Pierścień LED RGB (WS2812B / RGBIC)
   if (!o["rgb_enabled"].is<bool>()) o["rgb_enabled"] = true;
   if (!o["rgb_brightness"].is<uint8_t>()) o["rgb_brightness"] = 60;
@@ -453,6 +469,47 @@ uint16_t ConfigManager::sdRetentionPhotosDays() {
 bool ConfigManager::rgbEnabled() {
   lock();
   bool v = doc_["rgb_enabled"] | true;
+  unlock();
+  return v;
+}
+
+bool ConfigManager::wifiPowerSave() {
+  lock();
+  bool v = doc_["wifi_ps"] | false;
+  unlock();
+  return v;
+}
+
+float ConfigManager::wifiTxPowerDbm() {
+  lock();
+  float v = doc_["wifi_tx"] | 19.5f;
+  unlock();
+  if (v < 8.0f)   v = 8.0f;
+  if (v > 19.5f)  v = 19.5f;
+  return v;
+}
+
+uint16_t ConfigManager::cpuMhz() {
+  lock();
+  int v = doc_["cpu_mhz"] | 240;
+  unlock();
+  if (v <= 100)      return 80;
+  if (v <= 200)      return 160;
+  return 240;
+}
+
+uint16_t ConfigManager::mqttPubIntervalS() {
+  lock();
+  int v = doc_["mqtt_pub_s"] | 5;
+  unlock();
+  if (v < 5)   v = 5;
+  if (v > 3600) v = 3600;
+  return (uint16_t)v;
+}
+
+bool ConfigManager::dispSlowNight() {
+  lock();
+  bool v = doc_["disp_slow_night"] | false;
   unlock();
   return v;
 }

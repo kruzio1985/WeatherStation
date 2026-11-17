@@ -64,6 +64,18 @@ static bool g_lenc       = true;              // korekcja obiektywu
 static bool g_raw_gma    = true;              // gamma
 static bool g_flash_led  = false;             // LED doświetlająca: błysk przy zdjęciu
 
+// --- Oszczędzanie energii -----------------------------------------------
+// Kamera trzyma WiFi non stop (master odpytuje /capture), więc najwięcej
+// prądu idzie na sam podtrzymywany modem. Te trzy ustawienia obniżają pobór
+// bez wyłączania sieci:
+//   txp  - moc nadawania w dBm (19 = maks., 13 wystarcza przy dobrym RSSI),
+//   cpu  - taktowanie CPU w MHz (240 domyślne Arduino, 160 = mniej ciepła),
+//   ps   - modem sleep (WIFI_PS_MIN_MODEM) w spoczynku; przy zdjęciu na
+//          chwilę wyłączany, żeby transmisja nie była wolna.
+static int  g_txp_cfg  = 13;                  // dBm, 8..19
+static int  g_cpu_mhz  = 160;                 // 80 / 160 / 240
+static bool g_wifi_ps  = true;                // modem sleep w spoczynku
+
 // ---------------------------------------------------------------------------
 //  Kamera
 // ---------------------------------------------------------------------------
@@ -181,6 +193,10 @@ static void loadConfig() {
   g_lenc     = prefs.getBool("lenc", true);
   g_raw_gma  = prefs.getBool("gma", true);
   g_flash_led = prefs.getBool("flash", false);
+
+  g_txp_cfg = clampInt(prefs.getInt("txp", 13), 8, 19);
+  g_cpu_mhz = clampInt(prefs.getInt("cpu", 160), 80, 240);
+  g_wifi_ps = prefs.getBool("ps", true);
 }
 
 static void saveConfig() {
@@ -212,6 +228,9 @@ static void saveConfig() {
   prefs.putBool("lenc", g_lenc);
   prefs.putBool("gma", g_raw_gma);
   prefs.putBool("flash", g_flash_led);
+  prefs.putInt("txp", g_txp_cfg);
+  prefs.putInt("cpu", g_cpu_mhz);
+  prefs.putBool("ps", g_wifi_ps);
 }
 
 static void applySensorSettings() {
@@ -240,6 +259,17 @@ static void applySensorSettings() {
 // Pełna moc nadawania + brak usypiania modemu Wi-Fi (wymaganie projektu).
 // Domyślne oszczędzanie energii w Arduino daje skoki opóźnień i gubienie
 // pakietów, przez co przesyłanie zdjęć do stacji potrafi się nie wyrobić.
+// Ustawia moc nadawania i tryb oszczędzania energii modemu.
+// Uwaga: przy g_wifi_ps=true sterownik włącza WIFI_PS_MIN_MODEM - opóźnienia
+// rosną do ~100-300 ms, ale to wciąż dużo mniej niż limit mastera (2,5 s).
+static void wifiApplyPower() {
+  const int dbm = g_txp_cfg < 8 ? 8 : (g_txp_cfg > 19 ? 19 : g_txp_cfg);
+  WiFi.setTxPower((wifi_power_t)(dbm * 4));   // enum wifi_power_t = dBm * 4
+  WiFi.setSleep(g_wifi_ps);
+}
+
+// Maksymalna moc i brak usypiania - używane w trybie AP (konfiguracja),
+// gdzie zależy nam na zasięgu, a nie na poborze prądu.
 static void wifiApplyMaxPower() {
   WiFi.setSleep(false);
   WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -253,7 +283,7 @@ static void reconnectWifi() {
     g_ap_active = false;
   }
   WiFi.mode(WIFI_STA);
-  wifiApplyMaxPower();
+  wifiApplyPower();
   if (g_static_ip) {
     IPAddress ip, gw, mask, dns;
     if (ip.fromString(g_ip) && gw.fromString(g_gw) && mask.fromString(g_mask)) {
@@ -290,6 +320,9 @@ static bool postToMaster(const uint8_t* jpg, size_t len) {
 //  Obsługa HTTP
 // ---------------------------------------------------------------------------
 static void sendJpegNow() {
+  // Na czas zdjęcia i transmisji wyłączamy modem sleep - przy włączonym
+  // oszczędzaniu WiFi nadaje w oknach i wysyłka JPEG-a by się wydłużyła.
+  if (g_wifi_ps) WiFi.setSleep(false);
   if (g_flash_led) {
     digitalWrite(FLASH_LED_GPIO, HIGH);
     delay(180);  // błysk tylko na czas zdjęcia, nie świeci cały czas
@@ -297,6 +330,7 @@ static void sendJpegNow() {
   camera_fb_t* fb = esp_camera_fb_get();
   if (g_flash_led) digitalWrite(FLASH_LED_GPIO, LOW);
   if (!fb) {
+    if (g_wifi_ps) WiFi.setSleep(true);
     server.send(500, "text/plain", "brak klatki");
     return;
   }
@@ -309,6 +343,7 @@ static void sendJpegNow() {
   server.send(200, "image/jpeg", "");
   server.sendContent((const char*)fb->buf, fb->len);
   esp_camera_fb_return(fb);
+  if (g_wifi_ps) WiFi.setSleep(true);   // powrót do oszczędzania w spoczynku
 }
 
 static void handleRoot() {
@@ -423,6 +458,19 @@ static void handleRoot() {
   h += "<p class='hint'>LED zapala się tylko na chwilę robienia zdjęcia (jak lampa błyskowa), nie świeci cały czas.</p>";
   h += "</fieldset>";
 
+  // --- Oszczędzanie energii ---
+  h += "<fieldset><legend>Oszczędzanie energii</legend>";
+  h += "<label>Moc nadawania Wi-Fi (dBm, 8-19): <input name='txp' type='number' min='8' max='19' value='" + String(g_txp_cfg) + "'></label>";
+  h += "<p class='hint'>Przy dobrym zasięgu 13 dBm wystarcza, a nadawanie pobiera wyraźnie mniej prądu.</p>";
+  h += "<label>Taktowanie CPU: <select name='cpu'>";
+  h += optSel(g_cpu_mhz, 80,  "80 MHz");
+  h += optSel(g_cpu_mhz, 160, "160 MHz");
+  h += optSel(g_cpu_mhz, 240, "240 MHz");
+  h += "</select></label>";
+  h += "<label><span>Modem sleep Wi-Fi (oszczędzanie w spoczynku)</span><input type='checkbox' name='ps'" + chk(g_wifi_ps) + "></label>";
+  h += "<p class='hint'>Sleep jest wyłączany na czas zdjęcia i transmisji, więc wysyłka się nie wydłuża.</p>";
+  h += "</fieldset>";
+
   h += "<p style='display:flex;gap:10px;flex-wrap:wrap'>";
   h += "<button type='submit'>💾 Zapisz ustawienia</button>";
   h += "<a href='/capture'><button type='button'>📸 Zrób zdjęcie</button></a>";
@@ -442,6 +490,12 @@ static void handleStatus() {
        "\"ssid\":\"" + g_ssid + "\","
        "\"master\":\"" + g_url + "\","
        "\"photos\":" + String(g_photos) + ","
+       "\"fsize\":" + String(g_framesize) + ","
+       "\"qual\":" + String(g_quality) + ","
+       "\"txp\":" + String(g_txp_cfg) + ","
+       "\"cpu\":" + String(g_cpu_mhz) + ","
+       "\"ps\":" + String(g_wifi_ps ? "true" : "false") + ","
+       "\"rssi\":" + String(WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0) + ","
        "\"error\":\"" + g_err + "\"}";
   server.send(200, "application/json", s);
 }
@@ -479,6 +533,10 @@ static void handleConfig() {
   g_lenc    = server.hasArg("lenc");
   g_raw_gma = server.hasArg("gma");
   g_flash_led = server.hasArg("flash");
+
+  if (server.hasArg("txp")) g_txp_cfg = clampInt(server.arg("txp").toInt(), 8, 19);
+  if (server.hasArg("cpu")) g_cpu_mhz = clampInt(server.arg("cpu").toInt(), 80, 240);
+  g_wifi_ps = server.hasArg("ps");
 
   saveConfig();
   applySensorSettings();
@@ -555,6 +613,12 @@ void setup() {
   prefs.begin("stacja-cam", false);
   loadConfig();
 
+  // Taktowanie CPU: mniej MHz = mniej ciepła i prądu. Kamera i tak czeka
+  // na żądanie mastera, a przy zdjęciu 640x480 160 MHz wystarcza.
+  setCpuFrequencyMhz((uint32_t)g_cpu_mhz);
+  Serial.printf("[KAM] CPU %u MHz, TX %d dBm, modem sleep: %s\n",
+                (unsigned)getCpuFrequencyMhz(), g_txp_cfg, g_wifi_ps ? "tak" : "nie");
+
   if (g_ssid.length() == 0 || g_pass.length() == 0) {
     Serial.println("[KAM] BRAK KONFIGURACJI WIFI. Podaj przez monitor (115200):");
     Serial.println("      SET ssid haslo url");
@@ -563,7 +627,7 @@ void setup() {
   // Najpierw Wi-Fi (musi być przed server.begin() - lwIP wymaga
   // zainicjalizowanego interfejsu sieciowego).
   WiFi.mode(WIFI_STA);
-  wifiApplyMaxPower();
+  wifiApplyPower();
   if (g_static_ip) {
     IPAddress ip, gw, mask, dns;
     if (ip.fromString(g_ip) && gw.fromString(g_gw) && mask.fromString(g_mask)) {
@@ -610,7 +674,7 @@ void loop() {
   static uint32_t lastLog = 0;
   uint32_t now = millis();
 
-  if (now - lastLog >= 15000) {
+  if (now - lastLog >= 60000) {   // rzadszy log UART - mniej prądu i hałasu
     lastLog = now;
     if (WiFi.status() == WL_CONNECTED) {
       Serial.printf("[KAM] IP %s • master %s • zdjęć %u\n",

@@ -30,3 +30,17 @@ inline void wifiApplyMaxPower() {
   WiFi.setSleep(false);                   // WIFI_PS_NONE - brak usypiania modemu
   WiFi.setTxPower(WIFI_TX_POWER_MAX);     // pełna moc nadawania
 }
+
+// Pełna moc nadawania + wybór trybu oszczędzania energii modemu.
+// Uwaga: przy powerSave=true sterownik włącza WIFI_PS_MIN_MODEM - mniejszy
+// pobór (~0,2-0,3 W), ale pingi rosną do 100-400 ms i mogą ginąć pakiety.
+// Dlatego domyślnie wyłączone; włączane ustawieniem "wifi_ps" w configu.
+// dbm: moc nadawania; 19.5 = maksimum. Przy RSSI > -65 dBm 13-15 dBm wystarcza.
+// Obniżenie mocy ogranicza tylko kierunek stacja -> router (odbiór bez zmian).
+inline void wifiApplyPower(bool powerSave, float dbm = 19.5f) {
+  int q = (int)(dbm * 4.0f + 0.5f);          // wifi_power_t = dBm * 4
+  if (q < 8 * 4) q = 8 * 4;
+  if (q > 19 * 4 + 2) q = 19 * 4 + 2;        // 19.5 dBm = maksimum sterownika
+  WiFi.setTxPower((wifi_power_t)q);
+  WiFi.setSleep(powerSave);
+}

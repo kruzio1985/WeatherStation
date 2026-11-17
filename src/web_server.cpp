@@ -26,6 +26,7 @@
 #include "led_ring.h"
 #include "drv_display.h"
 #include "loop_stats.h"
+#include "wifi_util.h"
 #include "nvs_store.h"
 #include "gps.h"
 #include "astro.h"
@@ -430,6 +431,8 @@ void WebServerManager::registerRoutes() {
       // Ustawienia pierścienia LED działają od razu, bez restartu
       ledRing.applyConfig();
       camera.applyConfig();
+      // Tryb oszczędzania Wi-Fi (wifi_ps) i moc nadawania wchodzą od razu - bez restartu.
+      wifiApplyPower(config.wifiPowerSave(), config.wifiTxPowerDbm());
       // Po zmianie współrzędnych (lub innych ustawień) przelicz od razu
       // Słońce/Księżyc, żeby zakładka Astronomia nie czekała na pętlę 60 s.
       astro.update(config.latitude(), config.longitude(), time(nullptr),

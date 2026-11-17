@@ -255,6 +255,13 @@ public:
   String hostname();
   String otaPassword();
 
+  // Oszczędzanie energii
+  bool     wifiPowerSave();        // modem sleep Wi-Fi (WIFI_PS_MIN_MODEM)
+  float    wifiTxPowerDbm();       // moc nadawania Wi-Fi w dBm (8..19.5)
+  uint16_t cpuMhz();               // taktowanie CPU: 80 / 160 / 240 MHz
+  uint16_t mqttPubIntervalS();     // co ile publikować odczyty do MQTT
+  bool     dispSlowNight();        // nocą odświeżać ekran rzadko
+
   // Pierścień LED RGB (WS2812B / RGBIC)
   bool    rgbEnabled();
   uint8_t rgbBrightness();

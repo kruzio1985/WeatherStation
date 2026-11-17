@@ -54,6 +54,7 @@
 static WiFiClient wifiClient;
 #endif
 static unsigned long lastSensorRead = 0;
+static unsigned long lastMqttPub = 0;
 static unsigned long lastLightRead = 0;
 static unsigned long lastLog = 0;
 static unsigned long lastLed = 0;
@@ -95,7 +96,7 @@ void setupWiFi() {
   }
 
   WiFi.mode(asNode ? WIFI_AP : WIFI_AP_STA);
-  wifiApplyMaxPower();    // pełna moc nadawania + brak usypiania modemu (wifi_util.h)
+  wifiApplyPower(config.wifiPowerSave(), config.wifiTxPowerDbm());   // moc + tryb oszczędzania (wifi_util.h)
 
   String host = config.hostname();
   host.trim();
@@ -176,8 +177,8 @@ void logWifiChanges() {
   switch (st) {
     case WL_CONNECTED:
       // Po (re)asocjacji sterownik wraca do swoich wartości - wymuszamy pełną
-      // moc i brak usypiania modemu ponownie, żeby nie "zgubić" ustawienia.
-      wifiApplyMaxPower();
+      // moc (i wybrany tryb oszczędzania) ponownie, żeby nie "zgubić" ustawienia.
+      wifiApplyPower(config.wifiPowerSave(), config.wifiTxPowerDbm());
       LOG_I("Połączono z Wi-Fi '%s', IP %s, RSSI %d dBm",
             config.wifiSsid().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
       break;
@@ -281,6 +282,17 @@ void setup() {
 
   config.begin();
   pinMap.begin();     // przypisania pinów z ustawień (musi być przed sensors/sdCard)
+
+  // Taktowanie CPU z ustawień (80/160/240 MHz). 160 MHz wystarcza stacji
+  // i pobiera wyraźnie mniej prądu niż domyślne 240; zmiana działa po restarcie.
+  {
+    const uint16_t mhz = config.cpuMhz();
+    if (mhz != 240) {
+      setCpuFrequencyMhz((uint32_t)mhz);
+      LOG_I("CPU: taktowanie obniżone do %u MHz (oszczędzanie energii)",
+            (unsigned)getCpuFrequencyMhz());
+    }
+  }
 
 #if defined(CONFIG_IDF_TARGET_ESP32S3) && !STACJA_HEADLESS
   // Wygaszenie wbudowanej diody RGB WS2812. Gdy linia danych diody "wisi
@@ -449,7 +461,8 @@ void loop() {
     rtc.loop();
   }
 
-  // Odczyt czujników co 5 s
+  // Odczyt czujników co 5 s. Publikacja do MQTT osobno, rzadziej - każde
+  // wybudzenie radia kosztuje energię, a wartości i tak zmieniają się wolno.
   if (now - lastSensorRead >= 5000) {
     LoopStageTimer stage(LOOP_SENSORS_READ);
     lastSensorRead = now;
@@ -457,7 +470,11 @@ void loop() {
     sensors.readAll();
     esp_task_wdt_reset();
 #if !STACJA_HEADLESS
-    if (!asNode) mqtt.publishReadings(sensors.snapshot());
+    const unsigned long pubMs = (unsigned long)config.mqttPubIntervalS() * 1000UL;
+    if (!asNode && (now - lastMqttPub >= pubMs)) {
+      lastMqttPub = now;
+      mqtt.publishReadings(sensors.snapshot());
+    }
 #endif
   }
 
