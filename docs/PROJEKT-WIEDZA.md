@@ -147,6 +147,12 @@ powershell -File tools\build_release.ps1   # buduje wszystkie bin + kamera → d
     eksport plików — z poziomu www.
 12. GPS (NMEA) + ręczne współrzędne do Słońca/Księżyca/prognozy lokalnej.
 13. Publiczna strona czujników z reklamą firmy (`/public.html`).
+14. **Oszczędzanie energii** (`src/wifi_util.h`, `config.cpp`): moc nadawania WiFi
+    (`wifi_tx`), modem sleep (`wifi_ps`), taktowanie CPU (`cpu_mhz`), interwał publikacji
+    MQTT (`mqtt_pub_s`), rzadkie odświeżanie ekranu nocą (`disp_slow_night`), AP
+    wyłączany po połączeniu z routerem (`ap_always_on`). Zmiany działają bez restartu
+    (poza `cpu_mhz`) i przetrwały OTA. Pomiary i zalecenia: `README.md`,
+    sekcja „Oszczędzanie energii".
 
 ---
 
@@ -216,7 +222,10 @@ powershell -File tools\build_release.ps1   # buduje wszystkie bin + kamera → d
 - Wszystkie sekrety (Wi-Fi, hasło OTA, klucze serwisów) żyją **tylko w NVS urządzenia**,
   nie w kodzie. Budowanie kopii zapasowej wyklucza `.pio/` (tam platforma trzyma
   `cfg.json` z hasłem Wi-Fi) — **nie komituj/nie udostępniaj `.pio\cfg.json`**.
-- OTA mastera: `stacja-ota`. Kamera: `CAM_OTA_PASS` w `esp32cam/src/config.h`.
+- Domyślne hasło OTA w kodzie: `stacja-ota` (zmień w zakładce „Aktualizacja").
+  Kamera: `CAM_OTA_PASS` w `esp32cam/src/config.h`.
+- Hasła konkretnej instalacji **nie są zapisywane w dokumentacji ani w repo** —
+  trzymaj je w `HISTORIA\SEKRETY\` (poza kopiami publicznymi).
 
 ---
 

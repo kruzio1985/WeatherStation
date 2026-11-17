@@ -288,6 +288,26 @@ automatically. State on `<prefix>/sensor/<id>/state`, availability on `<prefix>/
 ThingSpeak and a custom GET URL — interval (min 30 s, default 300 s), *Transfer active* switch,
 *Send now* button, `all sensors` or `outdoor sensors only`, and a main temperature channel selector.
 
+### Power saving (measured, wired version)
+
+The station runs on mains power, but WiFi, the TFT backlight and the GPS module dominate the
+consumption. Everything below is switched from the web UI / `POST /api/config` and survives OTA
+(settings live in NVS). Measured on the reference station (ESP32-S3 N16R8, RSSI -50 dBm):
+
+| Option | Config key | Default | Effect |
+|---|---|---|---|
+| WiFi TX power | `wifi_tx` (dBm 8…19.5) | 19.5 | **13 dBm** keeps ping at 8 ms and HTTP at 37 ms at RSSI -50 dBm; saves a few mA |
+| Access point after connect | `ap_always_on` | false | AP "StacjaPogody" is turned off 60 s after joining the router (it comes back if STA drops) |
+| WiFi modem sleep | `wifi_ps` | false | **Keep it off:** ping rose 8 → 102 ms (max 598 ms), which risks the MQTT keepalive |
+| CPU clock | `cpu_mhz` (80/160/240) | 240 | **Keep 240:** at 160 MHz the analysis stage grew from 7.4 s to 8.9 s (risk for MQTT keepalive) |
+| MQTT publish interval | `mqtt_pub_s` | 5 | 30 s is enough; each publish wakes the radio |
+| CSV logging interval | `log_interval_s` | 60 | 300 s reduces SD writes (a slow SD card costs ~4 s per new file) |
+| Slow display at night | `disp_slow_night` | false | refreshes the TFT every 5 min between the night hours instead of every cycle |
+| LED ring | `rgb_enabled` | false on this build | pin -1 (GPIO 7 is TFT MOSI) - the ring is not installed, `power_ma` = 0 |
+
+What **must stay on**: WiFi STA (MQTT/Home Assistant, online weather services), PSRAM (frame buffer
+for the TFT), the SD card. Bluetooth is not compiled in.
+
 ### Logs and diagnostics
 
 - `GET /api/syslog` — full text log (PSRAM buffer, ~48 kB, oldest lines dropped).
@@ -632,7 +652,8 @@ dzięki czemu stacja wydaje je sama z zakładki **ESP i magistrala RS485 → Pli
 
 Stacja startuje w trybie AP+STA:
 
-- **Punkt dostępowy:** `StacjaPogody` / hasło `12345678` (IP `192.168.4.1`).
+- **Punkt dostępowy:** `StacjaPogody` (IP `192.168.4.1`) — hasło ustawiasz w zakładce **Sieć**
+  (fabrycznie jest to domyślna wartość z kodu; **zmień je** przed pierwszym użyciem).
 - Połącz się z AP i otwórz `http://192.168.4.1` — tam skonfigurujesz Wi-Fi i MQTT.
 - Jeśli skonfigurowano Wi-Fi, stacja dołącza do sieci i działa pod adresem z DHCP.
 
@@ -723,6 +744,31 @@ Zakładka **Serwisy** pozwala wysyłać pomiary jednocześnie do kilku serwisów
 REST API: `GET /api/services` (konfiguracja + stan), `POST /api/services` (zapis tylko
 zmienionych pól — klucze nieobecne w żądaniu zostają), `POST /api/services/test`
 (wysyłka natychmiastowa, używana przez przycisk *Wyślij teraz*).
+
+## Oszczędzanie energii (zmierzone, wersja sieciowa)
+
+Stacja pracuje z zasilania sieciowego, ale prąd „zjadają" WiFi, podświetlenie TFT i moduł GPS.
+Wszystko poniżej ustawia się ze strony www lub przez `POST /api/config` i **przetrwa OTA**
+(ustawienia leżą w NVS). Pomiar na stacji referencyjnej (ESP32-S3 N16R8, RSSI −50 dBm):
+
+| Opcja | Klucz konfiguracji | Domyślnie | Efekt |
+|---|---|---|---|
+| Moc nadawania WiFi | `wifi_tx` (dBm 8…19,5) | 19,5 | **13 dBm** przy RSSI −50 dBm: ping 8 ms, HTTP 37 ms — bez pogorszenia |
+| Punkt dostępowy po połączeniu | `ap_always_on` | false | AP „StacjaPogody" wyłącza się 60 s po dołączeniu do routera (wraca, gdy STA padnie) |
+| Modem sleep WiFi | `wifi_ps` | false | **Zostaw wyłączony:** ping rósł 8 → 102 ms (max 598 ms) — ryzyko dla keepalive MQTT |
+| Taktowanie CPU | `cpu_mhz` (80/160/240) | 240 | **Zostaw 240:** przy 160 MHz etap analizy rósł z 7,4 s do 8,9 s (ryzyko dla MQTT) |
+| Interwał publikacji MQTT | `mqtt_pub_s` | 5 | 30 s wystarcza; każde wybudzenie radia kosztuje prąd |
+| Interwał logu CSV | `log_interval_s` | 60 | 300 s = mniej zapisów na kartę SD (na wolnej karcie nowy plik kosztuje ~4 s) |
+| Wolny ekran nocą | `disp_slow_night` | false | odświeżanie TFT co 5 min w porze nocnej zamiast co cykl |
+| Pierścień LED | `rgb_enabled` | false w tym buildzie | pin −1 (GPIO 7 zajmuje TFT MOSI) — pierścienia nie ma, `power_ma` = 0 |
+
+**Musi zostać włączone:** WiFi STA (MQTT/Home Assistant, serwisy pogodowe online), PSRAM (bufor
+klatki ekranu), karta SD. Bluetooth nie jest kompilowany.
+
+Zmierzone pobory pojedynczych elementów: GPS 25–45 mA (0,08–0,15 W) **stale**, czujniki I²C razem
+~0,02 mA średnio (częstotliwość odczytu nie ma znaczenia — pobór jest impulsowy), podświetlenie TFT
+50–80 mA. Kamera ESP32-CAM (osobny moduł): moc TX, taktowanie CPU i modem sleep przerywany na czas
+zdjęcia — ustawiane w jej własnej stronie www (`txp`, `cpu`, `ps`).
 
 ## Logi i diagnostyka
 
