@@ -8,6 +8,10 @@ przez 5 dni pracy bez restartu.
 | `StacjaPogody-1.0.0-master-16mb-ota.bin` | 1 927 280 B | **Aktualizacja działającej stacji** — strona www → zakładka *Aktualizacja* (albo `POST /api/ota/firmware` z `X-OTA-Key`). **Nie kasuje ustawień** (Wi-Fi, MQTT, kalibracje, piny zostają w NVS). |
 | `StacjaPogody-1.0.0-master-16mb.bin` | 1 992 816 B | **Nowa płytka / po wyczyszczeniu flasha** — pełny obraz od `0x0` (bootloader + tablica partycji + firmware). Wgrywany od `0x0` **kasuje ustawienia**. |
 
+> Firmware kamery ESP32-CAM **nie jest publikowany** — buduje się go lokalnie
+> (`esp32cam/`, `pio run`), bo w wersji offline zawiera dane instalacji
+> (`esp32cam/src/config_private.h`, plik w `.gitignore`).
+
 ## Wgranie przez stronę www (zalecane)
 
 1. Otwórz `http://<ip-stacji>/` → zakładka **Aktualizacja**.
